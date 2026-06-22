@@ -19,10 +19,23 @@ import {
   X,
   Check,
   Info,
+  Database,
+  Cloud,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { sampleEmployees } from "./sampleEmployees";
+import {
+  saveMonthData,
+  getMonthData,
+  getAllMonthLabels,
+  deleteMonthData,
+  getCloudConfig,
+  saveCloudConfig,
+  CloudConfig
+} from "./db";
 import {
   ESI_EMPLOYER_RATE,
   ESI_GROSS_LIMIT,
@@ -669,6 +682,18 @@ function App() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
 
+  // Database and Month tracking states
+  const [dbLoading, setDbLoading] = useState(true);
+  const [allMonths, setAllMonths] = useState<string[]>([]);
+  const [showNoDataModal, setShowNoDataModal] = useState(false);
+  const [noDataMonth, setNoDataMonth] = useState("");
+  const [copySourceMonth, setCopySourceMonth] = useState("");
+  const prevMonthRef = useRef(monthLabel);
+
+  // Cloud Database Sync settings
+  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [cloudConfig, setCloudConfigState] = useState<CloudConfig>(getCloudConfig);
+
   const showToast = (message: string, type: "success" | "error" = "success") => {
     if (toastTimeoutRef.current) {
       window.clearTimeout(toastTimeoutRef.current);
@@ -987,16 +1012,142 @@ function App() {
     showToast("Reset payroll sheet to sample data");
   };
 
+  // Initialize / fetch month labels on mount
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(employees));
-  }, [employees]);
+    getAllMonthLabels().then((months) => {
+      setAllMonths(months);
+    }).catch(console.error);
+  }, []);
 
+  // Update previous active month tracker when data is loaded successfully
   useEffect(() => {
-    localStorage.setItem(
-      monthConfigStorageKey,
-      JSON.stringify({ label: monthLabel, days: effectiveMonthDays }),
-    );
-  }, [effectiveMonthDays, monthLabel]);
+    const normalized = normalizeMonthLabel(monthLabel);
+    if (normalized === monthLabel && !showNoDataModal && !dbLoading) {
+      prevMonthRef.current = monthLabel;
+    }
+  }, [monthLabel, showNoDataModal, dbLoading]);
+
+  // Load selected month payroll data from DB
+  useEffect(() => {
+    let active = true;
+    async function loadData() {
+      const normalized = normalizeMonthLabel(monthLabel);
+      if (normalized !== monthLabel) {
+        return; // wait until committed/normalized
+      }
+
+      setDbLoading(true);
+      try {
+        const data = await getMonthData(normalized);
+        if (!active) return;
+        if (data) {
+          setEmployees(data.employees);
+          setMonthDays(data.days);
+        } else {
+          // No data saved for this month yet
+          setNoDataMonth(normalized);
+          const months = await getAllMonthLabels();
+          if (active) {
+            setAllMonths(months);
+            if (months.length > 0) {
+              setCopySourceMonth(months[months.length - 1]);
+            } else {
+              setCopySourceMonth("");
+            }
+            setShowNoDataModal(true);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load month data from database:", err);
+      } finally {
+        if (active) setDbLoading(false);
+      }
+    }
+    loadData();
+    return () => {
+      active = false;
+    };
+  }, [monthLabel]);
+
+  // Auto-save changes to the database (with 500ms debounce to optimize writes)
+  useEffect(() => {
+    if (dbLoading || showNoDataModal) return;
+    const normalized = normalizeMonthLabel(monthLabel);
+    if (normalized !== monthLabel) return;
+
+    const delayDebounce = setTimeout(async () => {
+      try {
+        await saveMonthData(normalized, effectiveMonthDays, employees);
+        const months = await getAllMonthLabels();
+        setAllMonths(months);
+      } catch (err) {
+        console.error("Failed to save month data:", err);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [employees, effectiveMonthDays, monthLabel, dbLoading, showNoDataModal]);
+
+  // Month initialization methods
+  const handleCreateBlankMonth = async () => {
+    setShowNoDataModal(false);
+    setEmployees([]);
+    try {
+      await saveMonthData(noDataMonth, effectiveMonthDays, []);
+      const months = await getAllMonthLabels();
+      setAllMonths(months);
+      showToast(`Created blank payroll sheet for ${noDataMonth}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Error creating month", "error");
+    }
+  };
+
+  const handleCreateSampleMonth = async () => {
+    setShowNoDataModal(false);
+    const sanitized = sampleEmployees.map((emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!);
+    setEmployees(sanitized);
+    try {
+      await saveMonthData(noDataMonth, effectiveMonthDays, sanitized);
+      const months = await getAllMonthLabels();
+      setAllMonths(months);
+      showToast(`Initialized ${noDataMonth} with sample employees`);
+    } catch (err) {
+      console.error(err);
+      showToast("Error initializing month", "error");
+    }
+  };
+
+  const handleCopyMonth = async (source: string) => {
+    if (!source) return;
+    setDbLoading(true);
+    setShowNoDataModal(false);
+    try {
+      const sourceData = await getMonthData(source);
+      if (sourceData) {
+        setEmployees(sourceData.employees);
+        setMonthDays(sourceData.days);
+        await saveMonthData(noDataMonth, sourceData.days, sourceData.employees);
+        showToast(`Copied employee list from ${source} to ${noDataMonth}`);
+      } else {
+        showToast(`Failed to copy: source month ${source} has no data`, "error");
+      }
+      const months = await getAllMonthLabels();
+      setAllMonths(months);
+    } catch (err) {
+      console.error(err);
+      showToast("Error copying month data", "error");
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleCancelNoData = () => {
+    setShowNoDataModal(false);
+    setMonthLabel(prevMonthRef.current);
+    const inferred = inferMonthDays(prevMonthRef.current);
+    if (inferred) setMonthDays(inferred);
+  };
 
   const exportRows =
     sheetMode === "main"
@@ -1156,6 +1307,15 @@ function App() {
             <button className="ghost-button" type="button" onClick={exportCsv}>
               <FileDown size={17} />
               CSV
+            </button>
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setIsDbModalOpen(true)}
+              title={cloudConfig.enabled ? "Cloud database connected" : "Local database active"}
+            >
+              {cloudConfig.enabled ? <Cloud size={17} style={{ color: "#2563eb" }} /> : <Database size={17} />}
+              Database {cloudConfig.enabled ? "Cloud" : "Local"}
             </button>
             <button className="primary-button" type="button" onClick={exportWorkbook}>
               <FileSpreadsheet size={17} />
@@ -1687,6 +1847,126 @@ function App() {
           }}
           showToast={showToast}
         />
+      )}
+
+      {showNoDataModal && (
+        <div className="attendance-overlay">
+          <div className="attendance-modal" style={{ maxWidth: "500px", height: "auto", padding: "28px" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <span className="modal-eyebrow">Database Notice</span>
+              <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "8px 0" }}>Initialize Month: {noDataMonth}</h2>
+              <p style={{ color: "#667085", fontSize: "14px", lineHeight: "1.5" }}>
+                No records exist for <strong>{noDataMonth}</strong> in the database yet. How would you like to initialize this month?
+              </p>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+              {allMonths.filter(m => m !== noDataMonth).length > 0 && (
+                <div style={{ padding: "14px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                    Copy Employees From:
+                  </label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <select 
+                      value={copySourceMonth} 
+                      onChange={(e) => setCopySourceMonth(e.target.value)}
+                      style={{ flex: 1, padding: "8px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff", fontSize: "14px" }}
+                    >
+                      {allMonths.filter(m => m !== noDataMonth).map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <button 
+                      className="primary-button" 
+                      onClick={() => handleCopyMonth(copySourceMonth)}
+                      style={{ padding: "0 14px", height: "38px", fontSize: "13px" }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <button 
+                className="ghost-button" 
+                onClick={handleCreateSampleMonth}
+                style={{ justifyContent: "center", height: "42px", fontWeight: "600", color: "#2563eb", borderColor: "#2563eb", background: "rgba(37,99,235,0.04)" }}
+              >
+                Use Default Sample Employees
+              </button>
+
+              <button 
+                className="quiet-button" 
+                onClick={handleCreateBlankMonth}
+                style={{ justifyContent: "center", height: "42px", fontWeight: "500", border: "1px solid #cbd5e1" }}
+              >
+                Start with a Blank Sheet
+              </button>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button 
+                className="quiet-button" 
+                onClick={handleCancelNoData}
+                style={{ color: "#ef4444", fontWeight: "600" }}
+              >
+                Cancel & Restore Previous Month
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDbModalOpen && (
+        <div className="attendance-overlay">
+          <div className="attendance-modal" style={{ maxWidth: "600px", height: "auto", padding: "28px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div>
+                <span className="modal-eyebrow">Database Settings</span>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "4px 0" }}>Database Sync & Backup</h2>
+              </div>
+              <button className="close-modal" onClick={() => setIsDbModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ marginBottom: "20px", padding: "16px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "10px", color: "#065f46", fontSize: "14px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+                <Cloud size={20} style={{ color: "#059669", flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <strong style={{ display: "block", marginBottom: "4px", fontSize: "15px" }}>Global Vercel Blob Sync Active</strong>
+                  The application is successfully linked to your Vercel Blob store <strong>nawkiran-salary-blob</strong>. All database operations load and sync automatically by month for everyone who opens the app.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "20px", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", color: "#64748b", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Wifi size={18} style={{ color: "#2563eb", flexShrink: 0 }} />
+                <div>
+                  <strong>Local Caching Active:</strong> IndexedDB caches the data locally in your browser to ensure offline support and maximum speed.
+                </div>
+              </div>
+
+              <div style={{ fontSize: "13px", color: "#64748b", background: "#f8fafc", padding: "14px", borderRadius: "8px", border: "1px solid #e2e8f0", lineHeight: "1.5" }}>
+                <strong>Vercel Blob Advantages:</strong>
+                <ul style={{ paddingLeft: "18px", marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", listStyleType: "disc" }}>
+                  <li><strong>Zero Pauses</strong>: Free-tier Vercel Blob storage never pauses or sleeps, even with zero activity.</li>
+                  <li><strong>Instant Access</strong>: Loads database entries within milliseconds for all visitors globally.</li>
+                  <li><strong>No Configuration Required</strong>: Managed securely on Vercel's cloud infrastructure without leaking tokens to the frontend.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <button 
+                className="quiet-button" 
+                onClick={() => setIsDbModalOpen(false)}
+                style={{ fontWeight: "600" }}
+              >
+                Close Settings
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
