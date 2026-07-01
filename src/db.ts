@@ -123,6 +123,21 @@ export async function saveMonthData(
 }
 
 export async function getMonthData(company: string, monthLabel: string): Promise<MonthRecord | null> {
+  // Read local record first to check updatedAt
+  let localRecord: MonthRecord | null = null;
+  try {
+    const db = await getDB();
+    localRecord = await new Promise<MonthRecord | null>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(recordId(company, monthLabel));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error("Failed to read local record for merge check:", err);
+  }
+
   // 1. Try to fetch from Vercel serverless cloud database first
   try {
     const response = await fetch(
@@ -131,13 +146,23 @@ export async function getMonthData(company: string, monthLabel: string): Promise
     if (response.ok) {
       const data = await response.json();
       if (data) {
+        // Compare timestamps: if local is newer, do not overwrite and return local
+        if (localRecord && localRecord.updatedAt && data.updatedAt) {
+          const localTime = new Date(localRecord.updatedAt).getTime();
+          const cloudTime = new Date(data.updatedAt).getTime();
+          if (localTime > cloudTime) {
+            console.log("Local IndexedDB data is newer than cloud data. Using local.");
+            return localRecord;
+          }
+        }
+
         const record: MonthRecord = {
           id: recordId(company, monthLabel),
           company,
           monthLabel: data.monthLabel,
           days: data.days,
           employees: data.employees || [],
-          updatedAt: data.updatedAt,
+          updatedAt: data.updatedAt || new Date().toISOString(),
         };
         // Cache locally in IndexedDB
         const db = await getDB();
