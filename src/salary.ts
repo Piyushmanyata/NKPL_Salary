@@ -94,8 +94,8 @@ export function calculateSalary(
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
   const extraDays = Math.max(0, numberValue(input.extraDays));
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
-  const requestedPfOptIn = input.pfOptIn !== false;
-  const requestedEsiOptIn = input.esiOptIn !== false;
+  const requestedPfOptIn = isSpecial ? false : (input.pfOptIn !== false);
+  const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
   const advance = numberValue(input.advance);
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = monthlySalary / workingDays;
