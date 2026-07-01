@@ -23,6 +23,7 @@ import {
   Cloud,
   Wifi,
   WifiOff,
+  Building2,
 } from "lucide-react";
 import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
@@ -59,6 +60,13 @@ import {
 import type { EmployeeInput, SalaryRow } from "./types";
 
 type SheetMode = "reference" | "main";
+
+const COMPANIES = [
+  { code: "NKPL", label: "NKPL" },
+  { code: "APTUS", label: "APTUS" },
+] as const;
+
+type CompanyCode = (typeof COMPANIES)[number]["code"];
 
 type WageCategory = "Unskilled" | "Semi-skilled" | "Skilled";
 
@@ -133,8 +141,13 @@ const blankEmployee = (monthDays = WORKING_DAYS): EmployeeInput => ({
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
 
-const storageKey = "salary-sheet-employees-may-2026-v2";
-const monthConfigStorageKey = "salary-sheet-month-config";
+const DEFAULT_COMPANY: CompanyCode = "NKPL";
+const legacyEmployeesStorageKey = "salary-sheet-employees-may-2026-v2";
+const legacyMonthConfigStorageKey = "salary-sheet-month-config";
+const activeCompanyStorageKey = "salary-sheet-active-company";
+const employeesStorageKey = (company: string) => `salary-sheet-employees-${company}-v2`;
+const monthConfigStorageKey = (company: string) => `salary-sheet-month-config-${company}`;
+const companyLabelStorageKey = (company: string) => `salary-sheet-company-label-${company}`;
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 const csvEscape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const htmlEscape = (value: string | number) =>
@@ -173,9 +186,33 @@ function inferMonthDays(label: string) {
   return new Date(year, monthIndex + 1, 0).getDate();
 }
 
-function loadMonthConfig() {
+function loadActiveCompany(): CompanyCode {
   try {
-    const parsed = JSON.parse(localStorage.getItem(monthConfigStorageKey) ?? "{}") as {
+    const stored = localStorage.getItem(activeCompanyStorageKey);
+    if (stored && COMPANIES.some((company) => company.code === stored)) {
+      return stored as CompanyCode;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_COMPANY;
+}
+
+function loadCompanyLabel(company: CompanyCode): string {
+  try {
+    return localStorage.getItem(companyLabelStorageKey(company)) || company;
+  } catch {
+    return company;
+  }
+}
+
+function loadMonthConfig(company: CompanyCode) {
+  try {
+    const raw =
+      localStorage.getItem(monthConfigStorageKey(company)) ??
+      (company === DEFAULT_COMPANY ? localStorage.getItem(legacyMonthConfigStorageKey) : null) ??
+      "{}";
+    const parsed = JSON.parse(raw) as {
       label?: unknown;
       days?: unknown;
     };
@@ -238,10 +275,17 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
   };
 };
 
-const loadEmployees = (monthDays = WORKING_DAYS) => {
-  const stored = localStorage.getItem(storageKey);
+// NKPL is the only company with bundled sample/demo data; a newly added
+// company like APTUS starts blank until real employees are entered.
+const defaultEmployeesForCompany = (company: CompanyCode) => (company === "NKPL" ? sampleEmployees : []);
+
+const loadEmployees = (company: CompanyCode, monthDays = WORKING_DAYS) => {
+  const fallback = defaultEmployeesForCompany(company);
+  const stored =
+    localStorage.getItem(employeesStorageKey(company)) ??
+    (company === DEFAULT_COMPANY ? localStorage.getItem(legacyEmployeesStorageKey) : null);
   if (!stored) {
-    return sampleEmployees.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
+    return fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
   }
 
   try {
@@ -251,9 +295,9 @@ const loadEmployees = (monthDays = WORKING_DAYS) => {
           .map((employee, index) => sanitizeEmployee(employee, index, monthDays))
           .filter((employee): employee is EmployeeInput => Boolean(employee))
       : [];
-    return rows.length ? rows : sampleEmployees.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
+    return rows.length ? rows : fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
   } catch {
-    return sampleEmployees.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
+    return fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
   }
 };
 
@@ -664,12 +708,15 @@ function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
 }
 
 function App() {
-  const initialMonthConfig = useMemo(loadMonthConfig, []);
+  const [activeCompany, setActiveCompany] = useState<CompanyCode>(loadActiveCompany);
+  const initialMonthConfig = useMemo(() => loadMonthConfig(activeCompany), []);
   const [monthLabel, setMonthLabel] = useState(initialMonthConfig.label);
   const [monthDays, setMonthDays] = useState(initialMonthConfig.days);
-  const [employees, setEmployees] = useState<EmployeeInput[]>(() => loadEmployees(initialMonthConfig.days));
+  const [employees, setEmployees] = useState<EmployeeInput[]>(() =>
+    loadEmployees(activeCompany, initialMonthConfig.days),
+  );
   const [query, setQuery] = useState("");
-  const [companyName, setCompanyName] = useState("NKPL");
+  const [companyName, setCompanyName] = useState(() => loadCompanyLabel(activeCompany));
   const [openSettingsId, setOpenSettingsId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<SheetMode>("reference");
   const [attendanceData, setAttendanceData] = useState<AttendanceEmployee[] | null>(null);
@@ -689,6 +736,7 @@ function App() {
   const [noDataMonth, setNoDataMonth] = useState("");
   const [copySourceMonth, setCopySourceMonth] = useState("");
   const prevMonthRef = useRef(monthLabel);
+  const prevCompanyRef = useRef(activeCompany);
 
   // Cloud Database Sync settings
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -706,6 +754,11 @@ function App() {
   };
 
   useEffect(() => {
+    // The bundled MAY.xls demo attendance file only ever belonged to NKPL;
+    // other companies upload their own attendance file via the UI instead.
+    if (activeCompany !== "NKPL") {
+      return;
+    }
     async function loadDefaultAttendance() {
       try {
         const response = await fetch("/MAY.xls");
@@ -723,7 +776,7 @@ function App() {
       }
     }
     loadDefaultAttendance();
-  }, [employees]);
+  }, [employees, activeCompany]);
 
   const salaryRows = useMemo(
     () =>
@@ -1007,27 +1060,75 @@ function App() {
   };
 
   const resetSample = () => {
+    if (activeCompany !== "NKPL") {
+      showToast(`No bundled sample data for ${companyName || activeCompany}. Add employees manually.`, "error");
+      return;
+    }
     setQuery("");
     updateEmployees(sampleEmployees.map((employee, index) => sanitizeEmployee(employee, index, effectiveMonthDays)!));
     showToast("Reset payroll sheet to sample data");
   };
 
-  // Initialize / fetch month labels on mount
+  const handleSwitchCompany = (next: CompanyCode) => {
+    if (next === activeCompany) return;
+    const cfg = loadMonthConfig(next);
+    setQuery("");
+    setOpenSettingsId(null);
+    setActiveCompany(next);
+    setCompanyName(loadCompanyLabel(next));
+    setMonthLabel(cfg.label);
+    setMonthDays(cfg.days);
+  };
+
+  // Persist the active company selection and its display label
   useEffect(() => {
-    getAllMonthLabels().then((months) => {
+    try {
+      localStorage.setItem(activeCompanyStorageKey, activeCompany);
+    } catch {
+      // ignore storage failures (e.g. private browsing)
+    }
+  }, [activeCompany]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(companyLabelStorageKey(activeCompany), companyName);
+    } catch {
+      // ignore storage failures
+    }
+  }, [companyName, activeCompany]);
+
+  // Initialize / fetch month labels for the active company on mount and on company switch
+  useEffect(() => {
+    getAllMonthLabels(activeCompany).then((months) => {
       setAllMonths(months);
     }).catch(console.error);
-  }, []);
+  }, [activeCompany]);
 
-  // Update previous active month tracker when data is loaded successfully
+  // Update previous active month/company tracker when data is loaded successfully
   useEffect(() => {
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized === monthLabel && !showNoDataModal && !dbLoading) {
       prevMonthRef.current = monthLabel;
+      prevCompanyRef.current = activeCompany;
     }
-  }, [monthLabel, showNoDataModal, dbLoading]);
+  }, [monthLabel, activeCompany, showNoDataModal, dbLoading]);
 
-  // Load selected month payroll data from DB
+  // Remember the last-viewed month per company so switching companies restores it
+  useEffect(() => {
+    if (dbLoading || showNoDataModal) return;
+    const normalized = normalizeMonthLabel(monthLabel);
+    if (normalized !== monthLabel) return;
+    try {
+      localStorage.setItem(
+        monthConfigStorageKey(activeCompany),
+        JSON.stringify({ label: normalized, days: effectiveMonthDays }),
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [activeCompany, monthLabel, effectiveMonthDays, dbLoading, showNoDataModal]);
+
+  // Load selected company + month payroll data from DB
   useEffect(() => {
     let active = true;
     async function loadData() {
@@ -1038,15 +1139,15 @@ function App() {
 
       setDbLoading(true);
       try {
-        const data = await getMonthData(normalized);
+        const data = await getMonthData(activeCompany, normalized);
         if (!active) return;
         if (data) {
           setEmployees(data.employees);
           setMonthDays(data.days);
         } else {
-          // No data saved for this month yet
+          // No data saved for this company + month yet
           setNoDataMonth(normalized);
-          const months = await getAllMonthLabels();
+          const months = await getAllMonthLabels(activeCompany);
           if (active) {
             setAllMonths(months);
             if (months.length > 0) {
@@ -1067,7 +1168,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [monthLabel]);
+  }, [monthLabel, activeCompany]);
 
   // Auto-save changes to the database (with 500ms debounce to optimize writes)
   useEffect(() => {
@@ -1077,8 +1178,8 @@ function App() {
 
     const delayDebounce = setTimeout(async () => {
       try {
-        await saveMonthData(normalized, effectiveMonthDays, employees);
-        const months = await getAllMonthLabels();
+        await saveMonthData(activeCompany, normalized, effectiveMonthDays, employees);
+        const months = await getAllMonthLabels(activeCompany);
         setAllMonths(months);
       } catch (err) {
         console.error("Failed to save month data:", err);
@@ -1086,15 +1187,15 @@ function App() {
     }, 500);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, effectiveMonthDays, monthLabel, dbLoading, showNoDataModal]);
+  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal]);
 
   // Month initialization methods
   const handleCreateBlankMonth = async () => {
     setShowNoDataModal(false);
     setEmployees([]);
     try {
-      await saveMonthData(noDataMonth, effectiveMonthDays, []);
-      const months = await getAllMonthLabels();
+      await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
+      const months = await getAllMonthLabels(activeCompany);
       setAllMonths(months);
       showToast(`Created blank payroll sheet for ${noDataMonth}`);
     } catch (err) {
@@ -1105,11 +1206,13 @@ function App() {
 
   const handleCreateSampleMonth = async () => {
     setShowNoDataModal(false);
-    const sanitized = sampleEmployees.map((emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!);
+    const sanitized = defaultEmployeesForCompany(activeCompany).map(
+      (emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!,
+    );
     setEmployees(sanitized);
     try {
-      await saveMonthData(noDataMonth, effectiveMonthDays, sanitized);
-      const months = await getAllMonthLabels();
+      await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
+      const months = await getAllMonthLabels(activeCompany);
       setAllMonths(months);
       showToast(`Initialized ${noDataMonth} with sample employees`);
     } catch (err) {
@@ -1123,16 +1226,16 @@ function App() {
     setDbLoading(true);
     setShowNoDataModal(false);
     try {
-      const sourceData = await getMonthData(source);
+      const sourceData = await getMonthData(activeCompany, source);
       if (sourceData) {
         setEmployees(sourceData.employees);
         setMonthDays(sourceData.days);
-        await saveMonthData(noDataMonth, sourceData.days, sourceData.employees);
+        await saveMonthData(activeCompany, noDataMonth, sourceData.days, sourceData.employees);
         showToast(`Copied employee list from ${source} to ${noDataMonth}`);
       } else {
         showToast(`Failed to copy: source month ${source} has no data`, "error");
       }
-      const months = await getAllMonthLabels();
+      const months = await getAllMonthLabels(activeCompany);
       setAllMonths(months);
     } catch (err) {
       console.error(err);
@@ -1144,6 +1247,7 @@ function App() {
 
   const handleCancelNoData = () => {
     setShowNoDataModal(false);
+    setActiveCompany(prevCompanyRef.current);
     setMonthLabel(prevMonthRef.current);
     const inferred = inferMonthDays(prevMonthRef.current);
     if (inferred) setMonthDays(inferred);
@@ -1274,6 +1378,21 @@ function App() {
       <main className="app-shell">
         <section className="topbar">
           <div>
+            <div className="company-switch" role="tablist" aria-label="Select company">
+              {COMPANIES.map((company) => (
+                <button
+                  key={company.code}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCompany === company.code}
+                  className={`company-tab ${activeCompany === company.code ? "active" : ""}`}
+                  onClick={() => handleSwitchCompany(company.code)}
+                >
+                  <Building2 size={14} />
+                  {company.code}
+                </button>
+              ))}
+            </div>
             <p className="eyebrow">Salary Sheet Dashboard</p>
             <h1>{companyName || "Company"} Payroll</h1>
             <p className="hero-copy">
@@ -1854,9 +1973,11 @@ function App() {
           <div className="attendance-modal" style={{ maxWidth: "500px", height: "auto", padding: "28px" }}>
             <div style={{ marginBottom: "20px" }}>
               <span className="modal-eyebrow">Database Notice</span>
-              <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "8px 0" }}>Initialize Month: {noDataMonth}</h2>
+              <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "8px 0" }}>
+                Initialize {activeCompany} &middot; {noDataMonth}
+              </h2>
               <p style={{ color: "#667085", fontSize: "14px", lineHeight: "1.5" }}>
-                No records exist for <strong>{noDataMonth}</strong> in the database yet. How would you like to initialize this month?
+                No records exist for <strong>{companyName || activeCompany}</strong> in <strong>{noDataMonth}</strong> yet. How would you like to initialize this month?
               </p>
             </div>
             
@@ -1887,13 +2008,15 @@ function App() {
                 </div>
               )}
 
-              <button 
-                className="ghost-button" 
-                onClick={handleCreateSampleMonth}
-                style={{ justifyContent: "center", height: "42px", fontWeight: "600", color: "#2563eb", borderColor: "#2563eb", background: "rgba(37,99,235,0.04)" }}
-              >
-                Use Default Sample Employees
-              </button>
+              {activeCompany === "NKPL" && (
+                <button
+                  className="ghost-button"
+                  onClick={handleCreateSampleMonth}
+                  style={{ justifyContent: "center", height: "42px", fontWeight: "600", color: "#2563eb", borderColor: "#2563eb", background: "rgba(37,99,235,0.04)" }}
+                >
+                  Use Default Sample Employees
+                </button>
+              )}
 
               <button 
                 className="quiet-button" 
@@ -1935,7 +2058,7 @@ function App() {
                 <Cloud size={20} style={{ color: "#059669", flexShrink: 0, marginTop: "2px" }} />
                 <div>
                   <strong style={{ display: "block", marginBottom: "4px", fontSize: "15px" }}>Global Vercel Blob Sync Active</strong>
-                  The application is successfully linked to your Vercel Blob store <strong>nawkiran-salary-blob</strong>. All database operations load and sync automatically by month for everyone who opens the app.
+                  The application is successfully linked to your Vercel Blob store <strong>nawkiran-salary-blob</strong>. All database operations load and sync automatically by company and month for everyone who opens the app &mdash; NKPL and APTUS data are kept completely separate.
                 </div>
               </div>
 

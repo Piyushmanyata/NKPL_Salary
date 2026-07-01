@@ -1,6 +1,8 @@
 import { EmployeeInput } from "./types";
 
 export interface MonthRecord {
+  id: string;
+  company: string;
   monthLabel: string;
   days: number;
   employees: EmployeeInput[];
@@ -8,8 +10,13 @@ export interface MonthRecord {
 }
 
 const DB_NAME = "NKPL_Salary_DB";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "monthly_salary";
+const DEFAULT_COMPANY = "NKPL";
+
+function recordId(company: string, monthLabel: string) {
+  return `${company}::${monthLabel}`;
+}
 
 function getDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -20,8 +27,35 @@ function getDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = request.result;
+      const tx = request.transaction;
+
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "monthLabel" });
+        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        store.createIndex("company", "company", { unique: false });
+        return;
+      }
+
+      // Migrating from v1 (keyPath: "monthLabel", single implicit company) to
+      // v2 (keyPath: "id", explicit company field + index). All pre-existing
+      // records belonged to NKPL, since it was the only company at the time.
+      if (event.oldVersion < 2 && tx) {
+        const oldStore = tx.objectStore(STORE_NAME);
+        const migrated: any[] = [];
+        const cursorRequest = oldStore.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (cursor) {
+            const value = cursor.value;
+            const company = value.company || DEFAULT_COMPANY;
+            migrated.push({ ...value, company, id: recordId(company, value.monthLabel) });
+            cursor.continue();
+          } else {
+            db.deleteObjectStore(STORE_NAME);
+            const newStore = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+            newStore.createIndex("company", "company", { unique: false });
+            migrated.forEach((record) => newStore.put(record));
+          }
+        };
       }
     };
   });
@@ -40,8 +74,15 @@ export function saveCloudConfig(config: CloudConfig) {
   // Configured automatically on Vercel backend
 }
 
-export async function saveMonthData(monthLabel: string, days: number, employees: EmployeeInput[]): Promise<void> {
+export async function saveMonthData(
+  company: string,
+  monthLabel: string,
+  days: number,
+  employees: EmployeeInput[],
+): Promise<void> {
   const record: MonthRecord = {
+    id: recordId(company, monthLabel),
+    company,
     monthLabel,
     days,
     employees,
@@ -81,18 +122,22 @@ export async function saveMonthData(monthLabel: string, days: number, employees:
   }
 }
 
-export async function getMonthData(monthLabel: string): Promise<MonthRecord | null> {
+export async function getMonthData(company: string, monthLabel: string): Promise<MonthRecord | null> {
   // 1. Try to fetch from Vercel serverless cloud database first
   try {
-    const response = await fetch(`/api/db?month=${encodeURIComponent(monthLabel)}`);
+    const response = await fetch(
+      `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}`,
+    );
     if (response.ok) {
       const data = await response.json();
       if (data) {
         const record: MonthRecord = {
+          id: recordId(company, monthLabel),
+          company,
           monthLabel: data.monthLabel,
           days: data.days,
           employees: data.employees || [],
-          updatedAt: data.updatedAt
+          updatedAt: data.updatedAt,
         };
         // Cache locally in IndexedDB
         const db = await getDB();
@@ -110,8 +155,8 @@ export async function getMonthData(monthLabel: string): Promise<MonthRecord | nu
     console.error("Error fetching from cloud database:", error);
   }
 
-  // 2. Migration Check: If it is May 2026 and not found in cloud, check localStorage
-  if (monthLabel === "May 2026") {
+  // 2. Migration Check: If it is NKPL May 2026 and not found in cloud, check localStorage
+  if (company === DEFAULT_COMPANY && monthLabel === "May 2026") {
     const localMayData = localStorage.getItem("salary-sheet-employees-may-2026-v2");
     if (localMayData) {
       try {
@@ -128,6 +173,8 @@ export async function getMonthData(monthLabel: string): Promise<MonthRecord | nu
 
           // Auto-save/migrate to cloud
           const record: MonthRecord = {
+            id: recordId(company, "May 2026"),
+            company,
             monthLabel: "May 2026",
             days,
             employees,
@@ -138,7 +185,7 @@ export async function getMonthData(monthLabel: string): Promise<MonthRecord | nu
           fetch("/api/db", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(record)
+            body: JSON.stringify(record),
           }).catch(console.error);
 
           // Save to IndexedDB
@@ -165,7 +212,7 @@ export async function getMonthData(monthLabel: string): Promise<MonthRecord | nu
     return new Promise<MonthRecord | null>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, "readonly");
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(monthLabel);
+      const request = store.get(recordId(company, monthLabel));
 
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
@@ -173,18 +220,22 @@ export async function getMonthData(monthLabel: string): Promise<MonthRecord | nu
   } catch (err) {
     console.error("Failed to read from IndexedDB:", err);
   }
-  
+
   return null;
 }
 
-export async function getAllMonthLabels(): Promise<string[]> {
+export async function getAllMonthLabels(company: string): Promise<string[]> {
   try {
-    const response = await fetch("/api/db");
+    const response = await fetch(`/api/db?company=${encodeURIComponent(company)}`);
     if (response.ok) {
       const months = await response.json();
       if (Array.isArray(months)) {
         // Ensure "May 2026" is always present if there is local localStorage data
-        if (!months.includes("May 2026") && localStorage.getItem("salary-sheet-employees-may-2026-v2")) {
+        if (
+          company === DEFAULT_COMPANY &&
+          !months.includes("May 2026") &&
+          localStorage.getItem("salary-sheet-employees-may-2026-v2")
+        ) {
           months.push("May 2026");
         }
         return months;
@@ -199,11 +250,16 @@ export async function getAllMonthLabels(): Promise<string[]> {
   return new Promise<string[]>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, "readonly");
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAllKeys();
+    const index = store.index("company");
+    const request = index.getAll(company);
 
     request.onsuccess = () => {
-      const keys = (request.result || []) as string[];
-      if (!keys.includes("May 2026") && localStorage.getItem("salary-sheet-employees-may-2026-v2")) {
+      const keys = (request.result || []).map((record: MonthRecord) => record.monthLabel);
+      if (
+        company === DEFAULT_COMPANY &&
+        !keys.includes("May 2026") &&
+        localStorage.getItem("salary-sheet-employees-may-2026-v2")
+      ) {
         keys.push("May 2026");
       }
       resolve(keys);
@@ -212,9 +268,9 @@ export async function getAllMonthLabels(): Promise<string[]> {
   });
 }
 
-export async function deleteMonthData(monthLabel: string): Promise<void> {
+export async function deleteMonthData(company: string, monthLabel: string): Promise<void> {
   try {
-    await fetch(`/api/db?month=${encodeURIComponent(monthLabel)}`, {
+    await fetch(`/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}`, {
       method: "DELETE",
     });
   } catch (error) {
@@ -226,7 +282,7 @@ export async function deleteMonthData(monthLabel: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete(monthLabel);
+    const request = store.delete(recordId(company, monthLabel));
 
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
