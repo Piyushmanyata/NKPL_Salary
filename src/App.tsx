@@ -1811,6 +1811,11 @@ function App() {
                                     />
                                   </div>
                                   <div className="settings-column">
+                                    <span>Salary per Day</span>
+                                    <strong>{currency(row.perDayWage)}</strong>
+                                    <small>Total / {effectiveMonthDays} days</small>
+                                  </div>
+                                  <div className="settings-column">
                                     <span>TDS</span>
                                     <NumberInput
                                       value={row.otherDeduction}
