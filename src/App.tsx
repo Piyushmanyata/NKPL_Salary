@@ -1228,10 +1228,14 @@ function App() {
     try {
       const sourceData = await getMonthData(activeCompany, source);
       if (sourceData) {
-        setEmployees(sourceData.employees);
-        setMonthDays(sourceData.days);
-        await saveMonthData(activeCompany, noDataMonth, sourceData.days, sourceData.employees);
-        showToast(`Copied employee list from ${source} to ${noDataMonth}`);
+        const targetDays = inferMonthDays(noDataMonth) ?? sourceData.days;
+        const sanitizedEmployees = sourceData.employees.map((emp, index) =>
+          sanitizeEmployee(emp, index, targetDays)!
+        ).filter(Boolean);
+        setEmployees(sanitizedEmployees);
+        setMonthDays(targetDays);
+        await saveMonthData(activeCompany, noDataMonth, targetDays, sanitizedEmployees);
+        showToast(`Copied employee list from ${source} to ${noDataMonth} (${targetDays} days)`);
       } else {
         showToast(`Failed to copy: source month ${source} has no data`, "error");
       }
@@ -1465,7 +1469,25 @@ function App() {
           </label>
           <label>
             Calendar Days
-            <input value={effectiveMonthDays} readOnly />
+            <input
+              type="number"
+              min={1}
+              max={31}
+              value={effectiveMonthDays}
+              onChange={(event) => {
+                const val = parseInt(event.target.value, 10);
+                if (!isNaN(val)) {
+                  const clamped = Math.max(1, Math.min(31, val));
+                  setMonthDays(clamped);
+                  setEmployees((current) =>
+                    current.map((emp) => ({
+                      ...emp,
+                      daysWorked: Math.min(clamped, emp.daysWorked),
+                    }))
+                  );
+                }
+              }}
+            />
           </label>
           <label>
             Search employee
@@ -1588,6 +1610,13 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
+                    {sortedFilteredRows.length === 0 && (
+                      <tr>
+                        <td colSpan={17} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                          No matching employees found for "{query}" in this company.
+                        </td>
+                      </tr>
+                    )}
                     {sortedFilteredRows.map((row) => (
                       <Fragment key={row.id}>
                         <tr>
@@ -1803,6 +1832,13 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
+                    {sortedFilteredOfficialRows.length === 0 && (
+                      <tr>
+                        <td colSpan={14} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                          No matching employees found for "{query}" in this company.
+                        </td>
+                      </tr>
+                    )}
                     {sortedFilteredOfficialRows.map((row) => (
                       <tr key={row.id}>
                         <td className="name-cell">{row.name}</td>
