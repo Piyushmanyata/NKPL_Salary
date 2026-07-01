@@ -716,6 +716,7 @@ function App() {
     loadEmployees(activeCompany, initialMonthConfig.days),
   );
   const [query, setQuery] = useState("");
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState(() => loadCompanyLabel(activeCompany));
   const [openSettingsId, setOpenSettingsId] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<SheetMode>("reference");
@@ -851,6 +852,8 @@ function App() {
   const sortedFilteredRows = useMemo(() => {
     const sorted = [...filteredRows];
     sorted.sort((a, b) => {
+      if (a.id === newlyAddedId) return -1;
+      if (b.id === newlyAddedId) return 1;
       let valA = a[refSortField as keyof typeof a];
       let valB = b[refSortField as keyof typeof b];
 
@@ -873,6 +876,8 @@ function App() {
   const sortedFilteredOfficialRows = useMemo(() => {
     const sorted = [...filteredOfficialRows];
     sorted.sort((a, b) => {
+      if (a.id === newlyAddedId) return -1;
+      if (b.id === newlyAddedId) return 1;
       let valA = a[officialSortField as keyof typeof a];
       let valB = b[officialSortField as keyof typeof b];
 
@@ -983,6 +988,9 @@ function App() {
     field: keyof EmployeeInput,
     value: string | number | boolean | undefined,
   ) => {
+    if (id === newlyAddedId && field === "name") {
+      setNewlyAddedId(null);
+    }
     setEmployees((current) => {
       const next = current.map((employee) => {
         if (employee.id !== id) {
@@ -1046,7 +1054,9 @@ function App() {
 
   const addEmployee = () => {
     setQuery("");
-    setEmployees((current) => [blankEmployee(effectiveMonthDays), ...current]);
+    const newEmp = blankEmployee(effectiveMonthDays);
+    setNewlyAddedId(newEmp.id);
+    setEmployees((current) => [newEmp, ...current]);
     showToast("Added new employee successfully!");
   };
 
