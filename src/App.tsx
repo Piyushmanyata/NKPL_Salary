@@ -1993,9 +1993,19 @@ function App() {
                     performanceBonus: matched.sundaysEligible > 0 ? undefined : emp.performanceBonus,
                   };
                 }
-                return emp;
+                // Sync employees without matching attendance in the sheet to 0 days worked & 0 extra days
+                return {
+                  ...emp,
+                  daysWorked: 0,
+                  extraDays: 0,
+                };
               });
-              showToast(`Synced attendance and Sunday bonuses for ${syncCount} matching employees!`, "success");
+              showToast(
+                `Synced attendance: ${syncCount} employees matched, ${
+                  current.length - syncCount
+                } set to 0 due to no attendance.`,
+                "success"
+              );
               return next;
             });
             setIsAttendanceModalOpen(false);
