@@ -126,7 +126,7 @@ export async function getMonthData(company: string, monthLabel: string): Promise
   // 1. Try to fetch from Vercel serverless cloud database first
   try {
     const response = await fetch(
-      `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}`,
+      `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`,
     );
     if (response.ok) {
       const data = await response.json();
@@ -226,7 +226,7 @@ export async function getMonthData(company: string, monthLabel: string): Promise
 
 export async function getAllMonthLabels(company: string): Promise<string[]> {
   try {
-    const response = await fetch(`/api/db?company=${encodeURIComponent(company)}`);
+    const response = await fetch(`/api/db?company=${encodeURIComponent(company)}&t=${Date.now()}`);
     if (response.ok) {
       const months = await response.json();
       if (Array.isArray(months)) {

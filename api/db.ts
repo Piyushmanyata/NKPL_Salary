@@ -64,8 +64,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).json({ error: 'Not found' });
       }
 
-      // Fetch the file content
-      const fileRes = await fetch(blobs[0].url);
+      // Fetch the file content with cache-busting to bypass Vercel Blob CDN caching
+      const fileRes = await fetch(`${blobs[0].url}?t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+        },
+      });
       const data = await fileRes.json();
       return res.status(200).json(data);
     }
