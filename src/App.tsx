@@ -1031,8 +1031,6 @@ function App() {
               ...employee,
               name: nameStr,
               daysWorked: effectiveMonthDays,
-              pfOptIn: false,
-              esiOptIn: false,
             };
           }
           return { ...employee, name: nameStr };
@@ -1845,7 +1843,6 @@ function App() {
                                     <button
                                       type="button"
                                       className={row.pfOptIn ? "toggle-on" : "toggle-off"}
-                                      disabled={isSpecial}
                                       onClick={() => updateEmployee(row.id, "pfOptIn", !row.pfOptIn)}
                                     >
                                       {row.pfOptIn ? "Turn Off" : "Turn On"}
@@ -1858,7 +1855,6 @@ function App() {
                                     <button
                                       type="button"
                                       className={row.esiOptIn ? "toggle-on" : "toggle-off"}
-                                      disabled={isSpecial}
                                       onClick={() => updateEmployee(row.id, "esiOptIn", !row.esiOptIn)}
                                     >
                                       {row.esiOptIn ? "Turn Off" : "Turn On"}
