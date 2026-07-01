@@ -1468,15 +1468,17 @@ function App() {
               onChange={(event) => {
                 const val = parseInt(event.target.value, 10);
                 if (!isNaN(val)) {
-                  const clamped = Math.max(1, Math.min(31, val));
-                  setMonthDays(clamped);
-                  setEmployees((current) =>
-                    current.map((emp) => ({
-                      ...emp,
-                      daysWorked: Math.min(clamped, emp.daysWorked),
-                    }))
-                  );
+                  setMonthDays(Math.max(1, Math.min(31, val)));
                 }
+              }}
+              onBlur={() => {
+                // Clamp all employees' days worked ONLY when the user finishes editing (focus leaves the input field)
+                setEmployees((current) =>
+                  current.map((emp) => ({
+                    ...emp,
+                    daysWorked: Math.min(effectiveMonthDays, emp.daysWorked),
+                  }))
+                );
               }}
             />
           </label>
