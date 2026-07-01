@@ -1696,6 +1696,15 @@ td input {
   to { transform: translateY(0); opacity: 1; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
 /* Scrollbars for charts and modal */
 .chart-scroll-area::-webkit-scrollbar,
 .attendance-table-wrap::-webkit-scrollbar,

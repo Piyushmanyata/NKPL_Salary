@@ -22,19 +22,15 @@ import {
   Database,
   Cloud,
   Wifi,
-  WifiOff,
   Building2,
 } from "lucide-react";
 import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import { sampleEmployees } from "./sampleEmployees";
 import {
   saveMonthData,
   getMonthData,
   getAllMonthLabels,
-  deleteMonthData,
   getCloudConfig,
-  saveCloudConfig,
   CloudConfig
 } from "./db";
 import {
@@ -158,6 +154,10 @@ const htmlEscape = (value: string | number) =>
     .replace(/"/g, "&quot;");
 const booleanValue = (value: unknown) =>
   value === true || value === "true" || value === "yes" || value === "on" || value === 1;
+// Neutralize spreadsheet formula injection: a free-text name starting with
+// =, +, -, or @ would otherwise execute as a formula when the exported
+// CSV/Excel file is opened. Prefixing with an apostrophe forces text.
+const sanitizeSpreadsheetCell = (value: string) => (/^[=+\-@]/.test(value) ? `'${value}` : value);
 
 const monthNames = [
   "january",
@@ -415,10 +415,6 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
 function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const pfActive = row.pfOptIn;
   const esiActive = row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT;
-  const salaryPerMonthBase = Math.max(
-    0,
-    numberValue(row.salaryPerMonth) - (numberValue(row.salaryPerMonth) / monthDays) * row.absentDays,
-  );
 
   if (!pfActive) {
     return buildReferenceOfficialRow(row);
@@ -723,9 +719,9 @@ function App() {
   const [attendanceData, setAttendanceData] = useState<AttendanceEmployee[] | null>(null);
   const [attendanceMonth, setAttendanceMonth] = useState<string>("");
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
-  const [selectedAttendanceEmpId, setSelectedAttendanceEmpId] = useState<string | null>(null);
   const attendanceFileRef = useRef<HTMLInputElement>(null);
   const effectiveMonthDays = clampMonthDays(monthDays);
+  const employeesRef = useRef(employees);
 
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
@@ -738,6 +734,7 @@ function App() {
   const [copySourceMonth, setCopySourceMonth] = useState("");
   const prevMonthRef = useRef(monthLabel);
   const prevCompanyRef = useRef(activeCompany);
+  const justLoadedRef = useRef(false);
 
   // Cloud Database Sync settings
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -754,30 +751,47 @@ function App() {
     }, 4000);
   };
 
+  // Keep a ref to the latest employees so the default-attendance loader below can
+  // match names without needing `employees` in its dependency array (adding it
+  // there caused a full re-fetch + re-parse of MAY.xls on every keystroke, which
+  // also silently wiped out any manual attendance overrides the user had made).
+  useEffect(() => {
+    employeesRef.current = employees;
+  }, [employees]);
+
   useEffect(() => {
     // The bundled MAY.xls demo attendance file only ever belonged to NKPL;
     // other companies upload their own attendance file via the UI instead.
+    // Switching away from NKPL clears attendanceData below, so this always
+    // starts from a clean slate for the newly active company.
     if (activeCompany !== "NKPL") {
       return;
     }
+    let cancelled = false;
     async function loadDefaultAttendance() {
       try {
         const response = await fetch("/MAY.xls");
         if (response.ok) {
           const buffer = await response.arrayBuffer();
+          const XLSX = await import("xlsx");
           const workbook = XLSX.read(buffer, { type: "array" });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-          const parsed = parseAttendanceExcel(rows, employees);
-          setAttendanceData(parsed.employees);
-          setAttendanceMonth(parsed.monthLabel);
+          const parsed = parseAttendanceExcel(rows, employeesRef.current);
+          if (!cancelled) {
+            setAttendanceData(parsed.employees);
+            setAttendanceMonth(parsed.monthLabel);
+          }
         }
       } catch (err) {
         console.error("Error loading default MAY.xls file:", err);
       }
     }
     loadDefaultAttendance();
-  }, [employees, activeCompany]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCompany]);
 
   const salaryRows = useMemo(
     () =>
@@ -902,7 +916,11 @@ function App() {
       const gross = officialRows.reduce((total, row) => total + row.grossPayable, 0);
       const net = officialRows.reduce((total, row) => total + row.netPayable, 0);
       const pf = officialRows.reduce((total, row) => total + row.pf, 0);
-      const employerPf = officialRows.reduce((total, row) => total + (row.pf > 0 ? roundMoney(row.monthlyBasic * PF_RATE) : 0), 0);
+      // Employer PF mirrors employee PF in this model (both 12% of basic, capped
+      // at PF_BASIC_LIMIT) -- see calculateSalary. Reusing `pf` here (instead of
+      // recomputing from monthlyBasic without the cap) keeps this in sync with
+      // that formula and avoids overstating employer cost for high-basic rows.
+      const employerPf = pf;
       const esi = officialRows.reduce((total, row) => total + row.esi, 0);
       const professionalTax = officialRows.reduce((total, row) => total + row.professionalTax, 0);
       const employerEsi = officialRows.reduce((total, row) => total + (row.esi > 0 ? roundMoney(row.monthlyBasic * ESI_EMPLOYER_RATE) : 0), 0);
@@ -1038,20 +1056,6 @@ function App() {
     });
   };
 
-  const resetOfficialInputs = (id: string) => {
-    setEmployees((current) =>
-      current.map((employee) =>
-        employee.id === id
-          ? {
-              ...employee,
-              officialAttendance: undefined,
-              officialBonus: undefined,
-            }
-          : employee,
-      )
-    );
-  };
-
   const addEmployee = () => {
     setQuery("");
     const newEmp = blankEmployee(effectiveMonthDays);
@@ -1079,6 +1083,12 @@ function App() {
     setCompanyName(loadCompanyLabel(next));
     setMonthLabel(cfg.label);
     setMonthDays(cfg.days);
+    // Attendance data belongs to the company it was loaded/uploaded for; clear it
+    // so switching companies never shows one company's attendance audit against
+    // another company's employee list.
+    setAttendanceData(null);
+    setAttendanceMonth("");
+    setIsAttendanceModalOpen(false);
   };
 
   // Persist the active company selection and its display label
@@ -1143,6 +1153,7 @@ function App() {
         const data = await getMonthData(activeCompany, normalized);
         if (!active) return;
         if (data) {
+          justLoadedRef.current = true;
           setEmployees(data.employees);
           setMonthDays(data.days);
         } else {
@@ -1174,6 +1185,12 @@ function App() {
   // Auto-save changes to the database (with 500ms debounce to optimize writes)
   useEffect(() => {
     if (dbLoading || showNoDataModal) return;
+    // Skip the save that would otherwise immediately follow a fresh load --
+    // there's nothing new to persist, and it just costs a redundant write.
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      return;
+    }
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
 
@@ -1258,11 +1275,31 @@ function App() {
     if (inferred) setMonthDays(inferred);
   };
 
+  // Close whichever modal is open on Escape, matching the explicit close/cancel
+  // action each modal already exposes via its own button.
+  useEffect(() => {
+    if (!isAttendanceModalOpen && !isDbModalOpen && !showNoDataModal) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (isDbModalOpen) {
+        setIsDbModalOpen(false);
+      } else if (isAttendanceModalOpen) {
+        setIsAttendanceModalOpen(false);
+      } else if (showNoDataModal) {
+        handleCancelNoData();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAttendanceModalOpen, isDbModalOpen, showNoDataModal]);
+
   const exportRows =
     sheetMode === "main"
       ? officialRows.map((row, index) => ({
           "Sl No": index + 1,
-          "Employee Name": row.name,
+          "Employee Name": sanitizeSpreadsheetCell(row.name),
           "Source Category": row.sourceCategory,
           "Wage Category": row.wageCategory,
           "Employee Types": row.employeeTypes,
@@ -1282,7 +1319,7 @@ function App() {
         }))
       : salaryRows.map((row, index) => ({
           "Sl No": index + 1,
-          "Employee Name": row.name,
+          "Employee Name": sanitizeSpreadsheetCell(row.name),
           Category: normalizeWageCategory(row.category, row.monthlySalary),
           "Basic Percent": row.basicPercent,
           "Total Salary": roundMoney(row.monthlySalary),
@@ -1362,6 +1399,7 @@ function App() {
 
     try {
       const buffer = await file.arrayBuffer();
+      const XLSX = await import("xlsx");
       const workbook = XLSX.read(buffer, { type: "array" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -1436,10 +1474,22 @@ function App() {
               className="ghost-button"
               type="button"
               onClick={() => setIsDbModalOpen(true)}
-              title={cloudConfig.enabled ? "Cloud database connected" : "Local database active"}
+              title={
+                dbLoading
+                  ? "Syncing with cloud database..."
+                  : cloudConfig.enabled
+                    ? "Cloud database connected"
+                    : "Local database active"
+              }
             >
-              {cloudConfig.enabled ? <Cloud size={17} style={{ color: "#2563eb" }} /> : <Database size={17} />}
-              Database {cloudConfig.enabled ? "Cloud" : "Local"}
+              {dbLoading ? (
+                <RefreshCw size={17} className="spin-icon" style={{ color: "#2563eb" }} />
+              ) : cloudConfig.enabled ? (
+                <Cloud size={17} style={{ color: "#2563eb" }} />
+              ) : (
+                <Database size={17} />
+              )}
+              Database {dbLoading ? "Syncing..." : cloudConfig.enabled ? "Cloud" : "Local"}
             </button>
             <button className="primary-button" type="button" onClick={exportWorkbook}>
               <FileSpreadsheet size={17} />
@@ -2087,8 +2137,12 @@ function App() {
       )}
 
       {isDbModalOpen && (
-        <div className="attendance-overlay">
-          <div className="attendance-modal" style={{ maxWidth: "600px", height: "auto", padding: "28px" }}>
+        <div className="attendance-overlay" onClick={() => setIsDbModalOpen(false)}>
+          <div
+            className="attendance-modal"
+            style={{ maxWidth: "600px", height: "auto", padding: "28px" }}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <div>
                 <span className="modal-eyebrow">Database Settings</span>
@@ -2174,6 +2228,7 @@ function AttendanceCheckerModal({
     if (!file) return;
     try {
       const buffer = await file.arrayBuffer();
+      const XLSX = await import("xlsx");
       const workbook = XLSX.read(buffer, { type: "array" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -2320,8 +2375,8 @@ function AttendanceCheckerModal({
   }, [data, chartSort, activeChartTab]);
 
   return (
-    <div className="attendance-overlay">
-      <div className="attendance-modal">
+    <div className="attendance-overlay" onClick={onClose}>
+      <div className="attendance-modal" onClick={(event) => event.stopPropagation()}>
         <header className="attendance-header">
           <div>
             <span className="modal-eyebrow">Data Auditor</span>
