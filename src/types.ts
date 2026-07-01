@@ -13,6 +13,7 @@ export type EmployeeInput = {
   otherDeduction: number;
   officialAttendance?: number;
   officialBonus?: number;
+  specialBonus?: number | null;
   performanceBonus?: number | null;
 };
 
@@ -26,6 +27,8 @@ export type SalaryRow = EmployeeInput & {
   hra: number;
   travelAllowance: number;
   performanceBonus: number;
+  specialBonus: number;
+  grossPayable: number;
   pfOptIn: boolean;
   esiOptIn: boolean;
   employeePf: number;

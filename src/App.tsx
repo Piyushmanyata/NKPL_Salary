@@ -49,6 +49,7 @@ import {
   clampDays,
   clampMonthDays,
   currency,
+  isSpecialEmployee,
   numberValue,
   roundMoney,
   uid,
@@ -106,6 +107,7 @@ type OfficialRow = {
   monthlyTravelAllowance: number;
   attendance: number;
   bonus: number;
+  specialBonus: number;
   grossPayable: number;
   pf: number;
   esi: number;
@@ -132,6 +134,7 @@ const blankEmployee = (monthDays = WORKING_DAYS): EmployeeInput => ({
   advance: undefined,
   otherDeduction: 0,
   performanceBonus: undefined,
+  specialBonus: undefined,
 });
 
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
@@ -272,6 +275,7 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     officialAttendance: row.officialAttendance !== undefined ? numberValue(row.officialAttendance) : undefined,
     officialBonus: row.officialBonus !== undefined ? numberValue(row.officialBonus) : undefined,
     performanceBonus: row.performanceBonus !== undefined && row.performanceBonus !== null && String(row.performanceBonus).trim() !== "" ? numberValue(row.performanceBonus) : undefined,
+    specialBonus: row.specialBonus !== undefined && row.specialBonus !== null && String(row.specialBonus).trim() !== "" ? numberValue(row.specialBonus) : undefined,
   };
 };
 
@@ -371,6 +375,7 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
   const wageCategory = classifyWageCategory(row);
   const rule = wageRules[wageCategory];
   const bonus = roundMoney(row.performanceBonus);
+  const specialBonus = roundMoney(row.specialBonus);
   const esiActive = row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT;
   const esi = esiActive ? roundMoney(row.basicSalary * ESI_RATE) : 0;
   const targetGross = Math.max(
@@ -382,10 +387,10 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
       - (row.advance || 0) +
       row.otherDeduction,
   );
-  const remainingGross = Math.max(0, targetGross - row.basicSalary - bonus);
+  const remainingGross = Math.max(0, targetGross - row.basicSalary - bonus - specialBonus);
   const monthlyHra = roundMoney(remainingGross * HRA_SHARE_OF_BALANCE);
   const monthlyTravelAllowance = roundMoney(remainingGross - monthlyHra);
-  const grossPayable = roundMoney(row.basicSalary + monthlyHra + monthlyTravelAllowance + bonus);
+  const grossPayable = roundMoney(row.basicSalary + monthlyHra + monthlyTravelAllowance + bonus + specialBonus);
 
   return {
     id: row.id,
@@ -399,6 +404,7 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
     monthlyTravelAllowance,
     attendance: row.daysWorked,
     bonus,
+    specialBonus,
     officialAttendance: row.officialAttendance,
     officialBonus: row.officialBonus,
     grossPayable,
@@ -425,6 +431,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const presentDays = clampDays(row.daysWorked, monthDays);
   const absentDays = Math.max(0, monthDays - presentDays);
   const bonus = roundMoney(row.performanceBonus);
+  const specialBonus = roundMoney(row.specialBonus);
 
   const minCandidate = row.daysWorked > 0 ? 1 : 0;
   const formulaAttendance = Math.max(
@@ -447,7 +454,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
         row.otherDeduction,
     );
 
-    if (candidateGross >= candidateBasic + bonus || candidate === minCandidate) {
+    if (candidateGross >= candidateBasic + bonus + specialBonus || candidate === minCandidate) {
       attendance = candidate;
       break;
     }
@@ -461,10 +468,10 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     0,
     row.netPayable + pf + esi + row.professionalTax - (row.advance || 0) + row.otherDeduction,
   );
-  const remainingGross = Math.max(0, targetGross - monthlyBasic - bonus);
+  const remainingGross = Math.max(0, targetGross - monthlyBasic - bonus - specialBonus);
   const monthlyHra = roundMoney(remainingGross * HRA_SHARE_OF_BALANCE);
   const monthlyTravelAllowance = roundMoney(remainingGross - monthlyHra);
-  const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
+  const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus + specialBonus);
   const netPayable = roundMoney(
     finalGross - pf - esi - row.professionalTax + (row.advance || 0) - row.otherDeduction,
   );
@@ -481,6 +488,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     monthlyTravelAllowance,
     attendance,
     bonus,
+    specialBonus,
     officialAttendance: undefined,
     officialBonus: undefined,
     grossPayable: finalGross,
@@ -943,7 +951,7 @@ function App() {
         cost,
       };
     } else {
-      const gross = sum(salaryRows, "earnedSalary");
+      const gross = sum(salaryRows, "grossPayable");
       const net = sum(salaryRows, "netPayable");
       const pf = sum(salaryRows, "employeePf");
       const employerPf = sum(salaryRows, "employerPf");
@@ -1015,8 +1023,23 @@ function App() {
           return employee;
         }
 
-        if (field === "name" || field === "category") {
-          return { ...employee, [field]: String(value) };
+        if (field === "name") {
+          const nameStr = String(value);
+          const isSpecial = isSpecialEmployee(nameStr);
+          if (isSpecial) {
+            return {
+              ...employee,
+              name: nameStr,
+              daysWorked: effectiveMonthDays,
+              pfOptIn: false,
+              esiOptIn: false,
+            };
+          }
+          return { ...employee, name: nameStr };
+        }
+
+        if (field === "category") {
+          return { ...employee, category: String(value) };
         }
 
         if (field === "pfOptIn" || field === "esiOptIn") {
@@ -1044,6 +1067,14 @@ function App() {
           return {
             ...employee,
             performanceBonus: val,
+          };
+        }
+
+        if (field === "specialBonus") {
+          const val = value === undefined || value === "" ? undefined : Number(value);
+          return {
+            ...employee,
+            specialBonus: val,
           };
         }
 
@@ -1309,6 +1340,7 @@ function App() {
           "Travel Allowance": roundMoney(row.monthlyTravelAllowance),
           Attendance: row.attendance,
           Bonus: roundMoney(row.bonus),
+          "Special Bonus": roundMoney(row.specialBonus),
           PF: roundMoney(row.pf),
           ESI: roundMoney(row.esi),
           "P-Tax": roundMoney(row.professionalTax),
@@ -1333,9 +1365,10 @@ function App() {
           "Absent Deduction": roundMoney(row.absentDeduction),
           "Earned Salary": roundMoney(row.earnedSalary),
           "Basic Salary": roundMoney(row.basicSalary),
-          HRA: roundMoney(row.hra),
+           HRA: roundMoney(row.hra),
           "Travel Allowance": roundMoney(row.travelAllowance),
           "Performance Bonus": roundMoney(row.performanceBonus),
+          "Special Bonus": roundMoney(row.specialBonus),
           "Employee PF Deduction": roundMoney(row.employeePf),
           "Employer PF Contribution": roundMoney(row.employerPf),
           "ESI Deduction": roundMoney(row.esi),
@@ -1640,6 +1673,9 @@ function App() {
                       <th onClick={() => handleRefSort("performanceBonus")} className="sortable-th">
                         Bonus {refSortField === "performanceBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
+                      <th onClick={() => handleRefSort("specialBonus")} className="sortable-th">
+                        Special Bonus {refSortField === "specialBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
+                      </th>
                       <th onClick={() => handleRefSort("employeePf")} className="sortable-th">
                         PF {refSortField === "employeePf" && (refSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
@@ -1662,170 +1698,177 @@ function App() {
                   <tbody>
                     {sortedFilteredRows.length === 0 && (
                       <tr>
-                        <td colSpan={17} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                        <td colSpan={18} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
                           No matching employees found for "{query}" in this company.
                         </td>
                       </tr>
                     )}
-                    {sortedFilteredRows.map((row) => (
-                      <Fragment key={row.id}>
-                        <tr>
-                          <td className="name-cell">
-                            <input
-                              value={row.name}
-                              onChange={(event) => updateEmployee(row.id, "name", event.target.value)}
-                            />
-                          </td>
-                          <td>
-                            <select
-                              className="select-input"
-                              value={normalizeWageCategory(row.category, row.monthlySalary)}
-                              onChange={(event) => updateEmployee(row.id, "category", event.target.value)}
-                            >
-                              <option value="Skilled">Skilled</option>
-                              <option value="Semi-skilled">Semi-skilled</option>
-                              <option value="Unskilled">Unskilled</option>
-                            </select>
-                          </td>
-                          <td>
-                            <NumberInput
-                              value={row.daysWorked}
-                              min={0}
-                              max={effectiveMonthDays}
-                              onChange={(value) => updateEmployee(row.id, "daysWorked", value)}
-                            />
-                          </td>
-                          <td>
-                            <NumberInput
-                              className="number-input number-input--compact"
-                              value={row.extraDays}
-                              min={0}
-                              onChange={(value) => updateEmployee(row.id, "extraDays", value)}
-                            />
-                          </td>
-                          <td>{currency(row.earnedSalary)}</td>
-                          <td>{currency(row.basicSalary)}</td>
-                          <td>{currency(row.hra)}</td>
-                          <td>{currency(row.travelAllowance)}</td>
-                          <td>
-                            <NumberInput
-                              className="number-input number-input--compact"
-                              value={row.performanceBonus ?? undefined}
-                              allowBlank={true}
-                              min={0}
-                              onChange={(value) => updateEmployee(row.id, "performanceBonus", value)}
-                            />
-                          </td>
-                          <td>{currency(row.employeePf)}</td>
-                          <td>{currency(row.esi)}</td>
-                          <td>{currency(row.professionalTax)}</td>
-                          <td>
-                            <NumberInput
-                              value={row.advance ?? undefined}
-                              allowBlank={true}
-                              onChange={(value) => updateEmployee(row.id, "advance", value)}
-                            />
-                          </td>
-                          <td className="net-cell">{currency(row.netPayable)}</td>
-                          <td>
-                            <button
-                              className="icon-button"
-                              title="Employee settings"
-                              type="button"
-                              onClick={() =>
-                                setOpenSettingsId((current) => (current === row.id ? null : row.id))
-                              }
-                            >
-                              <Settings2 size={16} />
-                            </button>
-                          </td>
-                          <td>
-                            <button
-                              className="delete-button"
-                              title="Remove employee"
-                              type="button"
-                              onClick={() => removeEmployee(row.id)}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                        {openSettingsId === row.id ? (
-                          <tr className="settings-row">
-                            <td colSpan={16}>
-                              <div className="settings-panel">
-                                <div className="settings-column">
-                                  <span>Total Salary</span>
-                                  <NumberInput
-                                    value={row.monthlySalary}
-                                    min={0}
-                                    onChange={(value) => updateEmployee(row.id, "monthlySalary", value)}
-                                  />
-                                </div>
-                                <div className="settings-column">
-                                  <span>Salary/Month</span>
-                                  <NumberInput
-                                    value={row.salaryPerMonth ?? 0}
-                                    min={0}
-                                    onChange={(value) => updateEmployee(row.id, "salaryPerMonth", value)}
-                                  />
-                                </div>
-                                <div className="settings-column">
-                                  <span>TDS</span>
-                                  <NumberInput
-                                    value={row.otherDeduction}
-                                    min={0}
-                                    onChange={(value) => updateEmployee(row.id, "otherDeduction", value)}
-                                  />
-                                </div>
-                                <div className="settings-column settings-column--wide">
-                                  <span>Basic %</span>
-                                  <strong>{row.basicPercent}%</strong>
-                                  <input
-                                    className="basic-slider"
-                                    type="range"
-                                    min={MIN_BASIC_PERCENT}
-                                    max={MAX_BASIC_PERCENT}
-                                    step="1"
-                                    value={clampBasicPercent(row.basicPercent)}
-                                    onChange={(event) =>
-                                      updateEmployee(row.id, "basicPercent", Number(event.target.value))
-                                    }
-                                  />
-                                </div>
-                                <div className="settings-column">
-                                  <span>PF</span>
-                                  <strong>{row.pfOptIn ? "On" : "Off"}</strong>
-                                  <small>{row.basicSalary > PF_BASIC_LIMIT ? `PF caps at ${currency(PF_BASIC_LIMIT * PF_RATE)} (12% of ${currency(PF_BASIC_LIMIT)} Basic)` : "Toggle controls employee PF choice"}</small>
-                                  <button
-                                    type="button"
-                                    className={row.pfOptIn ? "toggle-on" : "toggle-off"}
-                                    onClick={() => updateEmployee(row.id, "pfOptIn", !row.pfOptIn)}
-                                  >
-                                    {row.pfOptIn ? "Turn Off" : "Turn On"}
-                                  </button>
-                                </div>
-                                <div className="settings-column">
-                                  <span>ESI</span>
-                                  <strong>{row.esiOptIn ? "On" : "Off"}</strong>
-                                  <small>{row.earnedSalary > ESI_GROSS_LIMIT ? `ESI is disabled above ${currency(ESI_GROSS_LIMIT)} Gross salary` : "Toggle controls employee ESI choice"}</small>
-                                  <button
-                                    type="button"
-                                    className={row.esiOptIn ? "toggle-on" : "toggle-off"}
-                                    onClick={() => updateEmployee(row.id, "esiOptIn", !row.esiOptIn)}
-                                  >
-                                    {row.esiOptIn ? "Turn Off" : "Turn On"}
-                                  </button>
-                                </div>
-                              </div>
+                    {sortedFilteredRows.map((row) => {
+                      const isSpecial = isSpecialEmployee(row.name);
+                      return (
+                        <Fragment key={row.id}>
+                          <tr>
+                            <td className="name-cell">
+                              <input
+                                value={row.name}
+                                onChange={(event) => updateEmployee(row.id, "name", event.target.value)}
+                              />
+                            </td>
+                            <td>
+                              <select
+                                className="select-input"
+                                value={normalizeWageCategory(row.category, row.monthlySalary)}
+                                onChange={(event) => updateEmployee(row.id, "category", event.target.value)}
+                              >
+                                <option value="Skilled">Skilled</option>
+                                <option value="Semi-skilled">Semi-skilled</option>
+                                <option value="Unskilled">Unskilled</option>
+                              </select>
+                            </td>
+                            <td>
+                              <NumberInput
+                                value={row.daysWorked}
+                                min={0}
+                                max={effectiveMonthDays}
+                                disabled={isSpecial}
+                                onChange={(value) => updateEmployee(row.id, "daysWorked", value)}
+                              />
+                            </td>
+                            <td>
+                              <NumberInput
+                                className="number-input number-input--compact"
+                                value={row.extraDays}
+                                min={0}
+                                onChange={(value) => updateEmployee(row.id, "extraDays", value)}
+                              />
+                            </td>
+                            <td>{currency(row.earnedSalary)}</td>
+                            <td>{currency(row.basicSalary)}</td>
+                            <td>{currency(row.hra)}</td>
+                            <td>{currency(row.travelAllowance)}</td>
+                            <td>{currency(row.performanceBonus)}</td>
+                            <td>
+                              <NumberInput
+                                className="number-input number-input--compact"
+                                value={row.specialBonus ?? undefined}
+                                allowBlank={true}
+                                min={0}
+                                onChange={(value) => updateEmployee(row.id, "specialBonus", value)}
+                              />
+                            </td>
+                            <td>{currency(row.employeePf)}</td>
+                            <td>{currency(row.esi)}</td>
+                            <td>{currency(row.professionalTax)}</td>
+                            <td>
+                              <NumberInput
+                                value={row.advance ?? undefined}
+                                allowBlank={true}
+                                onChange={(value) => updateEmployee(row.id, "advance", value)}
+                              />
+                            </td>
+                            <td className="net-cell">{currency(row.netPayable)}</td>
+                            <td>
+                              <button
+                                className="icon-button"
+                                title="Employee settings"
+                                type="button"
+                                onClick={() =>
+                                  setOpenSettingsId((current) => (current === row.id ? null : row.id))
+                                }
+                              >
+                                <Settings2 size={16} />
+                              </button>
+                            </td>
+                            <td>
+                              <button
+                                className="delete-button"
+                                title="Remove employee"
+                                type="button"
+                                onClick={() => removeEmployee(row.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </td>
                           </tr>
-                        ) : null}
-                      </Fragment>
-                    ))}
+                          {openSettingsId === row.id ? (
+                            <tr className="settings-row">
+                              <td colSpan={18}>
+                                <div className="settings-panel">
+                                  <div className="settings-column">
+                                    <span>Total Salary</span>
+                                    <NumberInput
+                                      value={row.monthlySalary}
+                                      min={0}
+                                      onChange={(value) => updateEmployee(row.id, "monthlySalary", value)}
+                                    />
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Salary/Month</span>
+                                    <NumberInput
+                                      value={row.salaryPerMonth ?? 0}
+                                      min={0}
+                                      onChange={(value) => updateEmployee(row.id, "salaryPerMonth", value)}
+                                    />
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>TDS</span>
+                                    <NumberInput
+                                      value={row.otherDeduction}
+                                      min={0}
+                                      onChange={(value) => updateEmployee(row.id, "otherDeduction", value)}
+                                    />
+                                  </div>
+                                  <div className="settings-column settings-column--wide">
+                                    <span>Basic %</span>
+                                    <strong>{row.basicPercent}%</strong>
+                                    <input
+                                      className="basic-slider"
+                                      type="range"
+                                      min={MIN_BASIC_PERCENT}
+                                      max={MAX_BASIC_PERCENT}
+                                      step="1"
+                                      value={clampBasicPercent(row.basicPercent)}
+                                      onChange={(event) =>
+                                        updateEmployee(row.id, "basicPercent", Number(event.target.value))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>PF</span>
+                                    <strong>{row.pfOptIn ? "On" : "Off"}</strong>
+                                    <small>{row.basicSalary > PF_BASIC_LIMIT ? `PF caps at ${currency(PF_BASIC_LIMIT * PF_RATE)} (12% of ${currency(PF_BASIC_LIMIT)} Basic)` : "Toggle controls employee PF choice"}</small>
+                                    <button
+                                      type="button"
+                                      className={row.pfOptIn ? "toggle-on" : "toggle-off"}
+                                      disabled={isSpecial}
+                                      onClick={() => updateEmployee(row.id, "pfOptIn", !row.pfOptIn)}
+                                    >
+                                      {row.pfOptIn ? "Turn Off" : "Turn On"}
+                                    </button>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>ESI</span>
+                                    <strong>{row.esiOptIn ? "On" : "Off"}</strong>
+                                    <small>{row.earnedSalary > ESI_GROSS_LIMIT ? `ESI is disabled above ${currency(ESI_GROSS_LIMIT)} Gross salary` : "Toggle controls employee ESI choice"}</small>
+                                    <button
+                                      type="button"
+                                      className={row.esiOptIn ? "toggle-on" : "toggle-off"}
+                                      disabled={isSpecial}
+                                      onClick={() => updateEmployee(row.id, "esiOptIn", !row.esiOptIn)}
+                                    >
+                                      {row.esiOptIn ? "Turn Off" : "Turn On"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                     {!filteredRows.length ? (
                       <tr className="empty-row">
-                        <td colSpan={16}>
+                        <td colSpan={18}>
                           <div>
                             <Search size={18} />
                             <strong>No employees match this search.</strong>
@@ -1864,6 +1907,9 @@ function App() {
                       <th onClick={() => handleOfficialSort("bonus")} className="sortable-th">
                         Bonus {officialSortField === "bonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
+                      <th onClick={() => handleOfficialSort("specialBonus")} className="sortable-th">
+                        Special Bonus {officialSortField === "specialBonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
+                      </th>
                       <th onClick={() => handleOfficialSort("pf")} className="sortable-th">
                         PF {officialSortField === "pf" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
@@ -1884,7 +1930,7 @@ function App() {
                   <tbody>
                     {sortedFilteredOfficialRows.length === 0 && (
                       <tr>
-                        <td colSpan={14} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                        <td colSpan={15} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
                           No matching employees found for "{query}" in this company.
                         </td>
                       </tr>
@@ -1906,6 +1952,7 @@ function App() {
                         <td>{currency(row.monthlyTravelAllowance)}</td>
                         <td>{row.attendance}</td>
                         <td>{currency(row.bonus)}</td>
+                        <td>{currency(row.specialBonus)}</td>
                         <td>{currency(row.pf)}</td>
                         <td>{currency(row.esi)}</td>
                         <td>{currency(row.professionalTax)}</td>
@@ -1915,7 +1962,7 @@ function App() {
                     ))}
                     {!filteredOfficialRows.length ? (
                       <tr className="empty-row">
-                        <td colSpan={13}>
+                        <td colSpan={15}>
                           <div>
                             <Search size={18} />
                             <strong>No official rows match this search.</strong>
@@ -3015,6 +3062,7 @@ function NumberInput({
   min,
   max,
   allowBlank = false,
+  disabled = false,
 }: {
   value: number | undefined | "";
   onChange: (value: number | undefined) => void;
@@ -3022,6 +3070,7 @@ function NumberInput({
   min?: number;
   max?: number;
   allowBlank?: boolean;
+  disabled?: boolean;
 }) {
   const displayValue =
     allowBlank && (value === undefined || value === "") ? "" : Number.isFinite(value) ? value : 0;
@@ -3032,6 +3081,7 @@ function NumberInput({
       min={min}
       max={max}
       value={displayValue}
+      disabled={disabled}
       onChange={(event) => {
         const val = event.target.value;
         if (allowBlank && val === "") {

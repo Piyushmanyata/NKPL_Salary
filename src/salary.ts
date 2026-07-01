@@ -63,6 +63,18 @@ export function calculateProfessionalTax(monthlyWages: number) {
   return 200;
 }
 
+export function isSpecialEmployee(name: string): boolean {
+  const specialNames = [
+    "anjali sodhani",
+    "bindu chirania",
+    "punit sodhani",
+    "rahul somani",
+    "rishi jhajharia",
+    "sonal goenka"
+  ];
+  return specialNames.includes(name.trim().toLowerCase());
+}
+
 export function calculateSalary(
   input: EmployeeInput,
   options?: {
@@ -77,18 +89,21 @@ export function calculateSalary(
   );
   const monthlySalary = Math.max(0, numberValue(input.monthlySalary));
   const salaryPerMonth = Math.max(0, numberValue(input.salaryPerMonth ?? monthlySalary * basicShare));
-  const daysWorked = clampDays(numberValue(input.daysWorked), workingDays);
+  
+  const isSpecial = isSpecialEmployee(input.name);
+  const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
   const extraDays = Math.max(0, numberValue(input.extraDays));
-  const absentDays = Math.max(0, workingDays - daysWorked);
-  const requestedPfOptIn = input.pfOptIn !== false;
-  const requestedEsiOptIn = input.esiOptIn !== false;
+  const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
+  const requestedPfOptIn = isSpecial ? false : (input.pfOptIn !== false);
+  const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
   const advance = numberValue(input.advance);
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = monthlySalary / workingDays;
   const perDaySalaryPerMonth = salaryPerMonth / workingDays;
-  const absentDeduction = perDayWage * absentDays;
-  const salaryPerMonthBase = Math.max(0, salaryPerMonth - perDaySalaryPerMonth * absentDays);
-  const performanceBonus = input.performanceBonus !== undefined && input.performanceBonus !== null ? numberValue(input.performanceBonus) : (perDayWage * extraDays);
+  const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
+  const salaryPerMonthBase = isSpecial ? salaryPerMonth : Math.max(0, salaryPerMonth - perDaySalaryPerMonth * absentDays);
+  const performanceBonus = perDayWage * extraDays;
+  const specialBonus = Math.max(0, numberValue(input.specialBonus));
   const earnedSalary = salaryPerMonthBase;
   const grossBeforeDeduction = earnedSalary;
   const baseBasicSalary = grossBeforeDeduction * basicShare;
@@ -111,8 +126,8 @@ export function calculateSalary(
   const esi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_RATE) : 0;
   const employerEsi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_EMPLOYER_RATE) : 0;
   
-  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus;
-  const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
+  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
+  const professionalTax = isSpecial || otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax + advance - otherDeduction;
 
   return {
@@ -134,6 +149,8 @@ export function calculateSalary(
     hra,
     travelAllowance,
     performanceBonus,
+    specialBonus,
+    grossPayable,
     employeePf,
     employerPf,
     esi,
@@ -143,6 +160,7 @@ export function calculateSalary(
     totalCost: grossPayable + employerPf + employerEsi,
   };
 }
+
 
 export function roundMoney(value: number) {
   return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
