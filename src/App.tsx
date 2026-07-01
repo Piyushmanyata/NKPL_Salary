@@ -1059,15 +1059,6 @@ function App() {
     }
   };
 
-  const resetSample = () => {
-    if (activeCompany !== "NKPL") {
-      showToast(`No bundled sample data for ${companyName || activeCompany}. Add employees manually.`, "error");
-      return;
-    }
-    setQuery("");
-    updateEmployees(sampleEmployees.map((employee, index) => sanitizeEmployee(employee, index, effectiveMonthDays)!));
-    showToast("Reset payroll sheet to sample data");
-  };
 
   const handleSwitchCompany = (next: CompanyCode) => {
     if (next === activeCompany) return;
@@ -1551,9 +1542,6 @@ function App() {
               <div className="panel-actions">
                 <button className="icon-button" title="Print salary sheet" type="button" onClick={() => window.print()}>
                   <Printer size={17} />
-                </button>
-                <button className="icon-button" title="Reset to workbook sample" type="button" onClick={resetSample}>
-                  <RefreshCw size={17} />
                 </button>
               </div>
             </div>
