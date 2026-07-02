@@ -1753,7 +1753,7 @@ function App() {
                         Bonus {refSortField === "performanceBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                       <th onClick={() => handleRefSort("specialBonus")} className="sortable-th">
-                        Special Bonus {refSortField === "specialBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
+                        Sp Bonus {refSortField === "specialBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                       <th onClick={() => handleRefSort("employeePf")} className="sortable-th">
                         PF {refSortField === "employeePf" && (refSortDirection === "asc" ? " ↑" : " ↓")}
@@ -1980,8 +1980,8 @@ function App() {
                       <th onClick={() => handleOfficialSort("wageCategory")} className="sortable-th">
                         Category {officialSortField === "wageCategory" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
-                      <th onClick={() => handleOfficialSort("allowedBasic")} className="sortable-th">
-                        Allowed Basic {officialSortField === "allowedBasic" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
+                      <th onClick={() => handleOfficialSort("attendance")} className="sortable-th">
+                        Attendance {officialSortField === "attendance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                       <th onClick={() => handleOfficialSort("monthlyBasic")} className="sortable-th">
                         Official Basic {officialSortField === "monthlyBasic" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
@@ -1992,14 +1992,11 @@ function App() {
                       <th onClick={() => handleOfficialSort("monthlyTravelAllowance")} className="sortable-th">
                         TA {officialSortField === "monthlyTravelAllowance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
-                      <th onClick={() => handleOfficialSort("attendance")} className="sortable-th">
-                        Attendance {officialSortField === "attendance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
                       <th onClick={() => handleOfficialSort("bonus")} className="sortable-th">
                         Bonus {officialSortField === "bonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                       <th onClick={() => handleOfficialSort("specialBonus")} className="sortable-th">
-                        Special Bonus {officialSortField === "specialBonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
+                        Sp Bonus {officialSortField === "specialBonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                       <th onClick={() => handleOfficialSort("pf")} className="sortable-th">
                         PF {officialSortField === "pf" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
@@ -2021,7 +2018,7 @@ function App() {
                   <tbody>
                     {sortedFilteredOfficialRows.length === 0 && (
                       <tr>
-                        <td colSpan={15} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                        <td colSpan={14} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
                           No matching employees found for "{query}" in this company.
                         </td>
                       </tr>
@@ -2037,11 +2034,10 @@ function App() {
                             </div>
                           )}
                         </td>
-                        <td>{currency(row.allowedBasic)}</td>
+                        <td>{row.attendance}</td>
                         <td>{currency(row.monthlyBasic)}</td>
                         <td>{currency(row.monthlyHra)}</td>
                         <td>{currency(row.monthlyTravelAllowance)}</td>
-                        <td>{row.attendance}</td>
                         <td>{currency(row.bonus)}</td>
                         <td>{currency(row.specialBonus)}</td>
                         <td>{currency(row.pf)}</td>
