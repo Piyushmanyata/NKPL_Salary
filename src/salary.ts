@@ -110,6 +110,11 @@ export function calculateSalary(
   // already-reduced base, so Basic actually comes out to basicShare of the
   // full salary at full attendance instead of basicShare^2.
   const earnedSalary = isSpecial ? monthlySalary : Math.max(0, monthlySalary - absentDeduction);
+  
+  // Prorate daily bonus according to present days
+  const earnedBonus = isSpecial ? dailyBonus : roundMoney(daysWorked * bonusPerDay);
+  const proratedTotalSalary = earnedSalary + earnedBonus;
+
   const grossBeforeDeduction = earnedSalary;
   const baseBasicSalary = grossBeforeDeduction * basicShare;
   
@@ -120,7 +125,9 @@ export function calculateSalary(
   const esiOptIn = requestedEsiOptIn && grossBeforeDeduction <= ESI_GROSS_LIMIT;
   
   const basicSalary = Math.min(grossBeforeDeduction, Math.max(0, baseBasicSalary));
-  const remainingSalary = Math.max(0, monthlySalary - absentDeduction - basicSalary);
+  
+  // HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio.
+  const remainingSalary = Math.max(0, proratedTotalSalary - basicSalary);
   const hra = remainingSalary * HRA_SHARE_OF_BALANCE;
   const travelAllowance = remainingSalary * TA_SHARE_OF_BALANCE;
   
@@ -131,7 +138,7 @@ export function calculateSalary(
   const esi = esiOptIn ? roundMoney(earnedSalary * ESI_RATE) : 0;
   const employerEsi = esiOptIn ? roundMoney(earnedSalary * ESI_EMPLOYER_RATE) : 0;
   
-  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus + dailyBonus;
+  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
   const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax + advance - otherDeduction;
 
@@ -141,7 +148,7 @@ export function calculateSalary(
     monthlySalary,
     salaryPerDay,
     bonusPerDay,
-    dailyBonus,
+    dailyBonus: earnedBonus,
     totalSalary,
     daysWorked,
     extraDays,
