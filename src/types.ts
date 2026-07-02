@@ -51,7 +51,6 @@ export type SalaryRow = EmployeeInput & {
   salaryPerDay: number;
   bonusPerDay: number;
   dailyBonus: number;
-  salaryPerMonth: number;
   totalSalary: number;
   absentDays: number;
   absentDeduction: number;

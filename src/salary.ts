@@ -92,7 +92,6 @@ export function calculateSalary(
   const monthlySalary = roundMoney(workingDays * salaryPerDay);
   const dailyBonus = roundMoney(workingDays * bonusPerDay);
   const totalSalary = roundMoney(monthlySalary + dailyBonus);
-  const salaryPerMonth = roundMoney(monthlySalary * basicShare);
 
   const isSpecial = isSpecialEmployee(input.name);
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
@@ -103,12 +102,14 @@ export function calculateSalary(
   const advance = numberValue(input.advance);
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = monthlySalary / workingDays;
-  const perDaySalaryPerMonth = salaryPerMonth / workingDays;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
-  const salaryPerMonthBase = isSpecial ? salaryPerMonth : Math.max(0, salaryPerMonth - perDaySalaryPerMonth * absentDays);
   const performanceBonus = perDayWage * extraDays;
   const specialBonus = Math.max(0, numberValue(input.specialBonus));
-  const earnedSalary = salaryPerMonthBase;
+  // Earned is salary/month prorated by present days (i.e. salary/day x days
+  // worked) -- Basic % below is applied to this once, not to an
+  // already-reduced base, so Basic actually comes out to basicShare of the
+  // full salary at full attendance instead of basicShare^2.
+  const earnedSalary = isSpecial ? monthlySalary : Math.max(0, monthlySalary - absentDeduction);
   const grossBeforeDeduction = earnedSalary;
   const baseBasicSalary = grossBeforeDeduction * basicShare;
   
@@ -126,9 +127,9 @@ export function calculateSalary(
   const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   
-  // ESI is calculated on Salary/Month, adjusted for attendance.
-  const esi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_RATE) : 0;
-  const employerEsi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_EMPLOYER_RATE) : 0;
+  // ESI is calculated on Earned (salary/month adjusted for attendance).
+  const esi = esiOptIn ? roundMoney(earnedSalary * ESI_RATE) : 0;
+  const employerEsi = esiOptIn ? roundMoney(earnedSalary * ESI_EMPLOYER_RATE) : 0;
   
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus + dailyBonus;
   const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
@@ -138,7 +139,6 @@ export function calculateSalary(
     ...input,
     basicPercent: Math.round(basicShare * 100),
     monthlySalary,
-    salaryPerMonth,
     salaryPerDay,
     bonusPerDay,
     dailyBonus,
