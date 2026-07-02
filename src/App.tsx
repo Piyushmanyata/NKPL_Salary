@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { sampleEmployees } from "./sampleEmployees";
+import { juneEmployees } from "./juneEmployees";
 import {
   saveMonthData,
   getMonthData,
@@ -264,7 +265,18 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
 
 // NKPL is the only company with bundled sample/demo data; a newly added
 // company like APTUS starts blank until real employees are entered.
-const defaultEmployeesForCompany = (company: CompanyCode) => (company === "NKPL" ? sampleEmployees : []);
+const defaultEmployeesForCompany = (company: CompanyCode, monthLabel?: string) => {
+  if (company !== "NKPL") {
+    return [];
+  }
+  // NKPL's real June 2026 payroll sheet is the bundled default for that
+  // specific month; every other month falls back to the general sample
+  // roster (originally sourced from May 2026).
+  if (monthLabel && normalizeMonthLabel(monthLabel) === "June 2026") {
+    return juneEmployees;
+  }
+  return sampleEmployees;
+};
 
 // Salary/day and bonus/day are shared across every month for a given
 // employee (see api/rates.ts) -- overlay the shared rate on top of whatever
@@ -299,8 +311,8 @@ const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-const loadEmployees = (company: CompanyCode, monthDays = WORKING_DAYS) => {
-  const fallback = defaultEmployeesForCompany(company);
+const loadEmployees = (company: CompanyCode, monthDays = WORKING_DAYS, monthLabel?: string) => {
+  const fallback = defaultEmployeesForCompany(company, monthLabel);
   const stored =
     localStorage.getItem(employeesStorageKey(company)) ??
     (company === DEFAULT_COMPANY ? localStorage.getItem(legacyEmployeesStorageKey) : null);
@@ -733,7 +745,7 @@ function App() {
   const [monthLabel, setMonthLabel] = useState(initialMonthConfig.label);
   const [monthDays, setMonthDays] = useState(initialMonthConfig.days);
   const [employees, setEmployees] = useState<EmployeeInput[]>(() =>
-    loadEmployees(activeCompany, initialMonthConfig.days),
+    loadEmployees(activeCompany, initialMonthConfig.days, initialMonthConfig.label),
   );
   const [query, setQuery] = useState("");
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
@@ -1317,7 +1329,7 @@ function App() {
   const handleCreateSampleMonth = async () => {
     setShowNoDataModal(false);
     const sanitized = applyEmployeeRates(
-      defaultEmployeesForCompany(activeCompany).map(
+      defaultEmployeesForCompany(activeCompany, noDataMonth).map(
         (emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!,
       ),
       employeeRates,
@@ -1897,7 +1909,7 @@ function App() {
                                       onChange={(value) => updateEmployee(row.id, "otherDeduction", value)}
                                     />
                                   </div>
-                                  <div className="settings-column settings-column--wide">
+                                  <div className="settings-column">
                                     <span>Basic %</span>
                                     <strong>{row.basicPercent}%</strong>
                                     <input

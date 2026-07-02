@@ -57,6 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const blob = await put(`employee_rates/${bodyCompany}.json`, JSON.stringify(rates), {
         access: 'public',
         addRandomSuffix: false,
+        allowOverwrite: true,
       });
 
       return res.status(200).json(blob);
