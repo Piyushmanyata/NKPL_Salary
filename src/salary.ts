@@ -87,9 +87,13 @@ export function calculateSalary(
     MIN_BASIC_PERCENT / 100,
     Math.min(MAX_BASIC_PERCENT / 100, options?.basicShare ?? BASIC_SHARE),
   );
-  const monthlySalary = Math.max(0, numberValue(input.monthlySalary));
+  const salaryPerDay = Math.max(0, numberValue(input.salaryPerDay));
+  const bonusPerDay = Math.max(0, numberValue(input.bonusPerDay));
+  const monthlySalary = roundMoney(workingDays * salaryPerDay);
+  const dailyBonus = roundMoney(workingDays * bonusPerDay);
+  const totalSalary = roundMoney(monthlySalary + dailyBonus);
   const salaryPerMonth = Math.max(0, numberValue(input.salaryPerMonth ?? monthlySalary * basicShare));
-  
+
   const isSpecial = isSpecialEmployee(input.name);
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
   const extraDays = Math.max(0, numberValue(input.extraDays));
@@ -126,7 +130,7 @@ export function calculateSalary(
   const esi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_RATE) : 0;
   const employerEsi = esiOptIn ? roundMoney(salaryPerMonthBase * ESI_EMPLOYER_RATE) : 0;
   
-  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
+  const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus + dailyBonus;
   const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax + advance - otherDeduction;
 
@@ -135,6 +139,10 @@ export function calculateSalary(
     basicPercent: Math.round(basicShare * 100),
     monthlySalary,
     salaryPerMonth,
+    salaryPerDay,
+    bonusPerDay,
+    dailyBonus,
+    totalSalary,
     daysWorked,
     extraDays,
     absentDays,

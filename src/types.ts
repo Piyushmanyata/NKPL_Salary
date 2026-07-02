@@ -4,6 +4,8 @@ export type EmployeeInput = {
   category: string;
   monthlySalary: number;
   salaryPerMonth?: number;
+  salaryPerDay?: number;
+  bonusPerDay?: number;
   daysWorked: number;
   extraDays: number;
   basicPercent?: number;
@@ -19,6 +21,10 @@ export type EmployeeInput = {
 
 export type SalaryRow = EmployeeInput & {
   perDayWage: number;
+  salaryPerDay: number;
+  bonusPerDay: number;
+  dailyBonus: number;
+  totalSalary: number;
   absentDays: number;
   absentDeduction: number;
   basicPercent: number;

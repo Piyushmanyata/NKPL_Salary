@@ -123,21 +123,11 @@ export async function saveMonthData(
 }
 
 export async function getMonthData(company: string, monthLabel: string): Promise<MonthRecord | null> {
-  // Read local record first to check updatedAt
-  let localRecord: MonthRecord | null = null;
-  try {
-    const db = await getDB();
-    localRecord = await new Promise<MonthRecord | null>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, "readonly");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(recordId(company, monthLabel));
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
-  } catch (err) {
-    console.error("Failed to read local record for merge check:", err);
-  }
-
+  // The cloud (Vercel Blob) copy is the single source of truth so that every
+  // visitor to the site sees the same data. IndexedDB is only a same-device
+  // cache used when the network is unavailable -- it must never be allowed
+  // to shadow a fresher edit made by someone else on another device, so we
+  // no longer compare timestamps and pick "whichever is newer".
   // 1. Try to fetch from Vercel serverless cloud database first
   try {
     const response = await fetch(
@@ -146,16 +136,6 @@ export async function getMonthData(company: string, monthLabel: string): Promise
     if (response.ok) {
       const data = await response.json();
       if (data) {
-        // Compare timestamps: if local is newer, do not overwrite and return local
-        if (localRecord && localRecord.updatedAt && data.updatedAt) {
-          const localTime = new Date(localRecord.updatedAt).getTime();
-          const cloudTime = new Date(data.updatedAt).getTime();
-          if (localTime > cloudTime) {
-            console.log("Local IndexedDB data is newer than cloud data. Using local.");
-            return localRecord;
-          }
-        }
-
         const record: MonthRecord = {
           id: recordId(company, monthLabel),
           company,
@@ -312,4 +292,70 @@ export async function deleteMonthData(company: string, monthLabel: string): Prom
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
+}
+
+export interface EmployeeRate {
+  id: string;
+  name: string;
+  salaryPerDay: number;
+  bonusPerDay: number;
+}
+
+export type EmployeeRateMap = Record<string, EmployeeRate>;
+
+const employeeRatesCacheKey = (company: string) => `salary-sheet-employee-rates-${company}-v1`;
+
+// Employee per-day rates are the one thing that must stay identical for every
+// visitor and consistent across every month, so they live in a single small
+// cloud blob per company (see api/rates.ts) instead of being duplicated --
+// and able to drift -- inside every month's record.
+export async function getEmployeeRates(company: string): Promise<EmployeeRateMap> {
+  try {
+    const response = await fetch(`/api/rates?company=${encodeURIComponent(company)}&t=${Date.now()}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && typeof data === "object") {
+        try {
+          localStorage.setItem(employeeRatesCacheKey(company), JSON.stringify(data));
+        } catch {
+          // ignore storage failures
+        }
+        return data;
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching employee rates:", error);
+  }
+
+  // Offline fallback: last-known rates cached on this device.
+  try {
+    const cached = localStorage.getItem(employeeRatesCacheKey(company));
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export async function saveEmployeeRates(company: string, rates: EmployeeRateMap): Promise<void> {
+  try {
+    localStorage.setItem(employeeRatesCacheKey(company), JSON.stringify(rates));
+  } catch {
+    // ignore storage failures
+  }
+
+  try {
+    const response = await fetch("/api/rates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company, rates }),
+    });
+    if (!response.ok) {
+      console.error("Failed to save employee rates:", await response.text());
+    }
+  } catch (error) {
+    console.error("Error saving employee rates:", error);
+  }
 }

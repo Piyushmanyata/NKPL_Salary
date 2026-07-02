@@ -31,7 +31,10 @@ import {
   getMonthData,
   getAllMonthLabels,
   getCloudConfig,
-  CloudConfig
+  getEmployeeRates,
+  saveEmployeeRates,
+  CloudConfig,
+  EmployeeRateMap
 } from "./db";
 import {
   ESI_EMPLOYER_RATE,
@@ -126,6 +129,8 @@ const blankEmployee = (monthDays = WORKING_DAYS): EmployeeInput => ({
   category: "Skilled",
   monthlySalary: 0,
   salaryPerMonth: 0,
+  salaryPerDay: 0,
+  bonusPerDay: 0,
   daysWorked: monthDays,
   extraDays: 0,
   basicPercent: 70,
@@ -249,7 +254,17 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
 
   const row = value as Partial<EmployeeInput>;
   const name = String(row.name ?? "").trim();
-  const monthlySalary = Math.max(0, numberValue(row.monthlySalary));
+  const rawMonthlySalary = Math.max(0, numberValue(row.monthlySalary));
+  const hasSalaryPerDay =
+    row.salaryPerDay !== undefined && row.salaryPerDay !== null && String(row.salaryPerDay).trim() !== "";
+  // Legacy records (and the bundled sample data) only ever stored a monthly
+  // salary; derive a per-day rate from it once so old data keeps working
+  // after the switch to per-day-rate-driven calculations.
+  const salaryPerDay = hasSalaryPerDay
+    ? Math.max(0, numberValue(row.salaryPerDay))
+    : Math.max(0, roundMoney(rawMonthlySalary / (monthDays || WORKING_DAYS)));
+  const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
+  const monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
   const salaryPerMonth = Math.max(
     0,
     numberValue(row.salaryPerMonth ?? monthlySalary * (clampBasicPercent(row.basicPercent) / 100)),
@@ -265,6 +280,8 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     category: normalizeWageCategory(String(row.category || "Skilled"), monthlySalary),
     monthlySalary,
     salaryPerMonth,
+    salaryPerDay,
+    bonusPerDay,
     daysWorked: clampDays(numberValue(row.daysWorked), monthDays),
     extraDays: Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
@@ -282,6 +299,39 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
 // NKPL is the only company with bundled sample/demo data; a newly added
 // company like APTUS starts blank until real employees are entered.
 const defaultEmployeesForCompany = (company: CompanyCode) => (company === "NKPL" ? sampleEmployees : []);
+
+// Salary/day and bonus/day are shared across every month for a given
+// employee (see api/rates.ts) -- overlay the shared rate on top of whatever
+// per-month snapshot was loaded so every month always reflects the latest
+// rate, and every employee not yet in the shared store keeps its own value.
+const applyEmployeeRates = (list: EmployeeInput[], rates: EmployeeRateMap): EmployeeInput[] =>
+  list.map((employee) => {
+    const rate = rates[employee.id];
+    if (!rate) {
+      return employee;
+    }
+    return {
+      ...employee,
+      salaryPerDay: Math.max(0, numberValue(rate.salaryPerDay)),
+      bonusPerDay: Math.max(0, numberValue(rate.bonusPerDay)),
+    };
+  });
+
+const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
+  const map: EmployeeRateMap = {};
+  list.forEach((employee) => {
+    if (!employee.name.trim()) {
+      return;
+    }
+    map[employee.id] = {
+      id: employee.id,
+      name: employee.name,
+      salaryPerDay: Math.max(0, numberValue(employee.salaryPerDay)),
+      bonusPerDay: Math.max(0, numberValue(employee.bonusPerDay)),
+    };
+  });
+  return map;
+};
 
 const loadEmployees = (company: CompanyCode, monthDays = WORKING_DAYS) => {
   const fallback = defaultEmployeesForCompany(company);
@@ -744,6 +794,11 @@ function App() {
   const prevCompanyRef = useRef(activeCompany);
   const justLoadedRef = useRef(false);
 
+  // Shared salary/day + bonus/day rates for the active company, kept in sync
+  // with the cloud store (see api/rates.ts) independently of month records.
+  const [employeeRates, setEmployeeRates] = useState<EmployeeRateMap>({});
+  const ratesSignatureRef = useRef<string>("");
+
   // Cloud Database Sync settings
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [cloudConfig, setCloudConfigState] = useState<CloudConfig>(getCloudConfig);
@@ -1181,11 +1236,16 @@ function App() {
 
       setDbLoading(true);
       try {
-        const data = await getMonthData(activeCompany, normalized);
+        const [data, rates] = await Promise.all([
+          getMonthData(activeCompany, normalized),
+          getEmployeeRates(activeCompany),
+        ]);
         if (!active) return;
+        setEmployeeRates(rates);
+        ratesSignatureRef.current = JSON.stringify(rates);
         if (data) {
           justLoadedRef.current = true;
-          setEmployees(data.employees);
+          setEmployees(applyEmployeeRates(data.employees, rates));
           setMonthDays(data.days);
         } else {
           // No data saved for this company + month yet
@@ -1238,6 +1298,29 @@ function App() {
     return () => clearTimeout(delayDebounce);
   }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal]);
 
+  // Auto-save salary/day + bonus/day rates to the shared cloud store whenever
+  // they change, so every month and every visitor picks up the new rate.
+  // Debounced and skipped when unchanged so unrelated edits (attendance,
+  // deductions, etc.) don't trigger redundant writes.
+  useEffect(() => {
+    if (dbLoading || showNoDataModal) return;
+    const nextRates = buildRateMap(employees);
+    const signature = JSON.stringify(nextRates);
+    if (signature === ratesSignatureRef.current) return;
+
+    const delayDebounce = setTimeout(async () => {
+      try {
+        ratesSignatureRef.current = signature;
+        setEmployeeRates(nextRates);
+        await saveEmployeeRates(activeCompany, nextRates);
+      } catch (err) {
+        console.error("Failed to save employee rates:", err);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [employees, activeCompany, dbLoading, showNoDataModal]);
+
   // Month initialization methods
   const handleCreateBlankMonth = async () => {
     setShowNoDataModal(false);
@@ -1255,8 +1338,11 @@ function App() {
 
   const handleCreateSampleMonth = async () => {
     setShowNoDataModal(false);
-    const sanitized = defaultEmployeesForCompany(activeCompany).map(
-      (emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!,
+    const sanitized = applyEmployeeRates(
+      defaultEmployeesForCompany(activeCompany).map(
+        (emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!,
+      ),
+      employeeRates,
     );
     setEmployees(sanitized);
     try {
@@ -1278,9 +1364,10 @@ function App() {
       const sourceData = await getMonthData(activeCompany, source);
       if (sourceData) {
         const targetDays = inferMonthDays(noDataMonth) ?? sourceData.days;
-        const sanitizedEmployees = sourceData.employees.map((emp, index) =>
-          sanitizeEmployee(emp, index, targetDays)!
-        ).filter(Boolean);
+        const sanitizedEmployees = applyEmployeeRates(
+          sourceData.employees.map((emp, index) => sanitizeEmployee(emp, index, targetDays)!).filter(Boolean),
+          employeeRates,
+        );
         setEmployees(sanitizedEmployees);
         setMonthDays(targetDays);
         await saveMonthData(activeCompany, noDataMonth, targetDays, sanitizedEmployees);
@@ -1354,14 +1441,16 @@ function App() {
           "Employee Name": sanitizeSpreadsheetCell(row.name),
           Category: normalizeWageCategory(row.category, row.monthlySalary),
           "Basic Percent": row.basicPercent,
-          "Total Salary": roundMoney(row.monthlySalary),
-          "Salary Per Month": roundMoney(row.salaryPerMonth ?? 0),
+          "Salary Per Day": roundMoney(row.salaryPerDay),
+          "Bonus Per Day": roundMoney(row.bonusPerDay),
+          "Salary Per Month": roundMoney(row.monthlySalary),
+          "Total Salary": roundMoney(row.totalSalary),
+          "Basic Calc Base": roundMoney(row.salaryPerMonth ?? 0),
           "Days Worked": row.daysWorked,
           "Extra Days": row.extraDays,
           "Absent Days": row.absentDays,
           "PF Opt In": row.pfOptIn ? "Yes" : "No",
           "ESI Opt In": row.esiOptIn ? "Yes" : "No",
-          "Per Day Wage": roundMoney(row.perDayWage),
           "Absent Deduction": roundMoney(row.absentDeduction),
           "Earned Salary": roundMoney(row.earnedSalary),
           "Basic Salary": roundMoney(row.basicSalary),
@@ -1369,6 +1458,7 @@ function App() {
           "Travel Allowance": roundMoney(row.travelAllowance),
           "Performance Bonus": roundMoney(row.performanceBonus),
           "Special Bonus": roundMoney(row.specialBonus),
+          "Daily Bonus Amount": roundMoney(row.dailyBonus),
           "Employee PF Deduction": roundMoney(row.employeePf),
           "Employer PF Contribution": roundMoney(row.employerPf),
           "ESI Deduction": roundMoney(row.esi),
@@ -1795,25 +1885,40 @@ function App() {
                               <td colSpan={18}>
                                 <div className="settings-panel">
                                   <div className="settings-column">
-                                    <span>Total Salary</span>
+                                    <span>Salary per Day</span>
                                     <NumberInput
-                                      value={row.monthlySalary}
+                                      value={row.salaryPerDay}
                                       min={0}
-                                      onChange={(value) => updateEmployee(row.id, "monthlySalary", value)}
+                                      onChange={(value) => updateEmployee(row.id, "salaryPerDay", value)}
                                     />
+                                    <small>Applies to every month for this employee</small>
                                   </div>
                                   <div className="settings-column">
-                                    <span>Salary/Month</span>
+                                    <span>Bonus per Day</span>
+                                    <NumberInput
+                                      value={row.bonusPerDay}
+                                      min={0}
+                                      onChange={(value) => updateEmployee(row.id, "bonusPerDay", value)}
+                                    />
+                                    <small>Applies to every month for this employee</small>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Salary per Month</span>
+                                    <strong>{currency(row.monthlySalary)}</strong>
+                                    <small>{effectiveMonthDays} days &times; {currency(row.salaryPerDay)}</small>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Total Salary</span>
+                                    <strong>{currency(row.totalSalary)}</strong>
+                                    <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Basic Calc Base</span>
                                     <NumberInput
                                       value={row.salaryPerMonth ?? 0}
                                       min={0}
                                       onChange={(value) => updateEmployee(row.id, "salaryPerMonth", value)}
                                     />
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Salary per Day</span>
-                                    <strong>{currency(row.perDayWage)}</strong>
-                                    <small>Total / {effectiveMonthDays} days</small>
                                   </div>
                                   <div className="settings-column">
                                     <span>TDS</span>
