@@ -92,7 +92,7 @@ export function calculateSalary(
   const monthlySalary = roundMoney(workingDays * salaryPerDay);
   const dailyBonus = roundMoney(workingDays * bonusPerDay);
   const totalSalary = roundMoney(monthlySalary + dailyBonus);
-  const salaryPerMonth = Math.max(0, numberValue(input.salaryPerMonth ?? monthlySalary * basicShare));
+  const salaryPerMonth = roundMoney(monthlySalary * basicShare);
 
   const isSpecial = isSpecialEmployee(input.name);
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);

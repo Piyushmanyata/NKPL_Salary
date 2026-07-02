@@ -100,7 +100,6 @@ const blankEmployee = (monthDays = WORKING_DAYS): EmployeeInput => ({
   name: "New Employee",
   category: "Skilled",
   monthlySalary: 0,
-  salaryPerMonth: 0,
   salaryPerDay: 0,
   bonusPerDay: 0,
   daysWorked: monthDays,
@@ -237,10 +236,6 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     : Math.max(0, roundMoney(rawMonthlySalary / (monthDays || WORKING_DAYS)));
   const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
   const monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
-  const salaryPerMonth = Math.max(
-    0,
-    numberValue(row.salaryPerMonth ?? monthlySalary * (clampBasicPercent(row.basicPercent) / 100)),
-  );
 
   if (!name && monthlySalary <= 0) {
     return null;
@@ -251,7 +246,6 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     name,
     category: normalizeWageCategory(String(row.category || "Skilled"), monthlySalary),
     monthlySalary,
-    salaryPerMonth,
     salaryPerDay,
     bonusPerDay,
     daysWorked: clampDays(numberValue(row.daysWorked), monthDays),
@@ -1429,7 +1423,6 @@ function App() {
           "Bonus Per Day": roundMoney(row.bonusPerDay),
           "Salary Per Month": roundMoney(row.monthlySalary),
           "Total Salary": roundMoney(row.totalSalary),
-          "Basic Calc Base": roundMoney(row.salaryPerMonth ?? 0),
           "Days Worked": row.daysWorked,
           "Extra Days": row.extraDays,
           "Absent Days": row.absentDays,
@@ -1895,14 +1888,6 @@ function App() {
                                     <span>Total Salary</span>
                                     <strong>{currency(row.totalSalary)}</strong>
                                     <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Basic Calc Base</span>
-                                    <NumberInput
-                                      value={row.salaryPerMonth ?? 0}
-                                      min={0}
-                                      onChange={(value) => updateEmployee(row.id, "salaryPerMonth", value)}
-                                    />
                                   </div>
                                   <div className="settings-column">
                                     <span>TDS</span>
