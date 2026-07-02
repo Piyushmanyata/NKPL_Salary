@@ -57,7 +57,7 @@ import {
   roundMoney,
   uid,
 } from "./salary";
-import type { EmployeeInput, SalaryRow } from "./types";
+import type { AttendanceEmployee, EmployeeInput, SalaryRow } from "./types";
 
 type SheetMode = "reference" | "main";
 
@@ -69,34 +69,6 @@ const COMPANIES = [
 type CompanyCode = (typeof COMPANIES)[number]["code"];
 
 type WageCategory = "Unskilled" | "Semi-skilled" | "Skilled";
-
-type AttendanceEmployee = {
-  id: string;
-  name: string;
-  department: string;
-  isSecurity: boolean;
-  presentDays: number;
-  avgHours: number;
-  sundaysWorked: number;
-  sundaysEligible: number;
-  meetsMonthThreshold: boolean;
-  sundayDetails: Array<{
-    date: string;
-    isEligible: boolean;
-    reasons: string[];
-  }>;
-  daysDetail: Array<{
-    dateString: string;
-    dayOfWeek: number;
-    isPresent: boolean;
-    duration: number;
-    punchTimes: string[];
-    isShortStay?: boolean;
-    shift?: "Day" | "Night";
-    manualOverride?: "present";
-    leaveType?: "approved" | "unapproved";
-  }>;
-};
 
 type OfficialRow = {
   id: string;
@@ -822,12 +794,24 @@ function App() {
     employeesRef.current = employees;
   }, [employees]);
 
+  // The Attendance Checker is a local audit/import tool: it parses an
+  // uploaded punch-in/out Excel file into a detailed day-by-day breakdown
+  // purely to help review and correct present days before syncing. That
+  // detailed breakdown itself is never persisted -- only its end result
+  // (each employee's present day count) matters, and that already lives in
+  // `daysWorked` on the employee record, which is saved and shared via the
+  // existing per-company-per-month payroll database (see the auto-save
+  // effect below). So this effect only resets/re-derives the local audit
+  // view when the month or company changes; NKPL's bundled May 2026 demo
+  // file is the sole legacy exception used as a starting point.
   useEffect(() => {
-    // The bundled MAY.xls demo attendance file only ever belonged to NKPL;
-    // other companies upload their own attendance file via the UI instead.
-    // Switching away from NKPL clears attendanceData below, so this always
-    // starts from a clean slate for the newly active company.
-    if (activeCompany !== "NKPL") {
+    const normalized = normalizeMonthLabel(monthLabel);
+    if (normalized !== monthLabel) {
+      return; // wait until committed/normalized
+    }
+    if (!(activeCompany === "NKPL" && normalized === "May 2026")) {
+      setAttendanceData(null);
+      setAttendanceMonth("");
       return;
     }
     let cancelled = false;
@@ -854,7 +838,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCompany]);
+  }, [monthLabel, activeCompany]);
 
   const salaryRows = useMemo(
     () =>

@@ -1,3 +1,31 @@
+export type AttendanceEmployee = {
+  id: string;
+  name: string;
+  department: string;
+  isSecurity: boolean;
+  presentDays: number;
+  avgHours: number;
+  sundaysWorked: number;
+  sundaysEligible: number;
+  meetsMonthThreshold: boolean;
+  sundayDetails: Array<{
+    date: string;
+    isEligible: boolean;
+    reasons: string[];
+  }>;
+  daysDetail: Array<{
+    dateString: string;
+    dayOfWeek: number;
+    isPresent: boolean;
+    duration: number;
+    punchTimes: string[];
+    isShortStay?: boolean;
+    shift?: "Day" | "Night";
+    manualOverride?: "present";
+    leaveType?: "approved" | "unapproved";
+  }>;
+};
+
 export type EmployeeInput = {
   id: string;
   name: string;

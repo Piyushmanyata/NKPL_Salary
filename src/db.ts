@@ -359,3 +359,4 @@ export async function saveEmployeeRates(company: string, rates: EmployeeRateMap)
     console.error("Error saving employee rates:", error);
   }
 }
+
