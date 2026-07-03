@@ -483,7 +483,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
         row.otherDeduction,
     );
 
-    if (candidateGross >= candidateProratedTotalSalary || candidate === minCandidate) {
+    if ((candidateGross >= candidateProratedTotalSalary && candidateGross >= candidateBasic) || candidate === minCandidate) {
       attendance = candidate;
       break;
     }
@@ -2022,29 +2022,32 @@ function App() {
                         </td>
                       </tr>
                     )}
-                    {sortedFilteredOfficialRows.map((row) => (
-                      <tr key={row.id}>
-                        <td className="name-cell">{row.name}</td>
-                        <td>
-                          <span style={{ fontWeight: 600 }}>{row.wageCategory}</span>
-                          {row.sourceCategory !== row.wageCategory && (
-                            <div style={{ fontSize: "10px", color: "#667085", marginTop: "2px" }}>
-                              (from {row.sourceCategory})
-                            </div>
-                          )}
-                        </td>
-                        <td>{row.attendance}</td>
-                        <td>{currency(row.monthlyBasic)}</td>
-                        <td>{currency(row.monthlyHra)}</td>
-                        <td>{currency(row.monthlyTravelAllowance)}</td>
-                        <td>{currency(row.bonus)}</td>
-                        <td>{currency(row.pf)}</td>
-                        <td>{currency(row.esi)}</td>
-                        <td>{currency(row.professionalTax)}</td>
-                        <td className="net-cell">{currency(row.netPayable)}</td>
-                        <td>{currency(row.referenceNetPayable)}</td>
-                      </tr>
-                    ))}
+                    {sortedFilteredOfficialRows.map((row) => {
+                      const hasDiff = Math.abs(row.netPayable - row.referenceNetPayable) > 5;
+                      return (
+                        <tr key={row.id} className={hasDiff ? "diff-row" : ""}>
+                          <td className="name-cell">{row.name}</td>
+                          <td>
+                            <span style={{ fontWeight: 600 }}>{row.wageCategory}</span>
+                            {row.sourceCategory !== row.wageCategory && (
+                              <div style={{ fontSize: "10px", color: "#667085", marginTop: "2px" }}>
+                                (from {row.sourceCategory})
+                              </div>
+                            )}
+                          </td>
+                          <td>{row.attendance}</td>
+                          <td>{currency(row.monthlyBasic)}</td>
+                          <td>{currency(row.monthlyHra)}</td>
+                          <td>{currency(row.monthlyTravelAllowance)}</td>
+                          <td>{currency(row.bonus)}</td>
+                          <td>{currency(row.pf)}</td>
+                          <td>{currency(row.esi)}</td>
+                          <td>{currency(row.professionalTax)}</td>
+                          <td className="net-cell">{currency(row.netPayable)}</td>
+                          <td>{currency(row.referenceNetPayable)}</td>
+                        </tr>
+                      );
+                    })}
                     {!filteredOfficialRows.length ? (
                       <tr className="empty-row">
                         <td colSpan={12}>

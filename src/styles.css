@@ -1871,3 +1871,16 @@ button:active {
   background: #94a3b8;
 }
 
+/* Highlight rows with Net Pay discrepancy */
+.diff-row {
+  background-color: #fff1f2 !important;
+}
+
+.diff-row:hover {
+  background-color: #ffe4e6 !important;
+}
+
+.diff-row td {
+  border-bottom: 1px solid #fecdd3 !important;
+}
+
