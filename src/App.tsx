@@ -415,11 +415,12 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
       row.otherDeduction,
   );
   
-  const monthlyBasic = (row.esiOptIn === false && attendance > 0) ? 21100 : row.basicSalary;
-  const monthlyHra = (row.esiOptIn === false && attendance > 0) ? 0 : row.hra;
-  const monthlyTravelAllowance = (row.esiOptIn === false && attendance > 0) ? 0 : row.travelAllowance;
+  const monthlyBasic = (row.esiOptIn === false && attendance > 0) ? Math.max(21100, Math.round(proratedTotalSalary * 0.51)) : row.basicSalary;
+  const remainingForHraTa = (row.esiOptIn === false && attendance > 0) ? Math.max(0, targetGross - monthlyBasic) : proratedTotalSalary - monthlyBasic;
+  const monthlyHra = (row.esiOptIn === false && attendance > 0) ? roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE) : row.hra;
+  const monthlyTravelAllowance = (row.esiOptIn === false && attendance > 0) ? roundMoney(remainingForHraTa - monthlyHra) : row.travelAllowance;
   
-  const bonus = Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
+  const bonus = (row.esiOptIn === false && attendance > 0) ? 0 : Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
   const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
 
   return {
@@ -468,7 +469,8 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
 
   let attendance = minCandidate;
   for (let candidate = formulaAttendance; candidate >= minCandidate; candidate -= 1) {
-    const candidateBasic = (row.esiOptIn === false && candidate > 0) ? 21100 : roundMoney(candidate * rule.daily);
+    const candidateProratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * candidate);
+    const candidateBasic = (row.esiOptIn === false && candidate > 0) ? Math.max(21100, Math.round(candidateProratedTotalSalary * 0.51)) : roundMoney(candidate * rule.daily);
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
     const candidateEsi = esiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
     const candidateGross = Math.max(
@@ -480,7 +482,6 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
         - (row.advance || 0) +
         row.otherDeduction,
     );
-    const candidateProratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * candidate);
 
     if (candidateGross >= candidateProratedTotalSalary || candidate === minCandidate) {
       attendance = candidate;
@@ -488,7 +489,8 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     }
   }
 
-  const statutoryBasic = (row.esiOptIn === false && attendance > 0) ? 21100 : roundMoney(attendance * rule.daily);
+  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const statutoryBasic = (row.esiOptIn === false && attendance > 0) ? Math.max(21100, Math.round(proratedTotalSalary * 0.51)) : roundMoney(attendance * rule.daily);
   const monthlyBasic = statutoryBasic;
   const pf = roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE);
   const esi = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
@@ -497,11 +499,10 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     row.netPayable + pf + esi + row.professionalTax - (row.advance || 0) + row.otherDeduction,
   );
   
-  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
-  const remainingForHraTa = row.esiOptIn === false ? 0 : Math.max(0, proratedTotalSalary - monthlyBasic);
+  const remainingForHraTa = row.esiOptIn === false ? Math.max(0, targetGross - monthlyBasic) : Math.max(0, proratedTotalSalary - monthlyBasic);
   const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
   const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
-  const bonus = Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
+  const bonus = row.esiOptIn === false ? 0 : Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
   const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
     finalGross - pf - esi - row.professionalTax + (row.advance || 0) - row.otherDeduction,
