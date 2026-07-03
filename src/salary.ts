@@ -134,9 +134,9 @@ export function calculateSalary(
   const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   
-  // ESI is calculated on Basic Salary.
-  const esi = esiOptIn ? roundMoney(basicSalary * ESI_RATE) : 0;
-  const employerEsi = esiOptIn ? roundMoney(basicSalary * ESI_EMPLOYER_RATE) : 0;
+  // ESI is calculated on Earned (salary/month adjusted for attendance).
+  const esi = esiOptIn ? roundMoney(earnedSalary * ESI_RATE) : 0;
+  const employerEsi = esiOptIn ? roundMoney(earnedSalary * ESI_EMPLOYER_RATE) : 0;
   
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
   const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
