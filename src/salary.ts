@@ -103,7 +103,7 @@ export function calculateSalary(
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = monthlySalary / workingDays;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
-  const performanceBonus = perDayWage * extraDays;
+  const performanceBonus = (perDayWage + bonusPerDay) * extraDays;
   const specialBonus = Math.max(0, numberValue(input.specialBonus));
   // Earned is salary/month prorated by present days (i.e. salary/day x days
   // worked) -- Basic % below is applied to this once, not to an
