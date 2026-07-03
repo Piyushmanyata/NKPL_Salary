@@ -83,7 +83,6 @@ type OfficialRow = {
   monthlyTravelAllowance: number;
   attendance: number;
   bonus: number;
-  specialBonus: number;
   grossPayable: number;
   pf: number;
   esi: number;
@@ -399,11 +398,11 @@ function clampOfficialAttendance(value: unknown) {
   return Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, Math.floor(numberValue(value))));
 }
 
-function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
+function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const wageCategory = classifyWageCategory(row);
   const rule = wageRules[wageCategory];
-  const bonus = roundMoney(row.performanceBonus);
-  const specialBonus = roundMoney(row.specialBonus);
+  const attendance = row.daysWorked;
+  const proratedTotalSalary = roundMoney((row.totalSalary / monthDays) * attendance);
   const esiActive = row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT;
   const esi = esiActive ? roundMoney(row.basicSalary * ESI_RATE) : 0;
   const targetGross = Math.max(
@@ -415,10 +414,13 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
       - (row.advance || 0) +
       row.otherDeduction,
   );
-  const remainingGross = Math.max(0, targetGross - row.basicSalary - bonus - specialBonus);
-  const monthlyHra = roundMoney(remainingGross * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainingGross - monthlyHra);
-  const grossPayable = roundMoney(row.basicSalary + monthlyHra + monthlyTravelAllowance + bonus + specialBonus);
+  
+  const monthlyBasic = row.basicSalary;
+  const monthlyHra = row.hra;
+  const monthlyTravelAllowance = row.travelAllowance;
+  
+  const bonus = Math.max(0, roundMoney(targetGross - proratedTotalSalary));
+  const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
 
   return {
     id: row.id,
@@ -427,12 +429,11 @@ function buildReferenceOfficialRow(row: SalaryRow): OfficialRow {
     wageCategory,
     employeeTypes: rule.employeeTypes,
     allowedBasic: rule.basic,
-    monthlyBasic: row.basicSalary,
+    monthlyBasic,
     monthlyHra,
     monthlyTravelAllowance,
-    attendance: row.daysWorked,
+    attendance,
     bonus,
-    specialBonus,
     officialAttendance: row.officialAttendance,
     officialBonus: row.officialBonus,
     grossPayable,
@@ -451,15 +452,13 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const esiActive = row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT;
 
   if (!pfActive) {
-    return buildReferenceOfficialRow(row);
+    return buildReferenceOfficialRow(row, monthDays);
   }
 
   const wageCategory = classifyWageCategory(row);
   const rule = wageRules[wageCategory];
   const presentDays = clampDays(row.daysWorked, monthDays);
   const absentDays = Math.max(0, monthDays - presentDays);
-  const bonus = roundMoney(row.performanceBonus);
-  const specialBonus = roundMoney(row.specialBonus);
 
   const minCandidate = row.daysWorked > 0 ? 1 : 0;
   const formulaAttendance = Math.max(
@@ -481,8 +480,9 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
         - (row.advance || 0) +
         row.otherDeduction,
     );
+    const candidateProratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * candidate);
 
-    if (candidateGross >= candidateBasic + bonus + specialBonus || candidate === minCandidate) {
+    if (candidateGross >= candidateProratedTotalSalary || candidate === minCandidate) {
       attendance = candidate;
       break;
     }
@@ -496,10 +496,13 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     0,
     row.netPayable + pf + esi + row.professionalTax - (row.advance || 0) + row.otherDeduction,
   );
-  const remainingGross = Math.max(0, targetGross - monthlyBasic - bonus - specialBonus);
-  const monthlyHra = roundMoney(remainingGross * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainingGross - monthlyHra);
-  const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus + specialBonus);
+  
+  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const remainingForHraTa = Math.max(0, proratedTotalSalary - monthlyBasic);
+  const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
+  const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
+  const bonus = Math.max(0, roundMoney(targetGross - proratedTotalSalary));
+  const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
     finalGross - pf - esi - row.professionalTax + (row.advance || 0) - row.otherDeduction,
   );
@@ -516,7 +519,6 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     monthlyTravelAllowance,
     attendance,
     bonus,
-    specialBonus,
     officialAttendance: undefined,
     officialBonus: undefined,
     grossPayable: finalGross,
@@ -1417,7 +1419,6 @@ function App() {
           "Travel Allowance": roundMoney(row.monthlyTravelAllowance),
           Attendance: row.attendance,
           Bonus: roundMoney(row.bonus),
-          "Special Bonus": roundMoney(row.specialBonus),
           PF: roundMoney(row.pf),
           ESI: roundMoney(row.esi),
           "P-Tax": roundMoney(row.professionalTax),
@@ -1995,9 +1996,6 @@ function App() {
                       <th onClick={() => handleOfficialSort("bonus")} className="sortable-th">
                         Bonus {officialSortField === "bonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
-                      <th onClick={() => handleOfficialSort("specialBonus")} className="sortable-th">
-                        Sp Bonus {officialSortField === "specialBonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
                       <th onClick={() => handleOfficialSort("pf")} className="sortable-th">
                         PF {officialSortField === "pf" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
@@ -2018,7 +2016,7 @@ function App() {
                   <tbody>
                     {sortedFilteredOfficialRows.length === 0 && (
                       <tr>
-                        <td colSpan={14} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
+                        <td colSpan={12} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
                           No matching employees found for "{query}" in this company.
                         </td>
                       </tr>
@@ -2039,7 +2037,6 @@ function App() {
                         <td>{currency(row.monthlyHra)}</td>
                         <td>{currency(row.monthlyTravelAllowance)}</td>
                         <td>{currency(row.bonus)}</td>
-                        <td>{currency(row.specialBonus)}</td>
                         <td>{currency(row.pf)}</td>
                         <td>{currency(row.esi)}</td>
                         <td>{currency(row.professionalTax)}</td>
@@ -2049,7 +2046,7 @@ function App() {
                     ))}
                     {!filteredOfficialRows.length ? (
                       <tr className="empty-row">
-                        <td colSpan={15}>
+                        <td colSpan={12}>
                           <div>
                             <Search size={18} />
                             <strong>No official rows match this search.</strong>
@@ -2065,7 +2062,7 @@ function App() {
             <div className="table-note">
               {sheetMode === "reference"
                 ? "Categories are assigned automatically from total salary bands. Earned is Salary/Month prorated by present days. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
-                : `For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - present days), then reduces when needed so Basic always equals attendance x category daily wage. Reference bonus is preserved, and HRA/travel allowance absorb the balance so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
+                : `For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - present days), then reduces when needed so Basic always equals attendance x category daily wage. HRA/travel allowance are attendance-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
             </div>
           </article>
 
