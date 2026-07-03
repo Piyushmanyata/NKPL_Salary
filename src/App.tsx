@@ -419,7 +419,7 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
   const monthlyHra = row.hra;
   const monthlyTravelAllowance = row.travelAllowance;
   
-  const bonus = Math.max(0, roundMoney(targetGross - proratedTotalSalary));
+  const bonus = Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
   const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
 
   return {
@@ -501,7 +501,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const remainingForHraTa = Math.max(0, proratedTotalSalary - monthlyBasic);
   const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
   const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
-  const bonus = Math.max(0, roundMoney(targetGross - proratedTotalSalary));
+  const bonus = Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
   const finalGross = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
     finalGross - pf - esi - row.professionalTax + (row.advance || 0) - row.otherDeduction,
