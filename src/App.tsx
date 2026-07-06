@@ -585,6 +585,12 @@ function calculateEmployeeAttendanceStats(
         sundaysWorked++;
       }
 
+      const sat = daysDetail[index - 1];
+      const mon = daysDetail[index + 1];
+      const isSatAbsent = (sat && sat.dayOfWeek === 6) ? !sat.isPresent : false;
+      const isMonAbsent = (mon && mon.dayOfWeek === 1) ? !mon.isPresent : false;
+      const isSandwichAbsent = isSatAbsent && isMonAbsent;
+
       let isEligible = false;
       const reasons: string[] = [];
 
@@ -593,6 +599,11 @@ function calculateEmployeeAttendanceStats(
       } else if (!meetsMonthThreshold) {
         reasons.push(
           `Below Threshold: Worked only ${effectivePresentDays}/${totalCalendarDays} days (requires min ${monthThreshold} days for Sunday benefits).`
+        );
+      } else if (isSandwichAbsent && !actuallyWorked) {
+        isEligible = false;
+        reasons.push(
+          `Sandwich Rule Applied: Absent on both Saturday (${sat ? sat.dateString.split('/').slice(1).join('/') : 'Sat'}) and Monday (${mon ? mon.dateString.split('/').slice(1).join('/') : 'Mon'}). Sunday auto-presence is denied.`
         );
       } else {
         isEligible = true;
@@ -615,8 +626,15 @@ function calculateEmployeeAttendanceStats(
   let sundayBonusDays = 0;
 
   if (meetsMonthThreshold && !isSecurity) {
-    const sundaysNotWorked = totalSundaysInMonth - sundaysWorked;
-    finalPresentDays = effectivePresentDays + sundaysNotWorked;
+    let autoPaidSundaysCount = 0;
+    sundayDetails.forEach((sun) => {
+      const dayObj = daysDetail.find((d) => d.dateString === sun.date);
+      if (dayObj && !dayObj.isPresent && sun.isEligible) {
+        autoPaidSundaysCount++;
+      }
+    });
+
+    finalPresentDays = effectivePresentDays + autoPaidSundaysCount;
     sundayBonusDays = sundaysWorked;
   } else {
     finalPresentDays = effectivePresentDays;
@@ -2519,7 +2537,7 @@ function App() {
                 <Rule label="Main PF Attendance" value={`Starts at 26 - (${effectiveMonthDays} - present days), then reduces if Basic plus Bonus is too high`} />
                 <Rule label="Official Basic" value="Attendance x category daily wage" />
                 <Rule label="Zone A Day Rate" value="Unskilled 400, Semi-skilled 440, Skilled 484" />
-                <Rule label="Sunday Attendance" value="Paid automatically for all Sundays if present >= 21 days (31-day month) or >= 20 days (30-day month)" />
+                <Rule label="Sunday Attendance" value="Paid automatically for all Sundays if present >= 21 days (31-day month) or >= 20 days (30-day month). Denied if absent on Saturday and Monday surrounding a Sunday." />
                 <Rule label="Sunday Double Pay" value="Sundays actually worked count again as a bonus day (double pay) if threshold is met" />
                 <Rule
                   label="HRA"
