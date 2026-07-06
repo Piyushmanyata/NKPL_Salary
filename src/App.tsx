@@ -403,13 +403,13 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
   const rule = wageRules[wageCategory];
   const attendance = row.daysWorked;
   const proratedTotalSalary = roundMoney((row.totalSalary / monthDays) * attendance);
-  const esiActive = row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT;
   const isOptOut = (row.esiOptIn === false || row.pfOptIn === false) && attendance > 0;
   const fullMonthBasicRate = row.esiOptIn === false 
     ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
     : (row.pfOptIn === false ? 15100 : 0);
   
   const monthlyBasic = isOptOut ? roundMoney((fullMonthBasicRate / monthDays) * attendance) : row.basicSalary;
+  const esiActive = row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
   const esi = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
   const targetGross = Math.max(
     0,
@@ -455,7 +455,6 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
 
 function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const pfActive = row.pfOptIn;
-  const esiActive = pfActive ? true : (row.esiOptIn && row.earnedSalary <= ESI_GROSS_LIMIT);
 
   if (!pfActive) {
     return buildReferenceOfficialRow(row, monthDays);
@@ -486,8 +485,9 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
       candidateBasic = Math.min(candidateBasic, 14999);
     }
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
-    const candidateEsi = esiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
-    let candidateGross = Math.max(
+    const candidateEsiActive = pfActive ? true : (row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT);
+    const candidateEsi = candidateEsiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
+    const candidateGross = Math.max(
       0,
       row.netPayable +
         candidatePf +
@@ -496,9 +496,6 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
         - (row.advance || 0) +
         row.otherDeduction,
     );
-    if (pfActive) {
-      candidateGross = Math.min(candidateGross, 20999);
-    }
 
     if ((candidateGross >= candidateProratedTotalSalary && candidateGross >= candidateBasic) || candidate === minCandidate) {
       attendance = candidate;
@@ -520,14 +517,12 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   }
   const monthlyBasic = statutoryBasic;
   const pf = roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE);
+  const esiActive = pfActive ? true : (row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT);
   const esi = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
-  let targetGross = Math.max(
+  const targetGross = Math.max(
     0,
     row.netPayable + pf + esi + row.professionalTax - (row.advance || 0) + row.otherDeduction,
   );
-  if (pfActive) {
-    targetGross = Math.min(targetGross, 20999);
-  }
   
   const remainingForHraTa = isOptOut ? Math.max(0, targetGross - monthlyBasic) : Math.max(0, proratedTotalSalary - monthlyBasic);
   const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
