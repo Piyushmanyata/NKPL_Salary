@@ -99,8 +99,8 @@ export function calculateSalary(
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
   const standardBasic = monthlySalary * basicShare;
   const hasBasicAbove15k = standardBasic > 15000;
-  const requestedPfOptIn = (isSpecial || hasBasicAbove15k) ? false : (input.pfOptIn !== false);
   const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
+  const requestedPfOptIn = (isSpecial || hasBasicAbove15k || !requestedEsiOptIn) ? false : (input.pfOptIn !== false);
   const advance = numberValue(input.advance);
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = monthlySalary / workingDays;

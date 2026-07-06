@@ -1550,7 +1550,14 @@ function App() {
         }
 
         if (field === "pfOptIn" || field === "esiOptIn") {
-          return { ...employee, [field]: booleanValue(value) };
+          const nextVal = booleanValue(value);
+          if (field === "esiOptIn" && !nextVal) {
+            return { ...employee, esiOptIn: false, pfOptIn: false };
+          }
+          if (field === "pfOptIn" && nextVal && employee.esiOptIn === false) {
+            return employee; // cannot opt-in to PF if opted out of ESI
+          }
+          return { ...employee, [field]: nextVal };
         }
 
         if (field === "basicPercent") {
