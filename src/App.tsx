@@ -403,10 +403,12 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
   const rule = wageRules[wageCategory];
   const attendance = row.daysWorked;
   const proratedTotalSalary = roundMoney((row.totalSalary / monthDays) * attendance);
-  const isOptOut = (row.esiOptedOut || row.pfOptedOut) && attendance > 0;
-  const fullMonthBasicRate = row.esiOptedOut 
+  const hasNoPf = !row.pfOptIn || row.pfOptedOut;
+  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
+  const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
+  const fullMonthBasicRate = hasNoEsi 
     ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (row.pfOptedOut ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
+    : (hasNoPf ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
   
   const monthlyBasic = isOptOut ? roundMoney((fullMonthBasicRate / monthDays) * attendance) : row.basicSalary;
   const pf = row.pfOptIn ? roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE) : 0;
@@ -476,8 +478,10 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   for (let candidate = formulaAttendance; candidate >= minCandidate; candidate -= 1) {
     const candidateProratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * candidate);
     let candidateBasic = roundMoney(candidate * rule.daily);
-    if ((row.esiOptedOut || row.pfOptedOut) && candidate > 0) {
-      const fullMonthBasicRate = row.esiOptedOut 
+    const hasNoPf = !row.pfOptIn || row.pfOptedOut;
+    const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
+    if ((hasNoPf || hasNoEsi) && candidate > 0) {
+      const fullMonthBasicRate = hasNoEsi 
         ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
         : Math.max(15100, Math.round(row.totalSalary * 0.51));
       candidateBasic = roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * candidate);
@@ -488,7 +492,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
     // An explicit ESI opt-out must survive onto the main sheet even though the
     // PF cap pulls the official basic back under the ESI limit.
-    const candidateEsiActive = row.esiOptedOut
+    const candidateEsiActive = hasNoEsi
       ? false
       : pfActive
         ? true
@@ -511,10 +515,12 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   }
 
   const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
-  const isOptOut = (row.esiOptedOut || row.pfOptedOut) && attendance > 0;
-  const fullMonthBasicRate = row.esiOptedOut 
+  const hasNoPf = !row.pfOptIn || row.pfOptedOut;
+  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
+  const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
+  const fullMonthBasicRate = hasNoEsi 
     ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (row.pfOptedOut ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
+    : (hasNoPf ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
   
   let statutoryBasic = isOptOut 
     ? roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * attendance) 
@@ -524,7 +530,7 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   }
   const monthlyBasic = statutoryBasic;
   const pf = roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE);
-  const esiActive = row.esiOptedOut
+  const esiActive = hasNoEsi
     ? false
     : pfActive
       ? true
