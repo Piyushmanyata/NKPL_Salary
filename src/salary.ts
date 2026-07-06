@@ -123,8 +123,8 @@ export function calculateSalary(
   // PF: Voluntary above 15,000, but if enabled it is capped at PF_BASIC_LIMIT (15,000) basic salary.
   const pfOptIn = requestedPfOptIn;
   
-  // ESI: Applicable if Gross Salary (grossBeforeDeduction) is at or below ESI_GROSS_LIMIT (21,000).
-  const esiOptIn = requestedEsiOptIn && grossBeforeDeduction <= ESI_GROSS_LIMIT;
+  // ESI: Applicable if full-month Basic Salary (standardBasic) is at or below ESI_GROSS_LIMIT (21,000).
+  const esiOptIn = requestedEsiOptIn && standardBasic <= ESI_GROSS_LIMIT;
   
   const basicSalary = Math.min(grossBeforeDeduction, Math.max(0, baseBasicSalary));
   

@@ -2432,7 +2432,7 @@ function App() {
                                   <div className="settings-column">
                                     <span>ESI</span>
                                     <strong>{row.esiOptIn ? "On" : "Off"}</strong>
-                                    <small>{row.earnedSalary > ESI_GROSS_LIMIT ? `ESI is disabled above ${currency(ESI_GROSS_LIMIT)} Gross salary` : "Toggle controls employee ESI choice"}</small>
+                                    <small>{(row.monthlySalary * (row.basicPercent / 100)) > ESI_GROSS_LIMIT ? `ESI is disabled above ${currency(ESI_GROSS_LIMIT)} Basic salary` : "Toggle controls employee ESI choice"}</small>
                                     <button
                                       type="button"
                                       className={row.esiOptIn ? "toggle-on" : "toggle-off"}
@@ -2595,7 +2595,7 @@ function App() {
                   label="PF"
                   value={`${PF_RATE * 100}% on Basic (capped at ${currency(PF_BASIC_LIMIT)} Basic) when PF is enabled`}
                 />
-                <Rule label="ESI" value={`${ESI_RATE * 100}% on Salary/Month when ESI is enabled (auto-off above ${currency(ESI_GROSS_LIMIT)} Gross)`} />
+                <Rule label="ESI" value={`${ESI_RATE * 100}% on Salary/Month when ESI is enabled (auto-off above ${currency(ESI_GROSS_LIMIT)} Basic)`} />
                 <Rule label="P-Tax" value="Based on Gross Payable (before PF/ESI) slab" />
                 <Rule label="Advance" value="Positive adds to net pay, negative subtracts from net pay" />
                 <Rule label="Performance Bonus" value="Carried from reference sheet, or Sunday bonus if attendance synced" />
