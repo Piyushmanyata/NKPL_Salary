@@ -64,6 +64,8 @@ export type SalaryRow = EmployeeInput & {
   grossPayable: number;
   pfOptIn: boolean;
   esiOptIn: boolean;
+  pfOptedOut: boolean;
+  esiOptedOut: boolean;
   employeePf: number;
   employerPf: number;
   esi: number;

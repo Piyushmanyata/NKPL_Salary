@@ -157,6 +157,8 @@ export function calculateSalary(
     absentDays,
     pfOptIn,
     esiOptIn,
+    pfOptedOut: input.pfOptIn === false,
+    esiOptedOut: input.esiOptIn === false,
     advance: input.advance,
     otherDeduction,
     perDayWage,
