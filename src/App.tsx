@@ -486,7 +486,13 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
       candidateBasic = Math.min(candidateBasic, 14999);
     }
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
-    const candidateEsiActive = pfActive ? true : (row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT);
+    // An explicit ESI opt-out must survive onto the main sheet even though the
+    // PF cap pulls the official basic back under the ESI limit.
+    const candidateEsiActive = row.esiOptedOut
+      ? false
+      : pfActive
+        ? true
+        : row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT;
     const candidateEsi = candidateEsiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
     const candidateGross = Math.max(
       0,
@@ -518,7 +524,11 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   }
   const monthlyBasic = statutoryBasic;
   const pf = roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE);
-  const esiActive = pfActive ? true : (row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT);
+  const esiActive = row.esiOptedOut
+    ? false
+    : pfActive
+      ? true
+      : row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
   const esi = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
   const targetGross = Math.max(
     0,
@@ -659,6 +669,19 @@ function calculateEmployeeAttendanceStats(
     meetsMonthThreshold,
     sundayDetails,
   };
+}
+
+// Month labels come back from storage in arbitrary (alphabetical) order;
+// sort them chronologically so "latest month" defaults actually pick the
+// most recent one. Unparseable labels sink to the front, preserving order.
+function sortMonthsChronologically(months: string[]): string[] {
+  return [...months].sort((a, b) => {
+    const pa = parseMonthYearString(a);
+    const pb = parseMonthYearString(b);
+    const ka = pa ? pa.year * 12 + pa.monthIndex : -1;
+    const kb = pb ? pb.year * 12 + pb.monthIndex : -1;
+    return ka - kb;
+  });
 }
 
 function parseMonthYearString(str: string) {
@@ -817,20 +840,6 @@ function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
         const times = punchStr.match(/\d{2}:\d{2}/g) || [];
         const initialIsPresent = times.length > 0;
 
-        let duration = 0;
-        if (initialIsPresent && times.length >= 2) {
-          const minutes = times.map((t) => {
-            const [h, m] = t.split(":").map(Number);
-            return h * 60 + m;
-          });
-          const minM = Math.min(...minutes);
-          const maxM = Math.max(...minutes);
-          duration = (maxM - minM) / 60;
-        }
-
-        const isShortStay = initialIsPresent && duration < 5;
-        const isPresent = initialIsPresent && !isShortStay;
-
         let shift: "Day" | "Night" = "Day";
         if (initialIsPresent && times.length > 0) {
           const sortedTimes = [...times].sort();
@@ -840,6 +849,26 @@ function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
             shift = "Night";
           }
         }
+
+        let duration = 0;
+        if (initialIsPresent && times.length >= 2) {
+          const minutes = times.map((t) => {
+            const [h, m] = t.split(":").map(Number);
+            return h * 60 + m;
+          });
+          const minM = Math.min(...minutes);
+          const maxM = Math.max(...minutes);
+          duration = (maxM - minM) / 60;
+          // Night-shift punch pairs straddle midnight (e.g. in 20:00, out 04:00
+          // logged in the same day cell), so the raw min-max span measures the
+          // off-duty gap. Wrap around midnight to recover the true stay time.
+          if (shift === "Night" && duration > 12) {
+            duration = 24 - duration;
+          }
+        }
+
+        const isShortStay = initialIsPresent && duration < 5;
+        const isPresent = initialIsPresent && !isShortStay;
 
         const dateString = `${yearNum}/${String(monthIdx + 1).padStart(2, '0')}/${String(dayNum).padStart(2, '0')}`;
         const dateObj = new Date(yearNum, monthIdx, dayNum);
@@ -1144,6 +1173,16 @@ function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
       const times = val.match(/\d{2}:\d{2}/g) || [];
       const initialIsPresent = times.length > 0;
 
+      let shift: "Day" | "Night" = "Day";
+      if (initialIsPresent && times.length > 0) {
+        const sortedTimes = [...times].sort();
+        const firstPunch = sortedTimes[0];
+        const firstHour = Number(firstPunch.split(":")[0]);
+        if (firstHour >= 16 || firstHour < 6) {
+          shift = "Night";
+        }
+      }
+
       let duration = 0;
       if (initialIsPresent) {
         if (times.length >= 2) {
@@ -1154,23 +1193,16 @@ function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
           const minM = Math.min(...minutes);
           const maxM = Math.max(...minutes);
           duration = (maxM - minM) / 60;
+          // Night-shift punch pairs straddle midnight; the raw min-max span
+          // measures the off-duty gap, so wrap it to the true stay time.
+          if (shift === "Night" && duration > 12) {
+            duration = 24 - duration;
+          }
         }
       }
 
       const isShortStay = initialIsPresent && duration < 5;
       const isPresent = initialIsPresent && !isShortStay;
-
-      let shift: "Day" | "Night" = "Day";
-      if (initialIsPresent && times.length > 0) {
-        const sortedTimes = [...times].sort();
-        const firstPunch = sortedTimes[0];
-        const firstHour = Number(firstPunch.split(":")[0]);
-        if (firstHour >= 16 || firstHour < 6) {
-          shift = "Night";
-        } else {
-          shift = "Day";
-        }
-      }
 
       daysDetail.push({
         dateString: d.dateString,
@@ -1400,7 +1432,7 @@ function App() {
       }
     });
     return sorted;
-  }, [filteredRows, refSortField, refSortDirection]);
+  }, [filteredRows, refSortField, refSortDirection, newlyAddedId]);
 
   const sortedFilteredOfficialRows = useMemo(() => {
     const sorted = [...filteredOfficialRows];
@@ -1424,7 +1456,7 @@ function App() {
       }
     });
     return sorted;
-  }, [filteredOfficialRows, officialSortField, officialSortDirection]);
+  }, [filteredOfficialRows, officialSortField, officialSortDirection, newlyAddedId]);
 
   const totals = useMemo(() => {
     if (sheetMode === "main") {
@@ -1649,7 +1681,7 @@ function App() {
   // Initialize / fetch month labels for the active company on mount and on company switch
   useEffect(() => {
     getAllMonthLabels(activeCompany).then((months) => {
-      setAllMonths(months);
+      setAllMonths(sortMonthsChronologically(months));
     }).catch(console.error);
   }, [activeCompany]);
 
@@ -1702,7 +1734,7 @@ function App() {
         } else {
           // No data saved for this company + month yet
           setNoDataMonth(normalized);
-          const months = await getAllMonthLabels(activeCompany);
+          const months = sortMonthsChronologically(await getAllMonthLabels(activeCompany));
           if (active) {
             setAllMonths(months);
             if (months.length > 0) {
@@ -1780,7 +1812,7 @@ function App() {
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
       const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(months);
+      setAllMonths(sortMonthsChronologically(months));
       showToast(`Created blank payroll sheet for ${noDataMonth}`);
     } catch (err) {
       console.error(err);
@@ -1800,7 +1832,7 @@ function App() {
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
       const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(months);
+      setAllMonths(sortMonthsChronologically(months));
       showToast(`Initialized ${noDataMonth} with sample employees`);
     } catch (err) {
       console.error(err);
@@ -1828,7 +1860,7 @@ function App() {
         showToast(`Failed to copy: source month ${source} has no data`, "error");
       }
       const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(months);
+      setAllMonths(sortMonthsChronologically(months));
     } catch (err) {
       console.error(err);
       showToast("Error copying month data", "error");
@@ -2158,7 +2190,7 @@ function App() {
             icon={<Users />}
             label="Employer Cost"
             value={currency(totals.cost)}
-            caption={`${filteredRows.length || filteredOfficialRows.length} rows in view`}
+            caption={`${sheetMode === "main" ? filteredOfficialRows.length : filteredRows.length} rows in view`}
             tone="rose"
           />
         </section>
@@ -2236,13 +2268,6 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedFilteredRows.length === 0 && (
-                      <tr>
-                        <td colSpan={18} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
-                          No matching employees found for "{query}" in this company.
-                        </td>
-                      </tr>
-                    )}
                     {sortedFilteredRows.map((row) => {
                       const isSpecial = isSpecialEmployee(row.name);
                       return (
@@ -2332,7 +2357,7 @@ function App() {
                           </tr>
                           {openSettingsId === row.id ? (
                             <tr className="settings-row">
-                              <td colSpan={18}>
+                              <td colSpan={17}>
                                 <div className="settings-panel">
                                   <div className="settings-column">
                                     <span>Salary per Day</span>
@@ -2420,11 +2445,17 @@ function App() {
                     })}
                     {!filteredRows.length ? (
                       <tr className="empty-row">
-                        <td colSpan={18}>
+                        <td colSpan={17}>
                           <div>
-                            <Search size={18} />
-                            <strong>No employees match this search.</strong>
-                            <span>Clear the search or add a new employee to continue.</span>
+                            {query ? <Search size={18} /> : <Users size={18} />}
+                            <strong>
+                              {query ? "No employees match this search." : "No employees in this month yet."}
+                            </strong>
+                            <span>
+                              {query
+                                ? "Clear the search or add a new employee to continue."
+                                : "Use “Add Employee” above to start building this sheet."}
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -2474,13 +2505,6 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedFilteredOfficialRows.length === 0 && (
-                      <tr>
-                        <td colSpan={12} style={{ textAlign: "center", padding: "48px 16px", color: "#667085", fontSize: "14px" }}>
-                          No matching employees found for "{query}" in this company.
-                        </td>
-                      </tr>
-                    )}
                     {sortedFilteredOfficialRows.map((row) => {
                       const hasDiff = Math.abs(row.netPayable - row.referenceNetPayable) > 5;
                       return (
@@ -2511,9 +2535,15 @@ function App() {
                       <tr className="empty-row">
                         <td colSpan={12}>
                           <div>
-                            <Search size={18} />
-                            <strong>No official rows match this search.</strong>
-                            <span>Clear the search to restore the main sheet.</span>
+                            {query ? <Search size={18} /> : <Users size={18} />}
+                            <strong>
+                              {query ? "No official rows match this search." : "No employees in this month yet."}
+                            </strong>
+                            <span>
+                              {query
+                                ? "Clear the search to restore the main sheet."
+                                : "Add employees on the reference sheet to populate the main sheet."}
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -2826,7 +2856,12 @@ function App() {
       )}
 
       {toast && (
-        <div className={`custom-toast ${toast.type}`} onClick={() => setToast(null)}>
+        <div
+          className={`custom-toast ${toast.type}`}
+          role="status"
+          aria-live="polite"
+          onClick={() => setToast(null)}
+        >
           {toast.type === "success" ? <Check size={16} /> : <AlertTriangle size={16} />}
           <span>{toast.message}</span>
         </div>
@@ -2878,6 +2913,16 @@ function AttendanceCheckerModal({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(data[0]?.id || null);
+
+  // Uploading a different attendance file replaces `data`; if the previously
+  // selected employee no longer exists, fall back to the first row instead of
+  // showing the empty "select an employee" prompt with a stale selection.
+  useEffect(() => {
+    if (selectedId && data.some((emp) => emp.id === selectedId)) {
+      return;
+    }
+    setSelectedId(data[0]?.id || null);
+  }, [data, selectedId]);
   const [activeChartTab, setActiveChartTab] = useState<"days" | "hours">("days");
   const [sortField, setSortField] = useState<"name" | "presentDays" | "avgHours" | "sundaysWorked" | "sundaysEligible" | "warnings">("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
