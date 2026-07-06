@@ -12,7 +12,7 @@ export const ESI_EMPLOYER_RATE = 0.0325;
 export const PF_BASIC_LIMIT = 15000;
 export const ESI_GROSS_LIMIT = 21000;
 export const MIN_BASIC_PERCENT = 50;
-export const MAX_BASIC_PERCENT = 90;
+export const MAX_BASIC_PERCENT = 100;
 
 export function currency(value: number) {
   return new Intl.NumberFormat("en-IN", {
