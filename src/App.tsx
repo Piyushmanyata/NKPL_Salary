@@ -406,15 +406,16 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
   const isOptOut = (row.esiOptIn === false || row.pfOptIn === false) && attendance > 0;
   const fullMonthBasicRate = row.esiOptIn === false 
     ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (row.pfOptIn === false ? 15100 : 0);
+    : (row.pfOptIn === false ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
   
   const monthlyBasic = isOptOut ? roundMoney((fullMonthBasicRate / monthDays) * attendance) : row.basicSalary;
+  const pf = row.pfOptIn ? roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const esiActive = row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
   const esi = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
   const targetGross = Math.max(
     0,
     row.netPayable +
-      row.employeePf +
+      pf +
       esi +
       row.professionalTax +
       - (row.advance || 0) +
@@ -443,7 +444,7 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
     officialAttendance: row.officialAttendance,
     officialBonus: row.officialBonus,
     grossPayable,
-    pf: row.employeePf,
+    pf,
     esi,
     professionalTax: row.professionalTax,
     advance: row.advance,
@@ -454,7 +455,7 @@ function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialR
 }
 
 function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
-  const pfActive = row.pfOptIn;
+  const pfActive = row.pfOptIn && row.esiOptIn !== false;
 
   if (!pfActive) {
     return buildReferenceOfficialRow(row, monthDays);
@@ -478,10 +479,10 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
     if ((row.esiOptIn === false || row.pfOptIn === false) && candidate > 0) {
       const fullMonthBasicRate = row.esiOptIn === false 
         ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-        : 15100;
+        : Math.max(15100, Math.round(row.totalSalary * 0.51));
       candidateBasic = roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * candidate);
     }
-    if (pfActive) {
+    if (pfActive && row.esiOptIn !== false) {
       candidateBasic = Math.min(candidateBasic, 14999);
     }
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
@@ -507,12 +508,12 @@ function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const isOptOut = (row.esiOptIn === false || row.pfOptIn === false) && attendance > 0;
   const fullMonthBasicRate = row.esiOptIn === false 
     ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (row.pfOptIn === false ? 15100 : 0);
+    : (row.pfOptIn === false ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
   
   let statutoryBasic = isOptOut 
     ? roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * attendance) 
     : roundMoney(attendance * rule.daily);
-  if (pfActive) {
+  if (pfActive && row.esiOptIn !== false) {
     statutoryBasic = Math.min(statutoryBasic, 14999);
   }
   const monthlyBasic = statutoryBasic;
