@@ -2595,15 +2595,18 @@ function App() {
           }}
           onSyncAttendance={(auditedEmps) => {
             setEmployees((current) => {
-              let syncCount = 0;
-              const next = current.map((emp) => {
+              let matchedCount = 0;
+              let importCount = 0;
+
+              // 1. Map existing employees and update their attendance
+              const updatedExisting = current.map((emp) => {
                 const matched = auditedEmps.find((d) => {
                   const name1 = emp.name.toLowerCase().replace(/[^a-z0-9]/g, "");
                   const name2 = d.name.toLowerCase().replace(/[^a-z0-9]/g, "");
                   return name1.includes(name2) || name2.includes(name1);
                 });
                 if (matched) {
-                  syncCount++;
+                  matchedCount++;
                   return {
                     ...emp,
                     daysWorked: matched.presentDays,
@@ -2618,12 +2621,48 @@ function App() {
                   extraDays: 0,
                 };
               });
-              showToast(
-                `Synced attendance: ${syncCount} employees matched, ${
-                  current.length - syncCount
-                } set to 0 due to no attendance.`,
-                "success"
-              );
+
+              // 2. Identify and import new employees that aren't in the current roster
+              const newEmployees: EmployeeInput[] = [];
+              auditedEmps.forEach((d) => {
+                const exists = current.some((emp) => {
+                  const name1 = emp.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  const name2 = d.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  return name1.includes(name2) || name2.includes(name1);
+                });
+                if (!exists) {
+                  importCount++;
+                  newEmployees.push({
+                    id: uid(),
+                    name: d.name,
+                    category: d.isSecurity ? "Semi-skilled" : "Skilled",
+                    monthlySalary: 0,
+                    salaryPerDay: 0,
+                    bonusPerDay: 0,
+                    daysWorked: d.presentDays,
+                    extraDays: d.sundaysEligible,
+                    basicPercent: 70,
+                    pfOptIn: true,
+                    esiOptIn: true,
+                    advance: undefined,
+                    otherDeduction: 0,
+                    performanceBonus: undefined,
+                    specialBonus: undefined,
+                  });
+                }
+              });
+
+              const next = [...updatedExisting, ...newEmployees];
+
+              let toastMsg = `Synced attendance: ${matchedCount} employees matched.`;
+              if (importCount > 0) {
+                toastMsg += ` Imported ${importCount} new employees from attendance sheet.`;
+              }
+              const zeroedCount = current.length - matchedCount;
+              if (zeroedCount > 0) {
+                toastMsg += ` ${zeroedCount} set to 0 due to no attendance.`;
+              }
+              showToast(toastMsg, "success");
               return next;
             });
             setIsAttendanceModalOpen(false);
