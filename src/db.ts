@@ -70,8 +70,16 @@ export function getCloudConfig(): CloudConfig {
   return { enabled: true };
 }
 
-export function saveCloudConfig(config: CloudConfig) {
-  // Configured automatically on Vercel backend
+// Write (upsert) a month record into the local IndexedDB cache.
+async function idbPutRecord(record: MonthRecord): Promise<void> {
+  const db = await getDB();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put(record);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
 export async function saveMonthData(
@@ -91,15 +99,7 @@ export async function saveMonthData(
 
   // 1. Save to local IndexedDB
   try {
-    const db = await getDB();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(record);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+    await idbPutRecord(record);
   } catch (err) {
     console.error("Failed to save to local IndexedDB:", err);
   }
@@ -145,14 +145,7 @@ export async function getMonthData(company: string, monthLabel: string): Promise
           updatedAt: data.updatedAt || new Date().toISOString(),
         };
         // Cache locally in IndexedDB
-        const db = await getDB();
-        await new Promise<void>((resolve, reject) => {
-          const transaction = db.transaction(STORE_NAME, "readwrite");
-          const store = transaction.objectStore(STORE_NAME);
-          const request = store.put(record);
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-        });
+        await idbPutRecord(record);
         return record;
       }
     }
@@ -194,14 +187,7 @@ export async function getMonthData(company: string, monthLabel: string): Promise
           }).catch(console.error);
 
           // Save to IndexedDB
-          const db = await getDB();
-          await new Promise<void>((resolve, reject) => {
-            const transaction = db.transaction(STORE_NAME, "readwrite");
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.put(record);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-          });
+          await idbPutRecord(record);
 
           return record;
         }
@@ -269,27 +255,6 @@ export async function getAllMonthLabels(company: string): Promise<string[]> {
       }
       resolve(keys);
     };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-export async function deleteMonthData(company: string, monthLabel: string): Promise<void> {
-  try {
-    await fetch(`/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}`, {
-      method: "DELETE",
-    });
-  } catch (error) {
-    console.error("Error deleting from cloud database:", error);
-  }
-
-  // Local delete
-  const db = await getDB();
-  return new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete(recordId(company, monthLabel));
-
-    request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
 }
