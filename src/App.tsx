@@ -19,7 +19,6 @@ import {
   X,
   Check,
   Info,
-  Database,
   Cloud,
   Wifi,
   Building2,
@@ -31,10 +30,8 @@ import {
   saveMonthData,
   getMonthData,
   getAllMonthLabels,
-  getCloudConfig,
   getEmployeeRates,
   saveEmployeeRates,
-  CloudConfig,
   EmployeeRateMap
 } from "./db";
 import {
@@ -133,6 +130,8 @@ const monthNames = [
   "november",
   "december",
 ];
+
+const loadXLSX = () => import("xlsx");
 
 function inferMonthDays(label: string) {
   const text = label.toLowerCase();
@@ -353,7 +352,6 @@ function App() {
 
   // Cloud Database Sync settings
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
-  const cloudConfig: CloudConfig = getCloudConfig();
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
     if (toastTimeoutRef.current) {
@@ -400,7 +398,7 @@ function App() {
         const response = await fetch("/MAY.xls");
         if (response.ok) {
           const buffer = await response.arrayBuffer();
-          const XLSX = await import("xlsx");
+          const XLSX = await loadXLSX();
           const workbook = XLSX.read(buffer, { type: "array" });
           const worksheet = getBestWorksheet(workbook, monthLabel);
           const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -1072,7 +1070,7 @@ function App() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const XLSX = await import("xlsx");
+      const XLSX = await loadXLSX();
       const workbook = XLSX.read(buffer, { type: "array" });
       const worksheet = getBestWorksheet(workbook, monthLabel);
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -1150,19 +1148,15 @@ function App() {
               title={
                 dbLoading
                   ? "Syncing with cloud database..."
-                  : cloudConfig.enabled
-                    ? "Cloud database connected"
-                    : "Local database active"
+                  : "Cloud database connected"
               }
             >
               {dbLoading ? (
                 <RefreshCw size={17} className="spin-icon" style={{ color: "#2563eb" }} />
-              ) : cloudConfig.enabled ? (
-                <Cloud size={17} style={{ color: "#2563eb" }} />
               ) : (
-                <Database size={17} />
+                <Cloud size={17} style={{ color: "#2563eb" }} />
               )}
-              Database {dbLoading ? "Syncing..." : cloudConfig.enabled ? "Cloud" : "Local"}
+              Database {dbLoading ? "Syncing..." : "Cloud"}
             </button>
             <button className="primary-button" type="button" onClick={exportWorkbook}>
               <FileSpreadsheet size={17} />
@@ -1888,7 +1882,7 @@ function App() {
               <div style={{ marginBottom: "20px", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", color: "#64748b", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
                 <Wifi size={18} style={{ color: "#2563eb", flexShrink: 0 }} />
                 <div>
-                  <strong>Local Caching Active:</strong> IndexedDB caches the data locally in your browser to ensure offline support and maximum speed.
+                  <strong>Local Caching Active:</strong> Local Storage caches the data locally in your browser to ensure offline support and maximum speed.
                 </div>
               </div>
 
@@ -1956,7 +1950,7 @@ function AttendanceCheckerModal({
     if (!file) return;
     try {
       const buffer = await file.arrayBuffer();
-      const XLSX = await import("xlsx");
+      const XLSX = await loadXLSX();
       const workbook = XLSX.read(buffer, { type: "array" });
       const worksheet = getBestWorksheet(workbook, month);
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];

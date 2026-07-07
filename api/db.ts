@@ -1,4 +1,4 @@
-import { put, list, del } from '@vercel/blob';
+import { kv } from '@vercel/kv';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const DEFAULT_COMPANY = 'NKPL';
@@ -29,21 +29,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       if (!month) {
-        // List all months for this company. A single prefix list covers both the
-        // current per-company layout (monthly_salary/{company}/{month}.json) and
-        // the legacy flat layout (monthly_salary/{month}.json), which only ever
-        // held NKPL data before companies existed.
-        const { blobs } = await list({ prefix: 'monthly_salary/' });
         const months = new Set<string>();
-        for (const blob of blobs) {
-          const rest = blob.pathname.slice('monthly_salary/'.length);
-          const parts = rest.split('/');
-          if (parts.length === 1) {
-            if (company === DEFAULT_COMPANY) {
-              months.add(parts[0].replace(/\.json$/, ''));
+        // List keys under the company's namespace: e.g. monthly_salary/${company}/*
+        const keys = await kv.keys(`monthly_salary/${company}/*`);
+        for (const key of keys) {
+          const rest = key.slice(`monthly_salary/${company}/`.length);
+          months.add(rest);
+        }
+
+        // If DEFAULT_COMPANY (NKPL), also load legacy flat-path keys
+        if (company === DEFAULT_COMPANY) {
+          const legacyKeys = await kv.keys('monthly_salary/*');
+          for (const key of legacyKeys) {
+            const rest = key.slice('monthly_salary/'.length);
+            const parts = rest.split('/');
+            if (parts.length === 1) {
+              months.add(parts[0]);
             }
-          } else if (parts.length === 2 && parts[0] === company) {
-            months.add(parts[1].replace(/\.json$/, ''));
           }
         }
         return res.status(200).json(Array.from(months));
@@ -51,27 +53,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Get single month data for this company
       const normalized = String(month);
-      const primaryPath = `monthly_salary/${company}/${normalized}.json`;
-      let blobs = (await list({ prefix: primaryPath })).blobs.filter((b) => b.pathname === primaryPath);
+      const primaryPath = `monthly_salary/${company}/${normalized}`;
+      let data = await kv.get(primaryPath);
 
-      if (blobs.length === 0 && company === DEFAULT_COMPANY) {
+      if (!data && company === DEFAULT_COMPANY) {
         // Fall back to the legacy flat path used before multi-company support
-        const legacyPath = `monthly_salary/${normalized}.json`;
-        blobs = (await list({ prefix: legacyPath })).blobs.filter((b) => b.pathname === legacyPath);
+        const legacyPath = `monthly_salary/${normalized}`;
+        data = await kv.get(legacyPath);
       }
 
-      if (blobs.length === 0) {
+      if (!data) {
         return res.status(404).json({ error: 'Not found' });
       }
 
-      // Fetch the file content with cache-busting to bypass Vercel Blob CDN caching
-      const fileRes = await fetch(`${blobs[0].url}?t=${Date.now()}`, {
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-        },
-      });
-      const data = await fileRes.json();
       return res.status(200).json(data);
     }
 
@@ -83,14 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const data = { monthLabel, days, employees, company: bodyCompany, updatedAt: new Date().toISOString() };
-      // Save to blob, namespaced by company
-      const blob = await put(`monthly_salary/${bodyCompany}/${monthLabel}.json`, JSON.stringify(data), {
-        access: 'public',
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
+      // Save to KV, namespaced by company
+      await kv.set(`monthly_salary/${bodyCompany}/${monthLabel}`, data);
 
-      return res.status(200).json(blob);
+      return res.status(200).json(data);
     }
 
     if (req.method === 'DELETE') {
@@ -98,18 +88,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Missing month' });
       }
       const normalized = String(month);
-      const primaryPath = `monthly_salary/${company}/${normalized}.json`;
-      const blobs = (await list({ prefix: primaryPath })).blobs.filter((b) => b.pathname === primaryPath);
-      for (const blob of blobs) {
-        await del(blob.url);
-      }
+      const primaryPath = `monthly_salary/${company}/${normalized}`;
+      await kv.del(primaryPath);
 
       if (company === DEFAULT_COMPANY) {
-        const legacyPath = `monthly_salary/${normalized}.json`;
-        const legacyBlobs = (await list({ prefix: legacyPath })).blobs.filter((b) => b.pathname === legacyPath);
-        for (const blob of legacyBlobs) {
-          await del(blob.url);
-        }
+        const legacyPath = `monthly_salary/${normalized}`;
+        await kv.del(legacyPath);
       }
 
       return res.status(200).json({ success: true });

@@ -1,4 +1,4 @@
-import { put, list } from '@vercel/blob';
+import { kv } from '@vercel/kv';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const DEFAULT_COMPANY = 'NKPL';
@@ -29,21 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const company = normalizeCompany(req.query.company);
-    const path = `employee_rates/${company}.json`;
+    const path = `employee_rates/${company}`;
 
     if (req.method === 'GET') {
-      const blobs = (await list({ prefix: path })).blobs.filter((b) => b.pathname === path);
-      if (blobs.length === 0) {
-        return res.status(200).json({});
-      }
-
-      const fileRes = await fetch(`${blobs[0].url}?t=${Date.now()}`, {
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-        },
-      });
-      const data = await fileRes.json();
+      const data = await kv.get(path);
       return res.status(200).json(data && typeof data === 'object' ? data : {});
     }
 
@@ -54,13 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Missing rates' });
       }
 
-      const blob = await put(`employee_rates/${bodyCompany}.json`, JSON.stringify(rates), {
-        access: 'public',
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
-
-      return res.status(200).json(blob);
+      await kv.set(`employee_rates/${bodyCompany}`, rates);
+      return res.status(200).json(rates);
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
