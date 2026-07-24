@@ -63,16 +63,12 @@ export function calculateProfessionalTax(monthlyWages: number) {
   return 200;
 }
 
-export function isSpecialEmployee(name: string): boolean {
-  const specialNames = [
-    "anjali sodhani",
-    "bindu chirania",
-    "punit sodhani",
-    "rahul somani",
-    "rishi jhajharia",
-    "sonal goenka"
-  ];
-  return specialNames.includes(name.trim().toLowerCase());
+export function isSpecialEmployee(input?: string | EmployeeInput | null): boolean {
+  if (!input) return false;
+  if (typeof input === "object") {
+    return Boolean(input.isSpecial);
+  }
+  return false;
 }
 
 export function calculateSalary(
@@ -87,13 +83,30 @@ export function calculateSalary(
     MIN_BASIC_PERCENT / 100,
     Math.min(MAX_BASIC_PERCENT / 100, options?.basicShare ?? BASIC_SHARE),
   );
-  const salaryPerDay = Math.max(0, numberValue(input.salaryPerDay));
+
+  const cat = input.category?.trim().toLowerCase() || "";
+  const isLabour = cat.includes("unskilled") || cat.includes("labour") || cat.includes("cooly") || cat.includes("helper");
+
+  let salaryPerDay = Math.max(0, numberValue(input.salaryPerDay));
+  let monthlySalary = Math.max(0, numberValue(input.monthlySalary));
+
+  if (isLabour) {
+    // Labour (Unskilled): Salary Per Day is source of truth; Monthly Salary = day rate × workingDays
+    monthlySalary = roundMoney(workingDays * salaryPerDay);
+  } else {
+    // Semi-skilled & Skilled: Monthly Salary is fixed for the month; Wage Per Day = Monthly Salary / workingDays
+    if (monthlySalary > 0) {
+      salaryPerDay = roundMoney(monthlySalary / workingDays);
+    } else if (salaryPerDay > 0) {
+      monthlySalary = roundMoney(workingDays * salaryPerDay);
+    }
+  }
+
   const bonusPerDay = Math.max(0, numberValue(input.bonusPerDay));
-  const monthlySalary = roundMoney(workingDays * salaryPerDay);
   const dailyBonus = roundMoney(workingDays * bonusPerDay);
   const totalSalary = roundMoney(monthlySalary + dailyBonus);
 
-  const isSpecial = isSpecialEmployee(input.name);
+  const isSpecial = isSpecialEmployee(input);
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
   const extraDays = Math.max(0, numberValue(input.extraDays));
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
@@ -103,14 +116,11 @@ export function calculateSalary(
   const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
   const advance = numberValue(input.advance);
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
-  const perDayWage = monthlySalary / workingDays;
+  const perDayWage = salaryPerDay;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
   const performanceBonus = (perDayWage + bonusPerDay) * extraDays;
   const specialBonus = Math.max(0, numberValue(input.specialBonus));
-  // Earned is salary/month prorated by present days (i.e. salary/day x days
-  // worked) -- Basic % below is applied to this once, not to an
-  // already-reduced base, so Basic actually comes out to basicShare of the
-  // full salary at full attendance instead of basicShare^2.
+
   const earnedSalary = isSpecial ? monthlySalary : Math.max(0, monthlySalary - absentDeduction);
   
   // Prorate daily bonus according to present days
@@ -120,15 +130,11 @@ export function calculateSalary(
   const grossBeforeDeduction = earnedSalary;
   const baseBasicSalary = grossBeforeDeduction * basicShare;
   
-  // PF: Voluntary above 15,000, but if enabled it is capped at PF_BASIC_LIMIT (15,000) basic salary.
   const pfOptIn = requestedPfOptIn;
-  
-  // ESI: Applicable if full-month Basic Salary (standardBasic) is at or below ESI_GROSS_LIMIT (21,000).
   const esiOptIn = requestedEsiOptIn && standardBasic <= ESI_GROSS_LIMIT;
   
   const basicSalary = Math.min(grossBeforeDeduction, Math.max(0, baseBasicSalary));
   
-  // HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio.
   const remainingSalary = Math.max(0, proratedTotalSalary - basicSalary);
   const hra = remainingSalary * HRA_SHARE_OF_BALANCE;
   const travelAllowance = remainingSalary * TA_SHARE_OF_BALANCE;
@@ -136,13 +142,12 @@ export function calculateSalary(
   const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   
-  // ESI is calculated on Earned (salary/month adjusted for attendance).
   const esi = esiOptIn ? roundMoney(earnedSalary * ESI_RATE) : 0;
   const employerEsi = esiOptIn ? roundMoney(earnedSalary * ESI_EMPLOYER_RATE) : 0;
   
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
-  const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
-  const netPayable = grossPayable - employeePf - esi - professionalTax + advance - otherDeduction;
+  const professionalTax = calculateProfessionalTax(grossPayable);
+  const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
 
   return {
     ...input,
@@ -159,6 +164,7 @@ export function calculateSalary(
     esiOptIn,
     pfOptedOut: input.pfOptIn === false,
     esiOptedOut: input.esiOptIn === false,
+    isSpecial,
     advance: input.advance,
     otherDeduction,
     perDayWage,

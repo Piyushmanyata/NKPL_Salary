@@ -559,6 +559,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -574,6 +575,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -589,6 +591,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -604,6 +607,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -634,6 +638,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -724,6 +729,7 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
+    "isSpecial": true,
     "advance": null,
     "otherDeduction": 15000
   },

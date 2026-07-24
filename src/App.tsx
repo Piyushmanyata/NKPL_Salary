@@ -208,31 +208,45 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
   const rawMonthlySalary = Math.max(0, numberValue(row.monthlySalary));
   const hasSalaryPerDay =
     row.salaryPerDay !== undefined && row.salaryPerDay !== null && String(row.salaryPerDay).trim() !== "";
-  // Legacy records (and the bundled sample data) only ever stored a monthly
-  // salary; derive a per-day rate from it once so old data keeps working
-  // after the switch to per-day-rate-driven calculations.
-  const salaryPerDay = hasSalaryPerDay
-    ? Math.max(0, numberValue(row.salaryPerDay))
-    : Math.max(0, roundMoney(rawMonthlySalary / (monthDays || WORKING_DAYS)));
-  const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
-  const monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
+  
+  const categoryStr = String(row.category || "Skilled");
+  const isLabour = categoryStr.toLowerCase().includes("unskilled") || categoryStr.toLowerCase().includes("labour") || categoryStr.toLowerCase().includes("cooly") || categoryStr.toLowerCase().includes("helper");
 
-  if (!name && monthlySalary <= 0) {
+  let monthlySalary = rawMonthlySalary;
+  let salaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
+
+  if (isLabour) {
+    if (salaryPerDay === 0 && monthlySalary > 0) {
+      salaryPerDay = roundMoney(monthlySalary / (monthDays || WORKING_DAYS));
+    }
+    monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
+  } else {
+    if (monthlySalary === 0 && salaryPerDay > 0) {
+      monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
+    }
+    salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / (monthDays || WORKING_DAYS)) : salaryPerDay;
+  }
+
+  const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
+  const isSpecial = Boolean(row.isSpecial);
+
+  if (!name && monthlySalary <= 0 && salaryPerDay <= 0) {
     return null;
   }
 
   return {
     id: String(row.id || `emp-${Date.now()}-${index}`),
     name,
-    category: normalizeWageCategory(String(row.category || "Skilled"), monthlySalary),
+    category: normalizeWageCategory(categoryStr, monthlySalary),
     monthlySalary,
     salaryPerDay,
     bonusPerDay,
-    daysWorked: clampDays(numberValue(row.daysWorked), monthDays),
+    daysWorked: isSpecial ? (monthDays || WORKING_DAYS) : clampDays(numberValue(row.daysWorked), monthDays),
     extraDays: Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
-    pfOptIn: row.pfOptIn !== false,
-    esiOptIn: row.esiOptIn !== false,
+    pfOptIn: isSpecial ? false : row.pfOptIn !== false,
+    esiOptIn: isSpecial ? false : row.esiOptIn !== false,
+    isSpecial,
     advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) !== 0 ? numberValue(row.advance) : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
     officialAttendance: row.officialAttendance !== undefined ? numberValue(row.officialAttendance) : undefined,
@@ -638,7 +652,7 @@ function App() {
 
         if (field === "name") {
           const nameStr = String(value);
-          const isSpecial = isSpecialEmployee(nameStr);
+          const isSpecial = isSpecialEmployee(employee);
           if (isSpecial) {
             return {
               ...employee,
@@ -655,8 +669,14 @@ function App() {
           return { ...employee, category: String(value) };
         }
 
-        if (field === "pfOptIn" || field === "esiOptIn") {
-          return { ...employee, [field]: booleanValue(value) };
+        if (field === "pfOptIn" || field === "esiOptIn" || field === "isSpecial") {
+          const isSpecialVal = field === "isSpecial" ? booleanValue(value) : Boolean(employee.isSpecial);
+          return {
+            ...employee,
+            [field]: booleanValue(value),
+            isSpecial: isSpecialVal,
+            ...(isSpecialVal ? { daysWorked: effectiveMonthDays, pfOptIn: false, esiOptIn: false } : {}),
+          };
         }
 
         if (field === "basicPercent") {
@@ -1331,7 +1351,7 @@ function App() {
                   </thead>
                   <tbody>
                     {sortedFilteredRows.map((row) => {
-                      const isSpecial = isSpecialEmployee(row.name);
+                      const isSpecial = isSpecialEmployee(row);
                       return (
                         <Fragment key={row.id}>
                           <tr>
@@ -1496,6 +1516,18 @@ function App() {
                                       onClick={() => updateEmployee(row.id, "esiOptIn", !row.esiOptIn)}
                                     >
                                       {row.esiOptIn ? "Turn Off" : "Turn On"}
+                                    </button>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Special Flag</span>
+                                    <strong>{isSpecial ? "Special" : "Standard"}</strong>
+                                    <small>{isSpecial ? "Attendance-exempt, full pay, no PF/ESI" : "Standard attendance & statutory rules"}</small>
+                                    <button
+                                      type="button"
+                                      className={isSpecial ? "toggle-on" : "toggle-off"}
+                                      onClick={() => updateEmployee(row.id, "isSpecial", !isSpecial)}
+                                    >
+                                      {isSpecial ? "Remove Special" : "Make Special"}
                                     </button>
                                   </div>
                                 </div>
