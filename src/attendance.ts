@@ -11,9 +11,9 @@ const normalizeKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g
 // names: punctuation/spacing/case-insensitive, and tolerant of one side
 // carrying extra words (e.g. "Ajay Malik" vs "AJAY MALIK (SECURITY)").
 export function namesMatch(a: string, b: string): boolean {
-  const ka = normalizeKey(a);
-  const kb = normalizeKey(b);
-  return ka.includes(kb) || kb.includes(ka);
+  const keyA = normalizeKey(a);
+  const keyB = normalizeKey(b);
+  return keyA.includes(keyB) || keyB.includes(keyA);
 }
 
 function findMatchedEmployee(employees: EmployeeInput[], rawName: string) {
@@ -80,17 +80,20 @@ export function calculateEmployeeAttendanceStats(
   const totalCalendarDays = daysDetail.length;
   const monthThreshold = totalCalendarDays === 31 ? 21 : (totalCalendarDays === 30 ? 20 : Math.round(totalCalendarDays * (20 / 30)));
 
+  const isDayPresent = (day: AttendanceEmployee["daysDetail"][number]) =>
+    Boolean(day.isPresent || day.manualOverride === "present");
+
   let rawPresentDays = 0;
   let totalHours = 0;
   daysDetail.forEach((day) => {
-    if (day.isPresent) {
+    if (isDayPresent(day)) {
       rawPresentDays++;
       totalHours += day.duration;
     }
   });
 
   const unapprovedAbsences = daysDetail.filter(
-    (d) => !d.isPresent && d.leaveType === "unapproved"
+    (d) => !isDayPresent(d) && d.leaveType === "unapproved"
   ).length;
 
   const effectivePresentDays = Math.max(0, rawPresentDays - unapprovedAbsences);
@@ -101,15 +104,15 @@ export function calculateEmployeeAttendanceStats(
 
   daysDetail.forEach((day, index) => {
     if (day.dayOfWeek === 0) {
-      const actuallyWorked = day.isPresent;
+      const actuallyWorked = isDayPresent(day);
       if (actuallyWorked) {
         sundaysWorked++;
       }
 
       const sat = daysDetail[index - 1];
       const mon = daysDetail[index + 1];
-      const isSatAbsent = (sat && sat.dayOfWeek === 6) ? !sat.isPresent : false;
-      const isMonAbsent = (mon && mon.dayOfWeek === 1) ? !mon.isPresent : false;
+      const isSatAbsent = (sat && sat.dayOfWeek === 6) ? !isDayPresent(sat) : false;
+      const isMonAbsent = (mon && mon.dayOfWeek === 1) ? !isDayPresent(mon) : false;
       const isSandwichAbsent = isSatAbsent && isMonAbsent;
 
       let isEligible = false;
@@ -121,7 +124,7 @@ export function calculateEmployeeAttendanceStats(
         reasons.push(
           `Below Threshold: Worked only ${effectivePresentDays}/${totalCalendarDays} days (requires min ${monthThreshold} days for Sunday benefits).`
         );
-      } else if (isSandwichAbsent && !actuallyWorked) {
+      } else if (isSandwichAbsent) {
         isEligible = false;
         reasons.push(
           `Sandwich Rule Applied: Absent on both Saturday (${sat ? sat.dateString.split('/').slice(1).join('/') : 'Sat'}) and Monday (${mon ? mon.dateString.split('/').slice(1).join('/') : 'Mon'}). Sunday auto-presence is denied.`
@@ -148,15 +151,22 @@ export function calculateEmployeeAttendanceStats(
 
   if (meetsMonthThreshold && !isSecurity) {
     let autoPaidSundaysCount = 0;
+    let eligibleWorkedSundaysCount = 0;
+
     sundayDetails.forEach((sun) => {
       const dayObj = daysDetail.find((d) => d.dateString === sun.date);
-      if (dayObj && !dayObj.isPresent && sun.isEligible) {
-        autoPaidSundaysCount++;
+      if (dayObj) {
+        const worked = isDayPresent(dayObj);
+        if (!worked && sun.isEligible) {
+          autoPaidSundaysCount++;
+        } else if (worked && sun.isEligible) {
+          eligibleWorkedSundaysCount++;
+        }
       }
     });
 
     finalPresentDays = effectivePresentDays + autoPaidSundaysCount;
-    sundayBonusDays = sundaysWorked;
+    sundayBonusDays = eligibleWorkedSundaysCount;
   } else {
     finalPresentDays = effectivePresentDays;
     sundayBonusDays = 0;
