@@ -131,8 +131,6 @@ export function calculateSalary(
   const baseBasicSalary = grossBeforeDeduction * basicShare;
   
   const pfOptIn = requestedPfOptIn;
-  const esiOptIn = requestedEsiOptIn && standardBasic <= ESI_GROSS_LIMIT;
-  
   const basicSalary = Math.min(grossBeforeDeduction, Math.max(0, baseBasicSalary));
   
   const remainingSalary = Math.max(0, proratedTotalSalary - basicSalary);
@@ -142,10 +140,12 @@ export function calculateSalary(
   const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   
-  const esi = esiOptIn ? roundMoney(earnedSalary * ESI_RATE) : 0;
-  const employerEsi = esiOptIn ? roundMoney(earnedSalary * ESI_EMPLOYER_RATE) : 0;
-  
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
+  const esiOptIn = requestedEsiOptIn && grossPayable <= ESI_GROSS_LIMIT;
+  
+  const esi = esiOptIn ? roundMoney(grossPayable * ESI_RATE) : 0;
+  const employerEsi = esiOptIn ? roundMoney(grossPayable * ESI_EMPLOYER_RATE) : 0;
+  
   const professionalTax = calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
 

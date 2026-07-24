@@ -100,6 +100,16 @@ function clampOfficialAttendance(value: unknown) {
   return Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, Math.floor(numberValue(value))));
 }
 
+function getOptOutBasicRate(totalSalary: number, hasNoPf: boolean, hasNoEsi: boolean): number {
+  if (hasNoEsi) {
+    return Math.max(21100, Math.round(totalSalary * 0.51));
+  }
+  if (hasNoPf) {
+    return Math.max(15100, Math.round(totalSalary * 0.51));
+  }
+  return 0;
+}
+
 interface StatutoryComponents {
   pf: number;
   esiValue: number;
@@ -117,15 +127,11 @@ function calculateStatutoryComponents(
   hasNoEsi: boolean
 ): StatutoryComponents {
   const pf = row.pfOptIn ? roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE) : 0;
-  const esiActive = hasNoEsi
-    ? false
-    : row.pfOptIn
-      ? true
-      : row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
+  const esiActive = !hasNoEsi && row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
   const esiValue = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
   const targetGross = Math.max(
     0,
-    row.netPayable + pf + esiValue + row.professionalTax - (row.advance || 0) + row.otherDeduction
+    row.netPayable + pf + esiValue + row.professionalTax + (row.advance || 0) + row.otherDeduction
   );
   
   const remainingForHraTa = isOptOut ? Math.max(0, targetGross - monthlyBasic) : Math.max(0, proratedTotalSalary - monthlyBasic);
@@ -145,9 +151,7 @@ export function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): Of
   const hasNoPf = !row.pfOptIn || row.pfOptedOut;
   const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
   const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
-  const fullMonthBasicRate = hasNoEsi 
-    ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (hasNoPf ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
+  const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
   
   const monthlyBasic = isOptOut ? roundMoney((fullMonthBasicRate / monthDays) * attendance) : row.basicSalary;
   const stats = calculateStatutoryComponents(row, monthlyBasic, isOptOut, proratedTotalSalary, hasNoEsi);
@@ -202,20 +206,14 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     const hasNoPf = !row.pfOptIn || row.pfOptedOut;
     const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
     if ((hasNoPf || hasNoEsi) && candidate > 0) {
-      const fullMonthBasicRate = hasNoEsi 
-        ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-        : Math.max(15100, Math.round(row.totalSalary * 0.51));
+      const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
       candidateBasic = roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * candidate);
     }
     if (pfActive) {
-      candidateBasic = Math.min(candidateBasic, 14999);
+      candidateBasic = Math.min(candidateBasic, PF_BASIC_LIMIT);
     }
     const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
-    const candidateEsiActive = hasNoEsi
-      ? false
-      : pfActive
-        ? true
-        : row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT;
+    const candidateEsiActive = !hasNoEsi && row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT;
     const candidateEsi = candidateEsiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
     const candidateGross = Math.max(
       0,
@@ -223,7 +221,7 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
         candidatePf +
         candidateEsi +
         row.professionalTax +
-        - (row.advance || 0) +
+        (row.advance || 0) +
         row.otherDeduction,
     );
 
@@ -237,21 +235,19 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
   const hasNoPf = !row.pfOptIn || row.pfOptedOut;
   const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
   const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
-  const fullMonthBasicRate = hasNoEsi 
-    ? Math.max(21100, Math.round(row.totalSalary * 0.51)) 
-    : (hasNoPf ? Math.max(15100, Math.round(row.totalSalary * 0.51)) : 0);
+  const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
   
   let statutoryBasic = isOptOut 
     ? roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * attendance) 
     : roundMoney(attendance * rule.daily);
   if (pfActive) {
-    statutoryBasic = Math.min(statutoryBasic, 14999);
+    statutoryBasic = Math.min(statutoryBasic, PF_BASIC_LIMIT);
   }
   const monthlyBasic = statutoryBasic;
   const stats = calculateStatutoryComponents(row, monthlyBasic, isOptOut, proratedTotalSalary, hasNoEsi);
   const finalGross = stats.grossPayable;
   const netPayable = roundMoney(
-    finalGross - stats.pf - stats.esiValue - row.professionalTax + (row.advance || 0) - row.otherDeduction,
+    finalGross - stats.pf - stats.esiValue - row.professionalTax - (row.advance || 0) - row.otherDeduction,
   );
 
   return {
