@@ -46,7 +46,7 @@ export async function saveMonthData(
   // 1. Save to local cache
   localPutRecord(record);
 
-  // 2. Sync to Vercel Blob store via serverless proxy
+  // 2. Sync to cloud database via serverless API
   try {
     const response = await fetch("/api/db", {
       method: "POST",
@@ -57,10 +57,10 @@ export async function saveMonthData(
     });
 
     if (!response.ok) {
-      console.error("Vercel Blob sync failed:", await response.text());
+      console.error("Cloud database sync failed:", await response.text());
     }
   } catch (error) {
-    console.error("Error syncing to Vercel Blob:", error);
+    console.error("Error syncing to cloud database:", error);
   }
 }
 
