@@ -1,7 +1,8 @@
 import type { EmployeeInput, SalaryRow } from "./types";
 
-export const WORKING_DAYS = 31;
-export const MIN_MONTH_DAYS = 1;
+/** Fallback only when a month label cannot be parsed. Never 31. SPEC §3 / TICKET-03. */
+export const DEFAULT_MONTH_DAYS = 30;
+export const MIN_MONTH_DAYS = 28;
 export const MAX_MONTH_DAYS = 31;
 export const BASIC_SHARE = 0.5;
 export const HRA_SHARE_OF_BALANCE = 0.7;
@@ -34,11 +35,11 @@ export function numberValue(value: unknown) {
 export function clampMonthDays(value: unknown) {
   const shouldUseDefault =
     value === undefined || value === null || (typeof value === "string" && value.trim() === "");
-  const parsed = shouldUseDefault ? WORKING_DAYS : numberValue(value);
+  const parsed = shouldUseDefault ? DEFAULT_MONTH_DAYS : numberValue(value);
   return Math.max(MIN_MONTH_DAYS, Math.min(MAX_MONTH_DAYS, Math.round(parsed)));
 }
 
-export function clampDays(value: number, maxDays = WORKING_DAYS) {
+export function clampDays(value: number, maxDays: number) {
   return Math.max(0, Math.min(clampMonthDays(maxDays), value || 0));
 }
 
@@ -78,7 +79,7 @@ export function calculateSalary(
     workingDays?: number;
   },
 ): SalaryRow {
-  const workingDays = clampMonthDays(options?.workingDays ?? WORKING_DAYS);
+  const workingDays = clampMonthDays(options?.workingDays ?? DEFAULT_MONTH_DAYS);
   const basicShare = Math.max(
     MIN_BASIC_PERCENT / 100,
     Math.min(MAX_BASIC_PERCENT / 100, options?.basicShare ?? BASIC_SHARE),

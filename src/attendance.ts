@@ -219,6 +219,16 @@ export function parseMonthYearString(str: string) {
   return null;
 }
 
+/**
+ * Calendar days D for a pay month — pure function of the month label.
+ * Parse failure returns 30 (neutral default; never 31). SPEC §3 / TICKET-03.
+ */
+export function calendarDaysForMonth(label: string): number {
+  const p = parseMonthYearString(label);
+  if (!p) return 30;
+  return new Date(p.year, p.monthIndex + 1, 0).getDate();
+}
+
 export function getBestWorksheet(workbook: any, targetMonthLabel: string) {
   const sheetNames = workbook.SheetNames;
   if (sheetNames.length <= 1) {

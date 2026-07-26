@@ -44,7 +44,6 @@ import {
   PF_BASIC_LIMIT,
   PF_RATE,
   TA_SHARE_OF_BALANCE,
-  WORKING_DAYS,
   calculateSalary,
   clampBasicPercent,
   clampDays,
@@ -59,6 +58,7 @@ import type { AttendanceEmployee, EmployeeInput, SalaryRow } from "./types";
 import { buildOfficialRow, normalizeWageCategory } from "./officialSheet";
 import {
   calculateEmployeeAttendanceStats,
+  calendarDaysForMonth,
   getBestWorksheet,
   namesMatch,
   parseAttendanceExcel,
@@ -74,7 +74,7 @@ const COMPANIES = [
 
 type CompanyCode = (typeof COMPANIES)[number]["code"];
 
-const blankEmployee = (monthDays = WORKING_DAYS): EmployeeInput => ({
+const blankEmployee = (monthDays: number): EmployeeInput => ({
   id: uid(),
   name: "New Employee",
   category: "Skilled",
@@ -133,18 +133,6 @@ const monthNames = [
 
 const loadXLSX = () => import("xlsx");
 
-function inferMonthDays(label: string) {
-  const text = label.toLowerCase();
-  const monthIndex = monthNames.findIndex((month) => text.includes(month.slice(0, 3)));
-  const year = Number(text.match(/\b(20\d{2}|19\d{2})\b/)?.[1] ?? new Date().getFullYear());
-
-  if (monthIndex < 0 || !Number.isFinite(year)) {
-    return null;
-  }
-
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
 function loadActiveCompany(): CompanyCode {
   try {
     const stored = localStorage.getItem(activeCompanyStorageKey);
@@ -173,15 +161,16 @@ function loadMonthConfig(company: CompanyCode) {
       "{}";
     const parsed = JSON.parse(raw) as {
       label?: unknown;
-      days?: unknown;
+      days?: unknown; // ignored — D is derived from label (TICKET-03)
     };
     const label = String(parsed.label || "May 2026");
     return {
       label,
-      days: clampMonthDays(parsed.days ?? inferMonthDays(label) ?? WORKING_DAYS),
+      // Recompute days from the label; never trust a stored days value.
+      days: calendarDaysForMonth(label),
     };
   } catch {
-    return { label: "May 2026", days: WORKING_DAYS };
+    return { label: "May 2026", days: calendarDaysForMonth("May 2026") };
   }
 }
 
@@ -198,7 +187,7 @@ function normalizeMonthLabel(value: string) {
   return `${monthNames[monthIndex][0].toUpperCase()}${monthNames[monthIndex].slice(1)} ${year}`;
 }
 
-const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAYS): EmployeeInput | null => {
+const sanitizeEmployee = (value: unknown, index: number, monthDays: number): EmployeeInput | null => {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -212,19 +201,20 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
   const categoryStr = String(row.category || "Skilled");
   const isLabour = categoryStr.toLowerCase().includes("unskilled") || categoryStr.toLowerCase().includes("labour") || categoryStr.toLowerCase().includes("cooly") || categoryStr.toLowerCase().includes("helper");
 
+  const days = clampMonthDays(monthDays);
   let monthlySalary = rawMonthlySalary;
   let salaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
 
   if (isLabour) {
     if (salaryPerDay === 0 && monthlySalary > 0) {
-      salaryPerDay = roundMoney(monthlySalary / (monthDays || WORKING_DAYS));
+      salaryPerDay = roundMoney(monthlySalary / days);
     }
-    monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
+    monthlySalary = roundMoney(days * salaryPerDay);
   } else {
     if (monthlySalary === 0 && salaryPerDay > 0) {
-      monthlySalary = roundMoney((monthDays || WORKING_DAYS) * salaryPerDay);
+      monthlySalary = roundMoney(days * salaryPerDay);
     }
-    salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / (monthDays || WORKING_DAYS)) : salaryPerDay;
+    salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / days) : salaryPerDay;
   }
 
   const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
@@ -241,7 +231,7 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     monthlySalary,
     salaryPerDay,
     bonusPerDay,
-    daysWorked: isSpecial ? (monthDays || WORKING_DAYS) : clampDays(numberValue(row.daysWorked), monthDays),
+    daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
     extraDays: Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
@@ -305,7 +295,7 @@ const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-const loadEmployees = (company: CompanyCode, monthDays = WORKING_DAYS, monthLabel?: string) => {
+const loadEmployees = (company: CompanyCode, monthDays: number, monthLabel?: string) => {
   const fallback = defaultEmployeesForCompany(company, monthLabel);
   const stored =
     localStorage.getItem(employeesStorageKey(company)) ??
@@ -331,7 +321,6 @@ function App() {
   const [activeCompany, setActiveCompany] = useState<CompanyCode>(loadActiveCompany);
   const initialMonthConfig = useMemo(() => loadMonthConfig(activeCompany), []);
   const [monthLabel, setMonthLabel] = useState(initialMonthConfig.label);
-  const [monthDays, setMonthDays] = useState(initialMonthConfig.days);
   const [employees, setEmployees] = useState<EmployeeInput[]>(() =>
     loadEmployees(activeCompany, initialMonthConfig.days, initialMonthConfig.label),
   );
@@ -344,7 +333,11 @@ function App() {
   const [attendanceMonth, setAttendanceMonth] = useState<string>("");
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const attendanceFileRef = useRef<HTMLInputElement>(null);
-  const effectiveMonthDays = clampMonthDays(monthDays);
+  // D is a pure function of the month label — never independently editable (TICKET-03).
+  const effectiveMonthDays = useMemo(
+    () => calendarDaysForMonth(monthLabel),
+    [monthLabel],
+  );
   const employeesRef = useRef(employees);
 
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -627,10 +620,6 @@ function App() {
 
   const updateMonthLabel = (value: string) => {
     setMonthLabel(value);
-    const inferredDays = inferMonthDays(value);
-    if (inferredDays) {
-      setMonthDays(inferredDays);
-    }
   };
 
   const commitMonthLabel = () => {
@@ -743,7 +732,6 @@ function App() {
     setActiveCompany(next);
     setCompanyName(loadCompanyLabel(next));
     setMonthLabel(cfg.label);
-    setMonthDays(cfg.days);
     // Attendance data belongs to the company it was loaded/uploaded for; clear it
     // so switching companies never shows one company's attendance audit against
     // another company's employee list.
@@ -791,14 +779,15 @@ function App() {
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
     try {
+      // Persist label only — days are always recomputed from the label (TICKET-03).
       localStorage.setItem(
         monthConfigStorageKey(activeCompany),
-        JSON.stringify({ label: normalized, days: effectiveMonthDays }),
+        JSON.stringify({ label: normalized }),
       );
     } catch {
       // ignore storage failures
     }
-  }, [activeCompany, monthLabel, effectiveMonthDays, dbLoading, showNoDataModal]);
+  }, [activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
   // Load selected company + month payroll data from DB
   useEffect(() => {
@@ -820,8 +809,16 @@ function App() {
         ratesSignatureRef.current = JSON.stringify(rates);
         if (data) {
           justLoadedRef.current = true;
-          setEmployees(applyEmployeeRates(data.employees, rates));
-          setMonthDays(data.days);
+          // Ignore stored data.days — calendar days come from the month label.
+          const days = calendarDaysForMonth(normalized);
+          setEmployees(
+            applyEmployeeRates(
+              data.employees
+                .map((emp, index) => sanitizeEmployee(emp, index, days))
+                .filter((emp): emp is EmployeeInput => Boolean(emp)),
+              rates,
+            ),
+          );
         } else {
           // No data saved for this company + month yet
           setNoDataMonth(normalized);
@@ -938,13 +935,12 @@ function App() {
     try {
       const sourceData = await getMonthData(activeCompany, source);
       if (sourceData) {
-        const targetDays = inferMonthDays(noDataMonth) ?? sourceData.days;
+        const targetDays = calendarDaysForMonth(noDataMonth);
         const sanitizedEmployees = applyEmployeeRates(
           sourceData.employees.map((emp, index) => sanitizeEmployee(emp, index, targetDays)!).filter(Boolean),
           employeeRates,
         );
         setEmployees(sanitizedEmployees);
-        setMonthDays(targetDays);
         await saveMonthData(activeCompany, noDataMonth, targetDays, sanitizedEmployees);
         showToast(`Copied employee list from ${source} to ${noDataMonth} (${targetDays} days)`);
       } else {
@@ -964,8 +960,6 @@ function App() {
     setShowNoDataModal(false);
     setActiveCompany(prevCompanyRef.current);
     setMonthLabel(prevMonthRef.current);
-    const inferred = inferMonthDays(prevMonthRef.current);
-    if (inferred) setMonthDays(inferred);
   };
 
   // Close whichever modal is open on Escape, matching the explicit close/cancel
@@ -1216,24 +1210,10 @@ function App() {
             Calendar Days
             <input
               type="number"
-              min={1}
-              max={31}
               value={effectiveMonthDays}
-              onChange={(event) => {
-                const val = parseInt(event.target.value, 10);
-                if (!isNaN(val)) {
-                  setMonthDays(Math.max(1, Math.min(31, val)));
-                }
-              }}
-              onBlur={() => {
-                // Clamp all employees' days worked ONLY when the user finishes editing (focus leaves the input field)
-                setEmployees((current) =>
-                  current.map((emp) => ({
-                    ...emp,
-                    daysWorked: Math.min(effectiveMonthDays, emp.daysWorked),
-                  }))
-                );
-              }}
+              readOnly
+              title="Derived from the month label (not editable)"
+              aria-readonly="true"
             />
           </label>
           <label>
