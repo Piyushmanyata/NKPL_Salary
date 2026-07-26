@@ -92,7 +92,6 @@ const blankEmployee = (monthDays: number): EmployeeInput => ({
   esiOptIn: true,
   advance: undefined,
   otherDeduction: 0,
-  performanceBonus: undefined,
   specialBonus: undefined,
 });
 
@@ -250,9 +249,8 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     // Positive advance = recovered from net. Negatives (legacy UI convention) clamp to absent.
     advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) > 0 ? numberValue(row.advance) : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
-    officialAttendance: row.officialAttendance !== undefined ? numberValue(row.officialAttendance) : undefined,
-    officialBonus: row.officialBonus !== undefined ? numberValue(row.officialBonus) : undefined,
-    performanceBonus: row.performanceBonus !== undefined && row.performanceBonus !== null && String(row.performanceBonus).trim() !== "" ? numberValue(row.performanceBonus) : undefined,
+    // performanceBonus / officialAttendance / officialBonus are not inputs (TICKET-10).
+    // Legacy stored keys are ignored on read and drop out on next save.
     specialBonus: row.specialBonus !== undefined && row.specialBonus !== null && String(row.specialBonus).trim() !== "" ? numberValue(row.specialBonus) : undefined,
   };
 };
@@ -1797,8 +1795,6 @@ function App() {
                     daysWorked: matched.presentDays,
                     // Security / Special: engine also zeros this; keep stored value consistent.
                     extraDays: isSecurity || isSpecialCategory(emp.category) ? 0 : matched.sundaysEligible,
-                    performanceBonus:
-                      isSecurity || matched.sundaysEligible > 0 ? undefined : emp.performanceBonus,
                   };
                 }
                 // Sync employees without matching attendance in the sheet to 0 days worked & 0 extra days
@@ -1831,7 +1827,6 @@ function App() {
                     esiOptIn: true,
                     advance: undefined,
                     otherDeduction: 0,
-                    performanceBonus: undefined,
                     specialBonus: undefined,
                   });
                 }

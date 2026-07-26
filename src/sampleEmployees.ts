@@ -13,7 +13,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": false,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 995
   },
   {
     "id": "emp-2",
@@ -92,7 +91,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": false,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 1182
   },
   {
     "id": "emp-8",
@@ -158,7 +156,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-13",
@@ -276,7 +273,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 450
   },
   {
     "id": "emp-22",
@@ -290,7 +286,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-23",
@@ -304,7 +299,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-24",
@@ -318,7 +312,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 450
   },
   {
     "id": "emp-25",
@@ -332,7 +325,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-26",
@@ -346,7 +338,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-27",
@@ -360,7 +351,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-28",
@@ -374,7 +364,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-29",
@@ -388,7 +377,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 450
   },
   {
     "id": "emp-30",
@@ -402,7 +390,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-31",
@@ -416,7 +403,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 450
   },
   {
     "id": "emp-32",
@@ -430,7 +416,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-33",
@@ -444,7 +429,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-34",
@@ -458,7 +442,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 405
   },
   {
     "id": "emp-35",
@@ -472,7 +455,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 450
   },
   {
     "id": "emp-36",
@@ -486,7 +468,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-37",
@@ -578,7 +559,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-44",
@@ -592,7 +572,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 420
   },
   {
     "id": "emp-45",
@@ -606,7 +585,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 390
   },
   {
     "id": "emp-46",
@@ -620,7 +598,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-47",
@@ -647,7 +624,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": false,
     "advance": null,
     "otherDeduction": 15000,
-    "performanceBonus": 200
   },
   {
     "id": "emp-49",
@@ -661,7 +637,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": false,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 915
   },
   {
     "id": "emp-50",
@@ -675,7 +650,6 @@ export const sampleEmployees: EmployeeInput[] = [
     "esiOptIn": true,
     "advance": null,
     "otherDeduction": 0,
-    "performanceBonus": 435
   },
   {
     "id": "emp-51",

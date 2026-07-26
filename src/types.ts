@@ -45,10 +45,7 @@ export type EmployeeInput = {
   esiOptIn?: boolean;
   advance?: number | null;
   otherDeduction: number;
-  officialAttendance?: number;
-  officialBonus?: number;
   specialBonus?: number | null;
-  performanceBonus?: number | null;
 };
 
 export type SalaryRow = EmployeeInput & {
@@ -64,6 +61,7 @@ export type SalaryRow = EmployeeInput & {
   basicSalary: number;
   hra: number;
   travelAllowance: number;
+  /** Computed: (r + b) × extraDays. Not an input. TICKET-10. */
   performanceBonus: number;
   specialBonus: number;
   grossPayable: number;

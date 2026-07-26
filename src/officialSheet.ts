@@ -33,8 +33,6 @@ export type OfficialRow = {
   otherDeduction: number;
   netPayable: number;
   referenceNetPayable: number;
-  officialAttendance?: number;
-  officialBonus?: number;
 };
 export const OFFICIAL_WAGE_DAYS = 26;
 
@@ -166,8 +164,6 @@ export function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): Of
     monthlyTravelAllowance: stats.monthlyTravelAllowance,
     attendance,
     bonus: stats.bonus,
-    officialAttendance: row.officialAttendance,
-    officialBonus: row.officialBonus,
     grossPayable: stats.grossPayable,
     pf: stats.pf,
     esi: stats.esiValue,
@@ -260,8 +256,6 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     monthlyTravelAllowance: stats.monthlyTravelAllowance,
     attendance,
     bonus: stats.bonus,
-    officialAttendance: undefined,
-    officialBonus: undefined,
     grossPayable: finalGross,
     pf: stats.pf,
     esi: stats.esiValue,
