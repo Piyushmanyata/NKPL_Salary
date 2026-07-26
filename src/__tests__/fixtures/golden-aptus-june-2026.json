@@ -487,9 +487,9 @@
         "employeePf": 1502.71,
         "esi": 0,
         "professionalTax": 150,
-        "advance": 0,
+        "advance": 95,
         "otherDeduction": 0,
-        "netPayable": 26907.29,
+        "netPayable": 26812.29,
         "pfOptIn": true,
         "esiOptIn": false
       },
@@ -503,9 +503,9 @@
         "pf": 1510.08,
         "esi": 0,
         "professionalTax": 150,
-        "advance": 0,
+        "advance": 95,
         "otherDeduction": 0,
-        "netPayable": 26907.29,
+        "netPayable": 26812.29,
         "unpackable": false
       }
     },
@@ -526,9 +526,9 @@
         "employeePf": 1223.22,
         "esi": 0,
         "professionalTax": 130,
-        "advance": 0,
+        "advance": 83,
         "otherDeduction": 0,
-        "netPayable": 19736.78,
+        "netPayable": 19653.78,
         "pfOptIn": true,
         "esiOptIn": false
       },
@@ -542,9 +542,9 @@
         "pf": 1320,
         "esi": 0,
         "professionalTax": 130,
-        "advance": 0,
+        "advance": 83,
         "otherDeduction": 0,
-        "netPayable": 19736.78,
+        "netPayable": 19653.78,
         "unpackable": false
       }
     },

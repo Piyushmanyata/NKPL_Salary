@@ -203,7 +203,7 @@
     "basicPercent": 54,
     "pfOptIn": true,
     "esiOptIn": false,
-    "advance": -95,
+    "advance": 95,
     "otherDeduction": 0,
     "specialBonus": 0
   },
@@ -219,7 +219,7 @@
     "basicPercent": 50,
     "pfOptIn": true,
     "esiOptIn": false,
-    "advance": -83,
+    "advance": 83,
     "otherDeduction": 0,
     "specialBonus": 0
   },

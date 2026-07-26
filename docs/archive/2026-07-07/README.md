@@ -30,6 +30,19 @@ See `docs/tickets/TICKET-15-stale-exports-build-divergence.md` and `docs/SPEC-pa
 - Historical record of what the business was shown on 2026-07-07
 - Diffing against re-exports after TICKETS 01–12 land (every rupee delta must map to a ticket)
 
+## Re-export attribution (post T-01…T-14)
+
+See **[`JUNE-DIFF-ATTRIBUTION.md`](./JUNE-DIFF-ATTRIBUTION.md)** — Reference net old vs
+current golden fixtures, with per-employee attribution.
+
+| Company | Old net total | New net total (matched names) | Δ |
+|---|---:|---:|---:|
+| NKPL | 749,873.03 | 747,574.25 | **−2,298.78** |
+| APTUS | 570,158.73 | 569,530.55 | **−628.18** |
+
+Regenerate with: `python scripts/diff-june-export-vs-golden.py`  
+(Requires goldens from `node --import tsx scripts/gen-golden-fixtures.mjs`.)
+
 ## Deployed build at investigation time (2026-07-26)
 
 - Production project: `nawkiran-salary` → https://nawkiran-salary.vercel.app
