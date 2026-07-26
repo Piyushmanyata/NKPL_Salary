@@ -147,11 +147,10 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
       {
         id: "fix-3",
         name: "Special Director",
-        category: "Skilled",
+        category: "Special",
         monthlySalary: 60000,
         daysWorked: 30,
         extraDays: 0,
-        isSpecial: true,
         pfOptIn: false,
         esiOptIn: false,
         otherDeduction: 0,

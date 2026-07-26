@@ -49,13 +49,15 @@ import {
   clampDays,
   clampMonthDays,
   currency,
-  isSpecialEmployee,
+  isSpecialCategory,
   numberValue,
   roundMoney,
   uid,
 } from "./salary";
-import type { AttendanceEmployee, EmployeeInput, SalaryRow } from "./types";
-import { buildOfficialRow, normalizeWageCategory } from "./officialSheet";
+import type { AttendanceEmployee, Category, EmployeeInput, SalaryRow } from "./types";
+import { buildOfficialRow, normalizeCategory } from "./officialSheet";
+
+const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
   calculateEmployeeAttendanceStats,
   calendarDaysForMonth,
@@ -192,33 +194,47 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     return null;
   }
 
-  const row = value as Partial<EmployeeInput>;
+  const row = value as Partial<EmployeeInput> & { isSpecial?: boolean };
   const name = String(row.name ?? "").trim();
   const rawMonthlySalary = Math.max(0, numberValue(row.monthlySalary));
   const hasSalaryPerDay =
     row.salaryPerDay !== undefined && row.salaryPerDay !== null && String(row.salaryPerDay).trim() !== "";
-  
-  const categoryStr = String(row.category || "Skilled");
-  const isLabour = categoryStr.toLowerCase().includes("unskilled") || categoryStr.toLowerCase().includes("labour") || categoryStr.toLowerCase().includes("cooly") || categoryStr.toLowerCase().includes("helper");
+
+  // One-release shim: migrate legacy isSpecial flag → Category "Special" (TICKET-01).
+  let category = normalizeCategory(row.category);
+  if (row.isSpecial === true) {
+    category = "Special";
+  }
+  if (category === null) {
+    // Unrecognizable strings fall back visibly to Unskilled rather than salary-band guessing.
+    category = "Unskilled";
+  }
+  const isSpecial = category === "Special";
 
   const days = clampMonthDays(monthDays);
   let monthlySalary = rawMonthlySalary;
   let salaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
+  let bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
 
-  if (isLabour) {
-    if (salaryPerDay === 0 && monthlySalary > 0) {
-      salaryPerDay = roundMoney(monthlySalary / days);
-    }
-    monthlySalary = roundMoney(days * salaryPerDay);
-  } else {
-    if (monthlySalary === 0 && salaryPerDay > 0) {
+  switch (category) {
+    case "Special":
+      salaryPerDay = 0;
+      bonusPerDay = 0;
+      break;
+    case "Unskilled":
+      if (salaryPerDay === 0 && monthlySalary > 0) {
+        salaryPerDay = roundMoney(monthlySalary / days);
+      }
       monthlySalary = roundMoney(days * salaryPerDay);
-    }
-    salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / days) : salaryPerDay;
+      break;
+    case "Semi-skilled":
+    case "Skilled":
+      if (monthlySalary === 0 && salaryPerDay > 0) {
+        monthlySalary = roundMoney(days * salaryPerDay);
+      }
+      salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / days) : salaryPerDay;
+      break;
   }
-
-  const bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
-  const isSpecial = Boolean(row.isSpecial);
 
   if (!name && monthlySalary <= 0 && salaryPerDay <= 0) {
     return null;
@@ -227,16 +243,15 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
   return {
     id: String(row.id || `emp-${Date.now()}-${index}`),
     name,
-    category: normalizeWageCategory(categoryStr, monthlySalary),
+    category,
     monthlySalary,
     salaryPerDay,
     bonusPerDay,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
-    extraDays: Math.max(0, numberValue(row.extraDays)),
+    extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
     esiOptIn: isSpecial ? false : row.esiOptIn !== false,
-    isSpecial,
     // Positive advance = recovered from net. Negatives (legacy UI convention) clamp to absent.
     advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) > 0 ? numberValue(row.advance) : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
@@ -431,16 +446,10 @@ function App() {
       employees
         .filter((employee) => employee.name.trim())
         .map((employee) =>
-          calculateSalary(
-            {
-              ...employee,
-              category: normalizeWageCategory(employee.category, employee.monthlySalary),
-            },
-            {
-              basicShare: clampBasicPercent(employee.basicPercent) / 100,
-              workingDays: effectiveMonthDays,
-            },
-          ),
+          calculateSalary(employee, {
+            basicShare: clampBasicPercent(employee.basicPercent) / 100,
+            workingDays: effectiveMonthDays,
+          }),
         ),
     [employees, effectiveMonthDays],
   );
@@ -642,8 +651,7 @@ function App() {
 
         if (field === "name") {
           const nameStr = String(value);
-          const isSpecial = isSpecialEmployee(employee);
-          if (isSpecial) {
+          if (isSpecialCategory(employee.category)) {
             return {
               ...employee,
               name: nameStr,
@@ -656,16 +664,29 @@ function App() {
         }
 
         if (field === "category") {
-          return { ...employee, category: String(value) };
+          const next = normalizeCategory(value) ?? employee.category;
+          if (next === "Special") {
+            return {
+              ...employee,
+              category: next,
+              salaryPerDay: 0,
+              bonusPerDay: 0,
+              extraDays: 0,
+              daysWorked: effectiveMonthDays,
+              pfOptIn: false,
+              esiOptIn: false,
+            };
+          }
+          return { ...employee, category: next };
         }
 
-        if (field === "pfOptIn" || field === "esiOptIn" || field === "isSpecial") {
-          const isSpecialVal = field === "isSpecial" ? booleanValue(value) : Boolean(employee.isSpecial);
+        if (field === "pfOptIn" || field === "esiOptIn") {
+          if (isSpecialCategory(employee.category)) {
+            return { ...employee, pfOptIn: false, esiOptIn: false };
+          }
           return {
             ...employee,
             [field]: booleanValue(value),
-            isSpecial: isSpecialVal,
-            ...(isSpecialVal ? { daysWorked: effectiveMonthDays, pfOptIn: false, esiOptIn: false } : {}),
           };
         }
 
@@ -1008,7 +1029,7 @@ function App() {
       : salaryRows.map((row, index) => ({
           "Sl No": index + 1,
           "Employee Name": sanitizeSpreadsheetCell(row.name),
-          Category: normalizeWageCategory(row.category, row.monthlySalary),
+          Category: row.category,
           "Basic Percent": row.basicPercent,
           "Salary Per Day": roundMoney(row.salaryPerDay),
           "Bonus Per Day": roundMoney(row.bonusPerDay),
@@ -1338,7 +1359,7 @@ function App() {
                   </thead>
                   <tbody>
                     {sortedFilteredRows.map((row) => {
-                      const isSpecial = isSpecialEmployee(row);
+                      const isSpecial = isSpecialCategory(row.category);
                       return (
                         <Fragment key={row.id}>
                           <tr>
@@ -1351,12 +1372,14 @@ function App() {
                             <td>
                               <select
                                 className="select-input"
-                                value={normalizeWageCategory(row.category, row.monthlySalary)}
+                                value={row.category}
                                 onChange={(event) => updateEmployee(row.id, "category", event.target.value)}
                               >
-                                <option value="Skilled">Skilled</option>
-                                <option value="Semi-skilled">Semi-skilled</option>
-                                <option value="Unskilled">Unskilled</option>
+                                {CATEGORIES.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
                               </select>
                             </td>
                             <td>
@@ -1506,16 +1529,13 @@ function App() {
                                     </button>
                                   </div>
                                   <div className="settings-column">
-                                    <span>Special Flag</span>
-                                    <strong>{isSpecial ? "Special" : "Standard"}</strong>
-                                    <small>{isSpecial ? "Attendance-exempt, full pay, no PF/ESI" : "Standard attendance & statutory rules"}</small>
-                                    <button
-                                      type="button"
-                                      className={isSpecial ? "toggle-on" : "toggle-off"}
-                                      onClick={() => updateEmployee(row.id, "isSpecial", !isSpecial)}
-                                    >
-                                      {isSpecial ? "Remove Special" : "Make Special"}
-                                    </button>
+                                    <span>Category</span>
+                                    <strong>{row.category}</strong>
+                                    <small>
+                                      {isSpecial
+                                        ? "Special: full pay, no day rate, no PF/ESI"
+                                        : "Change grade via the Category column"}
+                                    </small>
                                   </div>
                                 </div>
                               </td>

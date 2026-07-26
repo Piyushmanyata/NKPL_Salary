@@ -26,10 +26,13 @@ export type AttendanceEmployee = {
   }>;
 };
 
+/** Closed set — mutually exclusive. Special is a category, not a flag. SPEC §2.1 */
+export type Category = "Unskilled" | "Semi-skilled" | "Skilled" | "Special";
+
 export type EmployeeInput = {
   id: string;
   name: string;
-  category: string;
+  category: Category;
   monthlySalary: number;
   salaryPerDay?: number;
   bonusPerDay?: number;
@@ -38,7 +41,6 @@ export type EmployeeInput = {
   basicPercent?: number;
   pfOptIn?: boolean;
   esiOptIn?: boolean;
-  isSpecial?: boolean;
   advance?: number | null;
   otherDeduction: number;
   officialAttendance?: number;
@@ -67,7 +69,6 @@ export type SalaryRow = EmployeeInput & {
   esiOptIn: boolean;
   pfOptedOut: boolean;
   esiOptedOut: boolean;
-  isSpecial: boolean;
   employeePf: number;
   employerPf: number;
   esi: number;

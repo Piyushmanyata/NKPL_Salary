@@ -550,7 +550,7 @@ export const juneEmployees: EmployeeInput[] = [
   {
     "id": "emp-37",
     "name": "Sonal Goenka",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 60000,
     "salaryPerDay": 2000,
     "bonusPerDay": 0,
@@ -559,14 +559,13 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
   {
     "id": "emp-38",
     "name": "Rahul Somani",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 25000,
     "salaryPerDay": 833,
     "bonusPerDay": 0,
@@ -575,14 +574,13 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
   {
     "id": "emp-39",
     "name": "Anjali Sodhani",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 25000,
     "salaryPerDay": 833,
     "bonusPerDay": 0,
@@ -591,14 +589,13 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
   {
     "id": "emp-40",
     "name": "Rishi Jhajharia",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 25000,
     "salaryPerDay": 833,
     "bonusPerDay": 0,
@@ -607,7 +604,6 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -629,7 +625,7 @@ export const juneEmployees: EmployeeInput[] = [
   {
     "id": "emp-42",
     "name": "Bindu Chirania",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 60000,
     "salaryPerDay": 2000,
     "bonusPerDay": 0,
@@ -638,7 +634,6 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 0
   },
@@ -720,7 +715,7 @@ export const juneEmployees: EmployeeInput[] = [
   {
     "id": "emp-48",
     "name": "PUNIT SODHANI",
-    "category": "Skilled",
+    "category": "Special",
     "monthlySalary": 60000,
     "salaryPerDay": 2000,
     "bonusPerDay": 0,
@@ -729,7 +724,6 @@ export const juneEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": false,
     "esiOptIn": false,
-    "isSpecial": true,
     "advance": null,
     "otherDeduction": 15000
   },

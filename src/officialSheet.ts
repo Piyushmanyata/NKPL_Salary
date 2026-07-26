@@ -8,10 +8,10 @@ import {
   numberValue,
   roundMoney,
 } from "./salary";
-import type { SalaryRow } from "./types";
+import type { Category, SalaryRow } from "./types";
 
+/** Official wage-board band (three rows). Special borrows Skilled until TICKET-12. */
 export type WageCategory = "Unskilled" | "Semi-skilled" | "Skilled";
-
 
 export type OfficialRow = {
   id: string;
@@ -57,42 +57,40 @@ const wageRules: Record<WageCategory, { employeeTypes: string; basic: number; da
   },
 };
 
-export function classifyWageCategory(row: SalaryRow): WageCategory {
-  return normalizeWageCategory(row.category, row.monthlySalary);
+/**
+ * Normalize category formatting only — never infer grade from salary.
+ * Returns null when unrecognizable. TICKET-11 / SPEC §6.1.
+ */
+const CANONICAL: Record<string, Category> = {
+  unskilled: "Unskilled",
+  labour: "Unskilled",
+  cooly: "Unskilled",
+  helper: "Unskilled",
+  peon: "Unskilled",
+  semiskilled: "Semi-skilled",
+  "semi skilled": "Semi-skilled",
+  "semi-skilled": "Semi-skilled",
+  skilled: "Skilled",
+  special: "Special",
+};
+
+export function normalizeCategory(value: unknown): Category | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  // Keep spaces for "semi skilled"; also try stripped key.
+  const spaced = raw.replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
+  const compact = spaced.replace(/\s+/g, "");
+  return CANONICAL[spaced] ?? CANONICAL[compact] ?? CANONICAL[raw] ?? null;
 }
 
-export function normalizeWageCategory(value: string, monthlySalary?: number): WageCategory {
-  const trimmed = value.trim();
-  if (trimmed === "Skilled" || trimmed === "Semi-skilled" || trimmed === "Unskilled") {
-    return trimmed;
+/** Map roster Category → Official wage-board row (Special → Skilled display band until TICKET-12). */
+export function wageBoardCategory(category: Category | string): WageCategory {
+  if (category === "Unskilled" || category === "Semi-skilled" || category === "Skilled") {
+    return category;
   }
-  const salary = Math.max(0, numberValue(monthlySalary));
-  if (salary > 0) {
-    if (salary < 12000) {
-      return "Unskilled";
-    }
-    if (salary < 20000) {
-      return "Semi-skilled";
-    }
-    return "Skilled";
-  }
-  const text = value.toLowerCase();
-  if (
-    text.includes("unskilled") ||
-    text.includes("cooly") ||
-    text.includes("helper") ||
-    text.includes("peon")
-  ) {
-    return "Unskilled";
-  }
-  if (
-    text.includes("semi") ||
-    text.includes("assistant") ||
-    text.includes("security") ||
-    text.includes("durwan")
-  ) {
-    return "Semi-skilled";
-  }
+  if (category === "Special") return "Skilled";
+  const n = normalizeCategory(category);
+  if (n === "Unskilled" || n === "Semi-skilled" || n === "Skilled") return n;
   return "Skilled";
 }
 
@@ -144,7 +142,7 @@ function calculateStatutoryComponents(
 }
 
 export function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
-  const wageCategory = classifyWageCategory(row);
+  const wageCategory = wageBoardCategory(row.category);
   const rule = wageRules[wageCategory];
   const attendance = row.daysWorked;
   const proratedTotalSalary = roundMoney((row.totalSalary / monthDays) * attendance);
@@ -188,7 +186,7 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     return buildReferenceOfficialRow(row, monthDays);
   }
 
-  const wageCategory = classifyWageCategory(row);
+  const wageCategory = wageBoardCategory(row.category);
   const rule = wageRules[wageCategory];
   const presentDays = clampDays(row.daysWorked, monthDays);
   const absentDays = Math.max(0, monthDays - presentDays);
