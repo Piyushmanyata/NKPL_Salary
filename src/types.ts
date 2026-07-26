@@ -78,4 +78,10 @@ export type SalaryRow = EmployeeInput & {
   professionalTax: number;
   netPayable: number;
   totalCost: number;
+  /**
+   * Category anchor missing after load-time repair (SPEC §2.2.1 / I7).
+   * Unskilled needs r > 0; all other categories need M > 0.
+   * When true, pay components are zeroed — never silently invent a package.
+   */
+  missingRate?: boolean;
 };

@@ -51,6 +51,7 @@ import {
   currency,
   isSpecialCategory,
   numberValue,
+  repairRates,
   roundMoney,
   uid,
 } from "./salary";
@@ -221,29 +222,13 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
       : nameLooksLikeSecurity(name);
 
   const days = clampMonthDays(monthDays);
-  let monthlySalary = rawMonthlySalary;
-  let salaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
-  let bonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
-
-  switch (category) {
-    case "Special":
-      salaryPerDay = 0;
-      bonusPerDay = 0;
-      break;
-    case "Unskilled":
-      if (salaryPerDay === 0 && monthlySalary > 0) {
-        salaryPerDay = roundMoney(monthlySalary / days);
-      }
-      monthlySalary = roundMoney(days * salaryPerDay);
-      break;
-    case "Semi-skilled":
-    case "Skilled":
-      if (monthlySalary === 0 && salaryPerDay > 0) {
-        monthlySalary = roundMoney(days * salaryPerDay);
-      }
-      salaryPerDay = monthlySalary > 0 ? roundMoney(monthlySalary / days) : salaryPerDay;
-      break;
-  }
+  const rawSalaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
+  const rawBonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
+  // One-time rate repair at load (SPEC §2.2.1 / TICKET-04). Persisted after this.
+  const repaired = repairRates(category, rawMonthlySalary, rawSalaryPerDay, rawBonusPerDay, days);
+  const monthlySalary = repaired.monthlySalary;
+  const salaryPerDay = repaired.salaryPerDay;
+  const bonusPerDay = repaired.bonusPerDay;
 
   if (!name && monthlySalary <= 0 && salaryPerDay <= 0) {
     return null;
@@ -1381,14 +1366,20 @@ function App() {
                     {sortedFilteredRows.map((row) => {
                       const isSpecial = isSpecialCategory(row.category);
                       const isSecurity = row.isSecurity === true;
+                      const missingRate = row.missingRate === true;
                       return (
                         <Fragment key={row.id}>
-                          <tr>
+                          <tr className={missingRate ? "row-missing-rate" : undefined}>
                             <td className="name-cell">
                               <input
                                 value={row.name}
                                 onChange={(event) => updateEmployee(row.id, "name", event.target.value)}
                               />
+                              {missingRate ? (
+                                <span className="missing-rate-badge" title="No day rate or monthly salary — set a rate in Settings">
+                                  Missing rate
+                                </span>
+                              ) : null}
                             </td>
                             <td>
                               <select

@@ -812,6 +812,28 @@ td input {
   font-weight: 700;
 }
 
+.row-missing-rate {
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.row-missing-rate:hover {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+}
+
+.missing-rate-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
 .number-input {
   width: 100%;
   min-width: 0;

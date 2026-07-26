@@ -68,6 +68,48 @@ export function isSpecialCategory(category: Category | string | undefined | null
   return category === "Special";
 }
 
+/**
+ * SPEC §2.2.1 — one-time rate repair at load/migration.
+ *
+ * Must NOT run inside `calculateSalary`. Per-calculation Unskilled back-fill
+ * re-derives r from M every month and silently turns Labour into fixed-monthly
+ * (I10 failures). Call this once, persist the result, then assert.
+ */
+export function repairRates(
+  category: Category,
+  monthlySalary: number,
+  salaryPerDay: number,
+  bonusPerDay: number,
+  monthDays: number,
+): {
+  salaryPerDay: number;
+  monthlySalary: number;
+  bonusPerDay: number;
+  missingRate: boolean;
+} {
+  const D = clampMonthDays(monthDays);
+  let r = Math.max(0, numberValue(salaryPerDay));
+  let M = Math.max(0, numberValue(monthlySalary));
+  let b = Math.max(0, numberValue(bonusPerDay));
+
+  if (category === "Unskilled") {
+    if (r <= 0 && M > 0) {
+      r = roundMoney(M / D);
+    }
+  } else {
+    if (M <= 0 && r > 0) {
+      M = roundMoney(D * r);
+    }
+    if (category === "Special") {
+      r = 0;
+      b = 0;
+    }
+  }
+
+  const missingRate = category === "Unskilled" ? r <= 0 : M <= 0;
+  return { salaryPerDay: r, monthlySalary: M, bonusPerDay: b, missingRate };
+}
+
 export function calculateSalary(
   input: EmployeeInput,
   options?: {
@@ -89,7 +131,62 @@ export function calculateSalary(
   let monthlySalary = Math.max(0, numberValue(input.monthlySalary));
   let bonusPerDay = Math.max(0, numberValue(input.bonusPerDay));
 
-  // Rate anchoring by Category — SPEC §2.2 / TICKET-01
+  // Assert anchors only — no back-fill here (SPEC §2.2.1 / I10 / TICKET-04).
+  const missingRate =
+    category === "Unskilled" ? salaryPerDay <= 0 : monthlySalary <= 0;
+
+  const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
+  // Security and Special: no Sunday package — force Xd to 0 (SPEC §2.3 / I6 / TICKET-02).
+  const extraDays =
+    isSecurity || isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
+  // Stored positive = amount advanced and recovered this month. Engine always
+  // subtracts. Negative input is clamped to 0 at the boundary (TICKET-06).
+  const advance = Math.max(0, numberValue(input.advance));
+  const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
+  const specialBonus = Math.max(0, numberValue(input.specialBonus));
+
+  if (missingRate) {
+    // Never invent a package. Surface in UI; leave money components at zero.
+    return {
+      ...input,
+      category,
+      isSecurity,
+      missingRate: true,
+      basicPercent: Math.round(basicShare * 100),
+      monthlySalary,
+      salaryPerDay: isSpecial ? 0 : salaryPerDay,
+      bonusPerDay: isSpecial ? 0 : bonusPerDay,
+      dailyBonus: 0,
+      totalSalary: 0,
+      daysWorked,
+      extraDays,
+      absentDays: isSpecial ? 0 : Math.max(0, workingDays - daysWorked),
+      pfOptIn: false,
+      esiOptIn: false,
+      pfOptedOut: true,
+      esiOptedOut: true,
+      advance,
+      otherDeduction,
+      perDayWage: 0,
+      absentDeduction: 0,
+      earnedSalary: 0,
+      basicSalary: 0,
+      hra: 0,
+      travelAllowance: 0,
+      performanceBonus: 0,
+      specialBonus: 0,
+      grossPayable: 0,
+      employeePf: 0,
+      employerPf: 0,
+      esi: 0,
+      employerEsi: 0,
+      professionalTax: 0,
+      netPayable: 0,
+      totalCost: 0,
+    };
+  }
+
+  // Rate anchoring by Category — SPEC §2.2 (anchors already present)
   switch (category) {
     case "Special":
       salaryPerDay = 0;
@@ -97,69 +194,54 @@ export function calculateSalary(
       // monthlySalary used exactly as stored — never rescaled by workingDays
       break;
     case "Unskilled":
-      // Day rate is source of truth; monthly = D × r (TICKET-04 back-fill when day rate missing)
-      if (salaryPerDay <= 0 && monthlySalary > 0) {
-        salaryPerDay = roundMoney(monthlySalary / workingDays);
-      }
+      // Day rate is source of truth; monthly = D × r
       monthlySalary = roundMoney(workingDays * salaryPerDay);
       break;
     case "Semi-skilled":
     case "Skilled":
     default:
-      if (monthlySalary > 0) {
-        salaryPerDay = roundMoney(monthlySalary / workingDays);
-      } else if (salaryPerDay > 0) {
-        monthlySalary = roundMoney(workingDays * salaryPerDay);
-      }
+      // Monthly is source of truth; day rate floats with D
+      salaryPerDay = roundMoney(monthlySalary / workingDays);
       break;
   }
 
   const dailyBonus = isSpecial ? 0 : roundMoney(workingDays * bonusPerDay);
   const totalSalary = roundMoney(monthlySalary + dailyBonus);
 
-  const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
-  // Security and Special: no Sunday package — force Xd to 0 (SPEC §2.3 / I6 / TICKET-02).
-  const extraDays =
-    isSecurity || isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
   const standardBasic = monthlySalary * basicShare;
   const hasBasicAbove15k = standardBasic > 15000;
   const requestedPfOptIn = (isSpecial || hasBasicAbove15k) ? false : (input.pfOptIn !== false);
   const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
-  // Stored positive = amount advanced and recovered this month. Engine always
-  // subtracts. Negative input is clamped to 0 at the boundary (TICKET-06).
-  const advance = Math.max(0, numberValue(input.advance));
-  const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = salaryPerDay;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
   const performanceBonus = isSpecial ? 0 : (perDayWage + bonusPerDay) * extraDays;
-  const specialBonus = Math.max(0, numberValue(input.specialBonus));
 
   const earnedSalary = isSpecial ? monthlySalary : Math.max(0, monthlySalary - absentDeduction);
-  
+
   // Prorate daily bonus according to present days
   const earnedBonus = isSpecial ? 0 : roundMoney(daysWorked * bonusPerDay);
   const proratedTotalSalary = earnedSalary + earnedBonus;
 
   const grossBeforeDeduction = earnedSalary;
   const baseBasicSalary = grossBeforeDeduction * basicShare;
-  
+
   const pfOptIn = requestedPfOptIn;
   const basicSalary = Math.min(grossBeforeDeduction, Math.max(0, baseBasicSalary));
-  
+
   const remainingSalary = Math.max(0, proratedTotalSalary - basicSalary);
   const hra = remainingSalary * HRA_SHARE_OF_BALANCE;
   const travelAllowance = remainingSalary * TA_SHARE_OF_BALANCE;
-  
+
   const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
   const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
-  
+
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
   const esiOptIn = requestedEsiOptIn && grossPayable <= ESI_GROSS_LIMIT;
-  
+
   const esi = esiOptIn ? roundMoney(grossPayable * ESI_RATE) : 0;
   const employerEsi = esiOptIn ? roundMoney(grossPayable * ESI_EMPLOYER_RATE) : 0;
-  
+
   const professionalTax = calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
 
@@ -167,6 +249,7 @@ export function calculateSalary(
     ...input,
     category,
     isSecurity,
+    missingRate: false,
     basicPercent: Math.round(basicShare * 100),
     monthlySalary,
     salaryPerDay,
