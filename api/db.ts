@@ -1,5 +1,5 @@
-import { kv } from '@vercel/kv';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { redisDel, redisGetJson, redisKeys, redisSetJson } from './redis';
 
 const DEFAULT_COMPANY = 'NKPL';
 
@@ -32,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!month) {
         const months = new Set<string>();
         // List keys under the company's namespace: e.g. monthly_salary/${company}/*
-        const keys = await kv.keys(`monthly_salary/${company}/*`);
+        const keys = await redisKeys(`monthly_salary/${company}/*`);
         for (const key of keys) {
           const rest = key.slice(`monthly_salary/${company}/`.length);
           months.add(rest);
@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // If DEFAULT_COMPANY (NKPL), also load legacy flat-path keys
         if (company === DEFAULT_COMPANY) {
-          const legacyKeys = await kv.keys('monthly_salary/*');
+          const legacyKeys = await redisKeys('monthly_salary/*');
           for (const key of legacyKeys) {
             const rest = key.slice('monthly_salary/'.length);
             const parts = rest.split('/');
@@ -55,12 +55,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Get single month data for this company
       const normalized = String(month);
       const primaryPath = `monthly_salary/${company}/${normalized}`;
-      let data = await kv.get(primaryPath);
+      let data = await redisGetJson(primaryPath);
 
       if (!data && company === DEFAULT_COMPANY) {
         // Fall back to the legacy flat path used before multi-company support
         const legacyPath = `monthly_salary/${normalized}`;
-        data = await kv.get(legacyPath);
+        data = await redisGetJson(legacyPath);
       }
 
       if (!data) {
@@ -78,8 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const data = { monthLabel, days, employees, company: bodyCompany, updatedAt: new Date().toISOString() };
-      // Save to KV, namespaced by company
-      await kv.set(`monthly_salary/${bodyCompany}/${monthLabel}`, data);
+      await redisSetJson(`monthly_salary/${bodyCompany}/${monthLabel}`, data);
 
       return res.status(200).json(data);
     }
@@ -90,11 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const normalized = String(month);
       const primaryPath = `monthly_salary/${company}/${normalized}`;
-      await kv.del(primaryPath);
+      await redisDel(primaryPath);
 
       if (company === DEFAULT_COMPANY) {
         const legacyPath = `monthly_salary/${normalized}`;
-        await kv.del(legacyPath);
+        await redisDel(legacyPath);
       }
 
       return res.status(200).json({ success: true });

@@ -1,5 +1,5 @@
-import { kv } from '@vercel/kv';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { redisGetJson, redisSetJson } from './redis';
 
 const DEFAULT_COMPANY = 'NKPL';
 
@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const path = `employee_rates/${company}`;
 
     if (req.method === 'GET') {
-      const data = await kv.get(path);
+      const data = await redisGetJson(path);
       return res.status(200).json(data && typeof data === 'object' ? data : {});
     }
 
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Missing rates' });
       }
 
-      await kv.set(`employee_rates/${bodyCompany}`, rates);
+      await redisSetJson(`employee_rates/${bodyCompany}`, rates);
       return res.status(200).json(rates);
     }
 
