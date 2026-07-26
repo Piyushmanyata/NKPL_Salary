@@ -1,0 +1,186 @@
+# NKPL Salary
+
+Payroll domain for NKPL and APTUS: attendance-derived pay inputs, an internal Reference view, and a formal Official (Main) wage sheet that must match take-home.
+
+**Formulas and calculation order are defined in `docs/SPEC-payroll.md`, which is authoritative where this glossary is ambiguous or conflicts.**
+
+## Language
+
+### Sheets and pay
+
+**Reference Sheet**:
+Internal working view of pay for a month. Uses calendar days of the month and the employee's economic package (rates, basic share, allowances, bonuses).
+_Avoid_: Main sheet, official register, payslip-only view
+
+**Official Sheet** (also **Main Sheet**):
+Formal filed wage presentation for the same people and month. Uses a single 26-day wage-board frame for every employee and may re-split components; it is the formal/paid register view.
+_Avoid_: Reference, internal sheet
+
+**Net Payable**:
+Amount the employee takes home after statutory and other deductions. Reference Net Payable and Official Net Payable must always be equal for the same employee-month, except on an **Unpackable Row** (where net is still computed honestly and export is blocked).
+_Avoid_: Gross, take-home before deductions
+
+**Gross Payable**:
+Total earnings before PF, ESI, professional tax, advance, and other deductions. Gross may differ between Reference and Official.
+_Avoid_: Net, CTC, total cost
+
+**Total Cost**:
+Employer burden: gross plus employer PF and employer ESI where applicable.
+_Avoid_: Net payable
+
+### People and classification
+
+**Employee**:
+A person on a company roster for a pay month, with rates, attendance inputs, and statutory opt-ins.
+_Avoid_: User, staff (as a type name)
+
+**Wage Category** (also **Category**):
+Closed four-value set, mutually exclusive: **Unskilled** (Labour), **Semi-skilled**, **Skilled**, or **Special**. Category is stored and never inferred from salary bands. It selects rate anchoring and Official wage-board row (Special uses the Skilled display row only).
+_Avoid_: Free-text category, salary-band guessing, treating Special as a separate boolean flag
+
+**Labour**:
+Unskilled wage category. Day rate (`r`) is the source of truth; monthly figure is derived as `M = D × r` and therefore changes with calendar days.
+_Avoid_: Helper-only, cooly-only (those are employee types under Unskilled)
+
+**Semi-skilled / Skilled**:
+Wage categories whose **monthly salary (`M`) is fixed** for the month; wage per day is derived as `r = M / D`. Changing calendar days leaves `M` unchanged and floats `r`.
+_Avoid_: Treating them as pure daily-wage like Labour; treating them as the only non-Special categories without naming Special as a peer Category
+
+**Special Employee** (Category = `"Special"`):
+A **Category**, not a role flag and not a name list. Mutually exclusive with Unskilled, Semi-skilled, and Skilled. Constraints (SPEC §2.2):
+- Anchor is fixed monthly salary `M`; no day rate is stored or used after migration (`r` ignored / discarded).
+- Full-month pay invariant to calendar days and attendance; Days Worked forced to `D`; Extra Days forced to 0; absent deduction 0.
+- Daily bonus `b` ignored (treated as 0); `specialBonus` is permitted.
+- PF and ESI forced off; Professional Tax still applies.
+- On the Official sheet, display borrows the Skilled wage-board row; money basic comes from the opt-out formula (PF is always off for Special).
+_Avoid_: Director-only, name-list specials, `isSpecial` boolean overlay on another category
+
+**Security Employee**:
+Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no Sunday package (no auto-paid Sunday, no Extra Days / double pay). A worked Sunday still counts as a normal Present Day only. Previously inferred from the name string and discarded; the field is now stored.
+_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone
+
+### Time and attendance
+
+**Calendar Days**:
+Number of days in the pay month (28–31). **Derived from the selected month label** (e.g. `"June 2026" → 30`); never independently editable and never a hard-coded constant. Reference full attendance and rate derivation for monthly-paid staff use this.
+_Avoid_: Official attendance, working days (ambiguous), editable days-in-month field
+
+**Official Attendance**:
+Attendance figure on the Official Sheet. Derived as `clamp(26 − calendar absences, 0, 26)` for **every** employee regardless of PF status (and may be reduced further only to keep net equality packable, down to a minimum of 1 if Days Worked > 0, else 0).
+_Avoid_: Days worked (Reference), present days raw, using Reference `Dw` uncapped when PF is off
+
+**Days Worked**:
+Reference attendance input: effective present days after short-stay rules, unapproved penalties, and eligible auto-paid Sundays.
+_Avoid_: Official attendance, raw punch count
+
+**Extra Days**:
+Count of Sunday double-pay units (and any other approved extra-day units). Each unit pays one full day rate of (wage per day + bonus per day) on Reference. Forced to 0 for Security and Special.
+_Avoid_: Overtime hours, present days
+
+**Present Day**:
+A calendar day counted as worked: stay of at least five hours between first and last punch, or a manual present override. A single punch alone is not present.
+_Avoid_: Short stay, punched-in
+
+**Short Stay**:
+Punched day under five hours (or single punch); treated as absent unless overridden.
+_Avoid_: Half day (not modeled unless added later)
+
+**Unapproved Absence**:
+Uninformed leave day. Costs two days of pay: the day is already unpaid as absent, and one additional present day is removed.
+_Avoid_: Approved leave, sandwich
+
+**Month Threshold**:
+Minimum effective present days before Sunday benefits apply: 21 if the month has 31 days, 20 if 30, otherwise round(calendarDays × 20/30). Measured before auto-paid Sundays.
+_Avoid_: Official 26, full attendance
+
+**Sandwich Rule**:
+For a given Sunday, Sunday benefits are denied only when the employee is absent on both the preceding Saturday and the following Monday. Present on Saturday or Monday is enough to keep benefits available (if the month threshold is also met).
+_Avoid_: Requiring both Saturday and Monday present
+
+**Sunday Package**:
+Benefits available when month threshold is met, sandwich is not violated, and the person is not Security and not Special: (1) auto-paid Sunday if they did not work that Sunday; (2) one Extra Day if they did work that Sunday. Worked Sunday always counts as one Present Day for pay even when double pay is denied.
+_Avoid_: Generic OT
+
+**Auto-Paid Sunday**:
+A Sunday counted in Days Worked without a qualifying punch, only when the Sunday Package applies and they did not work that day.
+_Avoid_: Double pay, Extra Days
+
+### Money components (Reference)
+
+**Salary Per Day / Wage Per Day**:
+Primary rate for Labour; derived for Semi-skilled and Skilled from fixed monthly salary ÷ calendar days. Not used for Special after migration.
+_Avoid_: Official daily wage-board rate (400/440/484) as the Reference rate
+
+**Monthly Salary**:
+Fixed monthly package for Semi-skilled, Skilled, and Special; for Labour, calendar days × salary per day.
+_Avoid_: Gross payable, total salary including all bonuses
+
+**Bonus Per Day**:
+Standing daily allowance on the rate card, earned proportional to Days Worked on Reference, and included in the pool that feeds HRA/TA after basic. Ignored (0) for Special.
+_Avoid_: Performance bonus, special bonus, Extra Days pay
+
+**Basic Share**:
+Fraction of earned salary taken as Basic on Reference (configurable per employee, minimum 50%). Remainder of (earned salary + earned daily bonus − basic) splits to HRA and travel.
+_Avoid_: Official monthly basic
+
+**HRA / Travel Allowance**:
+Reference allowances: 70% and 30% of the post-basic remainder of prorated package (earned salary + earned daily bonus).
+_Avoid_: Official HRA/TA packing residual
+
+**Performance Bonus**:
+Pay for Extra Days: (salary per day + bonus per day) × extra days. Outside the basic/HRA/TA split.
+_Avoid_: Special bonus, daily bonus track
+
+**Special Bonus**:
+Manual flat amount for the month, outside the basic/HRA/TA split.
+_Avoid_: Performance bonus
+
+**Earned Salary**:
+Attendance-prorated monthly salary on Reference (full month for Special Employees).
+_Avoid_: Gross payable (includes more components)
+
+### Statutory
+
+**PF Opt-In**:
+Whether employee PF applies. Forced off for Special Employees and when full-month Reference basic would exceed ₹15,000. When on, contribution is 12% of min(applicable basic, ₹15,000); employer PF mirrors employee PF in this product. The ₹15,000 ceiling is an EPF *contribution* cap, never a cap on displayed Official basic.
+_Avoid_: ESI
+
+**ESI (Reference)**:
+Employee state insurance on Reference: 0.75% of Reference **Gross Payable**, only if that gross is at most ₹21,000 and the employee is not excluded (special / opted out). Employer ESI is 3.25% of the same base when employee ESI applies.
+_Avoid_: ESI on Official basic, ESI on earned-only
+
+**ESI (Official)**:
+Employee state insurance on Official: 0.75% of Official **Monthly Basic**, only if that basic is at most ₹21,000 and not opted out. Must not be forced on merely because PF is on. Employer ESI follows the same Official base when employee ESI applies.
+_Avoid_: Using Reference gross for Official ESI
+
+**Professional Tax**:
+Slab tax computed from Reference Gross Payable and shown as the same rupee amount on both sheets.
+_Avoid_: PF, ESI
+
+**Advance / Other Deduction**:
+Non-statutory deductions. Both are **stored positive** (`≥ 0`) and **always subtracted** from net; a negative input is clamped to 0 at the boundary. Same inputs on both sheets when nets are aligned. The UI may show a leading minus for presentation only.
+_Avoid_: Absent deduction (that is a gross-side proration concept); storing a negative advance that increases pay
+
+### Official construction
+
+**Wage-Board Daily**:
+Statutory Official daily basic rates: Unskilled ₹400, Semi-skilled ₹440, Skilled ₹484, over a 26-day month (allowed full basics 10400 / 11440 / 12584). Used for Official basic whenever PF is on (for the employee's wage category). Special has no wage-board basic; display uses the Skilled row.
+_Avoid_: Reference salary per day
+
+**Opt-Out Basic**:
+Elevated Official basic used **only when PF is off**. When PF is on, Official basic is the wage-board daily rate × Official attendance, **uncapped** (no ₹15,000 cap on the displayed basic). When PF is off: if ESI is also off, max(₹21,100, 51% of total salary) attendance-prorated on the Official frame; if ESI is on (and PF off), max(₹15,100, 51% of total salary) attendance-prorated. Special always uses this path (PF forced off).
+_Avoid_: Applying opt-out elevation when PF is on; capping displayed basic at ₹15,000
+
+**Net Equality Packing**:
+Process of choosing Official attendance (from A_max down to A_min) and setting Official gross components (HRA, travel, bonus residual) after Official basic, PF, and ESI so Official Net Payable equals Reference Net Payable. PF and ESI may differ between sheets; net must not for packable rows. Official net is **always computed**, never copied from Reference.
+_Avoid_: Copying every statutory rupee from Reference onto Official; assigning `netPayable` from Reference
+
+**Unpackable Row**:
+A row for which no Official attendance in `[A_min, A_max]` produces `targetGross ≥ officialBasic`. Flagged `unpackable: true` in the UI, assembled with `officialBonus = 0` at `A = A_min`, and **blocks export** of the sheet. Official net is still computed from its own components and may differ from Reference net — that difference is the warning.
+_Avoid_: Hiding the mismatch by copying Reference net; allowing negative components to force a pack
+
+### Companies
+
+**Company**:
+Legal payroll entity in this app (NKPL or APTUS). Same pay language and rules; separate rosters and rates only.
+_Avoid_: Different rule engines per company without an explicit decision
