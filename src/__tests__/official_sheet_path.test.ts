@@ -29,7 +29,7 @@ describe("TICKET-07: single Official path + 26-day frame", () => {
     });
     const wage = wageBoardCategory(row.category);
     const basic = officialBasic(row, wage, 26);
-    // PF on + ESI on → wage board daily × A (Skilled 26×484); cap only if above 15,000
+    // PF on + ESI on → wage board daily × A (Skilled 26×484); no display cap (T-08)
     expect(basic).toBe(12584);
     expect(officialPf(row, basic)).toBe(Math.round(Math.min(basic, 15000) * 0.12 * 100) / 100);
     expect(officialEsi(row, basic)).toBe(Math.round(basic * 0.0075 * 100) / 100);

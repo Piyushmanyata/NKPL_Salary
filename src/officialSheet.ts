@@ -90,40 +90,27 @@ export function wageBoardCategory(category: Category | string): WageCategory {
   return "Skilled";
 }
 
-function getOptOutBasicRate(totalSalary: number, hasNoPf: boolean, hasNoEsi: boolean): number {
-  if (hasNoEsi) {
-    return Math.max(21100, Math.round(totalSalary * 0.51));
-  }
-  if (hasNoPf) {
-    return Math.max(15100, Math.round(totalSalary * 0.51));
-  }
-  return 0;
-}
-
 /**
- * Official monthly basic for attendance A.
- * Current formula (pre–TICKET-08): opt-out elevation when PF or ESI is off;
- * PF-on still applies the ₹15,000 display cap (removed in TICKET-08).
- * SPEC §6.3 / TICKET-07 extraction.
+ * Official monthly basic for attendance A. SPEC §6.3 / TICKET-08.
+ *
+ * - PF on  → wage board daily × A (no ₹15,000 display cap; that ceiling is PF-only).
+ * - PF off + ESI off → elevated floor max(21100, 0.51 × totalSalary) prorated on 26.
+ * - PF off + ESI on  → elevated floor max(15100, 0.51 × totalSalary) prorated on 26.
+ *
+ * Uses effective `pfOptIn` / `esiOptIn` only (post-eligibility from salary.ts).
  */
 export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: number): number {
   if (A <= 0) return 0;
-  const hasNoPf = !row.pfOptIn || row.pfOptedOut;
-  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
-  const rule = wageRules[wageCategory];
 
-  let basic: number;
-  if (hasNoPf || hasNoEsi) {
-    const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
-    basic = (fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * A;
-  } else {
-    basic = A * rule.daily;
-  }
-  // Display cap while PF is active — TICKET-08 drops this (EPF ceiling stays in officialPf).
+  // Wage board wins whenever PF is on — ESI opt-out must not elevate the printed basic.
   if (row.pfOptIn) {
-    basic = Math.min(basic, PF_BASIC_LIMIT);
+    return roundMoney(A * wageRules[wageCategory].daily);
   }
-  return roundMoney(basic);
+
+  const fullMonthRate = !row.esiOptIn
+    ? Math.max(21100, Math.round(row.totalSalary * 0.51))
+    : Math.max(15100, Math.round(row.totalSalary * 0.51));
+  return roundMoney((fullMonthRate / OFFICIAL_WAGE_DAYS) * A);
 }
 
 /** Official employee PF: 12% of min(basic, 15,000) when PF is on. SPEC §6.4 */
@@ -185,9 +172,9 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
   const monthlyBasic = officialBasic(row, wageCategory, attendance);
   const pf = officialPf(row, monthlyBasic);
   const esiValue = officialEsi(row, monthlyBasic);
-  const hasNoPf = !row.pfOptIn || row.pfOptedOut;
-  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
-  const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
+  // Assembly residual: elevated-basic (PF-off) rows pack HRA/TA from targetGross with bonus 0.
+  // PF-on rows use wage-board basic and may take residual as bonus (SPEC §6.6 refined in T-09).
+  const isOptOut = !row.pfOptIn && attendance > 0;
   const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
 
   const targetGross = Math.max(
