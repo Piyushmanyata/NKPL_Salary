@@ -80,6 +80,7 @@ const blankEmployee = (monthDays: number): EmployeeInput => ({
   id: uid(),
   name: "New Employee",
   category: "Skilled",
+  isSecurity: false,
   monthlySalary: 0,
   salaryPerDay: 0,
   bonusPerDay: 0,
@@ -93,6 +94,9 @@ const blankEmployee = (monthDays: number): EmployeeInput => ({
   performanceBonus: undefined,
   specialBonus: undefined,
 });
+
+/** One-time name heuristic for back-filling isSecurity when the flag is absent. */
+const nameLooksLikeSecurity = (name: string) => /\(?\s*security\s*\)?/i.test(name);
 
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
@@ -210,6 +214,11 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     category = "Unskilled";
   }
   const isSpecial = category === "Special";
+  // Persist isSecurity; back-fill once from name when the field is absent (TICKET-02).
+  const isSecurity =
+    row.isSecurity !== undefined && row.isSecurity !== null
+      ? Boolean(row.isSecurity)
+      : nameLooksLikeSecurity(name);
 
   const days = clampMonthDays(monthDays);
   let monthlySalary = rawMonthlySalary;
@@ -244,11 +253,12 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     id: String(row.id || `emp-${Date.now()}-${index}`),
     name,
     category,
+    isSecurity,
     monthlySalary,
     salaryPerDay,
     bonusPerDay,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
-    extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
+    extraDays: isSpecial || isSecurity ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
     esiOptIn: isSpecial ? false : row.esiOptIn !== false,
@@ -678,6 +688,16 @@ function App() {
             };
           }
           return { ...employee, category: next };
+        }
+
+        if (field === "isSecurity") {
+          const next = booleanValue(value);
+          return {
+            ...employee,
+            isSecurity: next,
+            // Security has no Sunday package — clear extra days when toggled on.
+            extraDays: next || isSpecialCategory(employee.category) ? 0 : employee.extraDays,
+          };
         }
 
         if (field === "pfOptIn" || field === "esiOptIn") {
@@ -1360,6 +1380,7 @@ function App() {
                   <tbody>
                     {sortedFilteredRows.map((row) => {
                       const isSpecial = isSpecialCategory(row.category);
+                      const isSecurity = row.isSecurity === true;
                       return (
                         <Fragment key={row.id}>
                           <tr>
@@ -1396,6 +1417,7 @@ function App() {
                                 className="number-input number-input--compact"
                                 value={row.extraDays}
                                 min={0}
+                                disabled={isSpecial || isSecurity}
                                 onChange={(value) => updateEmployee(row.id, "extraDays", value)}
                               />
                             </td>
@@ -1536,6 +1558,22 @@ function App() {
                                         ? "Special: full pay, no day rate, no PF/ESI"
                                         : "Change grade via the Category column"}
                                     </small>
+                                  </div>
+                                  <div className="settings-column">
+                                    <span>Security</span>
+                                    <strong>{isSecurity ? "On" : "Off"}</strong>
+                                    <small>
+                                      {isSecurity
+                                        ? "No Sunday package (Security)"
+                                        : "Toggle if this employee is security staff"}
+                                    </small>
+                                    <button
+                                      type="button"
+                                      className={isSecurity ? "toggle-on" : "toggle-off"}
+                                      onClick={() => updateEmployee(row.id, "isSecurity", !isSecurity)}
+                                    >
+                                      {isSecurity ? "Turn Off" : "Turn On"}
+                                    </button>
                                   </div>
                                 </div>
                               </td>
@@ -1755,16 +1793,21 @@ function App() {
               let matchedCount = 0;
               let importCount = 0;
 
-              // 1. Map existing employees and update their attendance
+              // 1. Map existing employees and update their attendance.
+              // Keep persisted isSecurity; attendance already used it for Sunday stats.
               const updatedExisting = current.map((emp) => {
                 const matched = auditedEmps.find((d) => namesMatch(emp.name, d.name));
                 if (matched) {
                   matchedCount++;
+                  const isSecurity = emp.isSecurity === true || matched.isSecurity;
                   return {
                     ...emp,
+                    isSecurity,
                     daysWorked: matched.presentDays,
-                    extraDays: matched.sundaysEligible,
-                    performanceBonus: matched.sundaysEligible > 0 ? undefined : emp.performanceBonus,
+                    // Security / Special: engine also zeros this; keep stored value consistent.
+                    extraDays: isSecurity || isSpecialCategory(emp.category) ? 0 : matched.sundaysEligible,
+                    performanceBonus:
+                      isSecurity || matched.sundaysEligible > 0 ? undefined : emp.performanceBonus,
                   };
                 }
                 // Sync employees without matching attendance in the sheet to 0 days worked & 0 extra days
@@ -1775,7 +1818,8 @@ function App() {
                 };
               });
 
-              // 2. Identify and import new employees that aren't in the current roster
+              // 2. Identify and import new employees that aren't in the current roster.
+              // Do not overload category with security status (TICKET-02).
               const newEmployees: EmployeeInput[] = [];
               auditedEmps.forEach((d) => {
                 const exists = current.some((emp) => namesMatch(emp.name, d.name));
@@ -1784,12 +1828,13 @@ function App() {
                   newEmployees.push({
                     id: uid(),
                     name: d.name,
-                    category: d.isSecurity ? "Semi-skilled" : "Skilled",
+                    category: "Unskilled",
+                    isSecurity: d.isSecurity,
                     monthlySalary: 0,
                     salaryPerDay: 0,
                     bonusPerDay: 0,
                     daysWorked: d.presentDays,
-                    extraDays: d.sundaysEligible,
+                    extraDays: d.isSecurity ? 0 : d.sundaysEligible,
                     basicPercent: 70,
                     pfOptIn: true,
                     esiOptIn: true,

@@ -83,6 +83,7 @@ export function calculateSalary(
 
   const category = input.category;
   const isSpecial = isSpecialCategory(category);
+  const isSecurity = input.isSecurity === true;
 
   let salaryPerDay = Math.max(0, numberValue(input.salaryPerDay));
   let monthlySalary = Math.max(0, numberValue(input.monthlySalary));
@@ -117,7 +118,9 @@ export function calculateSalary(
   const totalSalary = roundMoney(monthlySalary + dailyBonus);
 
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
-  const extraDays = isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
+  // Security and Special: no Sunday package — force Xd to 0 (SPEC §2.3 / I6 / TICKET-02).
+  const extraDays =
+    isSecurity || isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
   const standardBasic = monthlySalary * basicShare;
   const hasBasicAbove15k = standardBasic > 15000;
@@ -163,6 +166,7 @@ export function calculateSalary(
   return {
     ...input,
     category,
+    isSecurity,
     basicPercent: Math.round(basicShare * 100),
     monthlySalary,
     salaryPerDay,

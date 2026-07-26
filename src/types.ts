@@ -33,6 +33,8 @@ export type EmployeeInput = {
   id: string;
   name: string;
   category: Category;
+  /** When true: no Sunday package (no auto-paid Sunday, no double pay). SPEC §2.3 / TICKET-02. */
+  isSecurity?: boolean;
   monthlySalary: number;
   salaryPerDay?: number;
   bonusPerDay?: number;

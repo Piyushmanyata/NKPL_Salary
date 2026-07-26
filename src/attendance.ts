@@ -21,11 +21,15 @@ function findMatchedEmployee(employees: EmployeeInput[], rawName: string) {
 }
 
 function detectSecurity(rawName: string, department: string, matchedEmp?: EmployeeInput): boolean {
+  // Prefer the persisted employee flag when present (TICKET-02). Name/dept
+  // heuristics remain as a bootstrap for first-time imports only.
+  if (matchedEmp?.isSecurity !== undefined) {
+    return matchedEmp.isSecurity === true;
+  }
   return (
     rawName.toLowerCase().includes("security") ||
     department.toLowerCase().includes("security") ||
-    (matchedEmp?.name.toLowerCase().includes("security") ?? false) ||
-    (matchedEmp?.category.toLowerCase().includes("security") ?? false)
+    (matchedEmp?.name.toLowerCase().includes("security") ?? false)
   );
 }
 
