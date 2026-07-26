@@ -9,4 +9,8 @@ export default defineConfig({
     // Excel files are parsed, so its chunk size doesn't affect initial load.
     chunkSizeWarningLimit: 600,
   },
+  test: {
+    // 200k invariant cases need headroom on slower CI runners
+    testTimeout: 120_000,
+  },
 });

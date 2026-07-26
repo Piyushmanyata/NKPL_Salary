@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "npx vitest run src"
+    "test": "vitest run src"
   },
   "dependencies": {
     "@vercel/blob": "^2.4.1",
@@ -24,6 +24,10 @@
     "@vercel/node": "^5.8.17",
     "@vitejs/plugin-react": "^5.2.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.1"
+    "vite": "^6.0.1",
+    "vitest": "^3.2.7"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.62.2"
   }
 }

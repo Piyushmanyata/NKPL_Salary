@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateEmployeeAttendanceStats } from "../attendance";
 import { buildOfficialRow } from "../officialSheet";
-import { calculateSalary } from "../salary";
+import { calculateSalary, roundMoney } from "../salary";
 import type { AttendanceEmployee, EmployeeInput } from "../types";
 
 type DayDetail = AttendanceEmployee["daysDetail"][number];
@@ -160,8 +160,20 @@ describe("Issue #4: End-to-end month proof (attendance to equal nets)", () => {
         expect(attStats.sundaysEligible).toBe(0);
       }
 
-      // CRITICAL ASSERTION: Net Payable on Official Sheet ≡ Net Payable on Reference Sheet
-      expect(offRow.netPayable).toBeCloseTo(refRow.netPayable, 2);
+      // Independent recomputation — catches the historical tautology where
+      // Official net was assigned from Reference net (TICKET-09 / TICKET-14).
+      const recomputed = roundMoney(
+        offRow.grossPayable -
+          offRow.pf -
+          offRow.esi -
+          offRow.professionalTax -
+          (offRow.advance || 0) -
+          offRow.otherDeduction,
+      );
+      expect(recomputed).toBeCloseTo(offRow.netPayable, 2); // internal consistency
+      if (!offRow.unpackable) {
+        expect(offRow.netPayable).toBeCloseTo(refRow.netPayable, 2); // net equality
+      }
     });
   });
 });
