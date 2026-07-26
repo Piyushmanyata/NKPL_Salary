@@ -548,25 +548,29 @@ function App() {
 
   const totals = useMemo(() => {
     if (sheetMode === "main") {
-      const gross = officialRows.reduce((total, row) => total + row.grossPayable, 0);
-      const net = officialRows.reduce((total, row) => total + row.netPayable, 0);
-      const pf = officialRows.reduce((total, row) => total + row.pf, 0);
+      // Reconciliation summary excludes unpackable rows (TICKET-09); sheet still lists them.
+      const packable = officialRows.filter((row) => !row.unpackable);
+      const unpackableCount = officialRows.length - packable.length;
+      const gross = packable.reduce((total, row) => total + row.grossPayable, 0);
+      const net = packable.reduce((total, row) => total + row.netPayable, 0);
+      const pf = packable.reduce((total, row) => total + row.pf, 0);
       // Employer PF mirrors employee PF in this model (both 12% of basic, capped
       // at PF_BASIC_LIMIT) -- see calculateSalary. Reusing `pf` here (instead of
       // recomputing from monthlyBasic without the cap) keeps this in sync with
       // that formula and avoids overstating employer cost for high-basic rows.
       const employerPf = pf;
-      const esi = officialRows.reduce((total, row) => total + row.esi, 0);
-      const professionalTax = officialRows.reduce((total, row) => total + row.professionalTax, 0);
-      const employerEsi = officialRows.reduce((total, row) => total + (row.esi > 0 ? roundMoney(row.monthlyBasic * ESI_EMPLOYER_RATE) : 0), 0);
+      const esi = packable.reduce((total, row) => total + row.esi, 0);
+      const professionalTax = packable.reduce((total, row) => total + row.professionalTax, 0);
+      const employerEsi = packable.reduce((total, row) => total + (row.esi > 0 ? roundMoney(row.monthlyBasic * ESI_EMPLOYER_RATE) : 0), 0);
       const deductions =
         pf +
         esi +
         professionalTax +
-        officialRows.reduce((total, row) => total + (row.advance || 0) + row.otherDeduction, 0);
+        packable.reduce((total, row) => total + (row.advance || 0) + row.otherDeduction, 0);
       const cost = gross + employerPf + employerEsi;
       return {
         employees: officialRows.length,
+        unpackableCount,
         gross,
         net,
         pf,
@@ -594,6 +598,7 @@ function App() {
       const cost = sum(salaryRows, "totalCost");
       return {
         employees: salaryRows.length,
+        unpackableCount: 0,
         gross,
         net,
         pf,
@@ -1063,7 +1068,21 @@ function App() {
           "Employer Total Cost": roundMoney(row.totalCost),
         }));
 
+  /** Block Official export when any row cannot pack net equality (TICKET-09). */
+  const assertOfficialExportAllowed = (): boolean => {
+    if (sheetMode !== "main") return true;
+    const blocked = officialRows.filter((row) => row.unpackable);
+    if (!blocked.length) return true;
+    const names = blocked.map((row) => row.name).join(", ");
+    showToast(
+      `Cannot export Official sheet: unpackable net for ${blocked.length} employee(s): ${names}`,
+      "error",
+    );
+    return false;
+  };
+
   const exportWorkbook = () => {
+    if (!assertOfficialExportAllowed()) return;
     const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
     const body = exportRows
       .map(
@@ -1084,6 +1103,7 @@ function App() {
   };
 
   const exportCsv = () => {
+    if (!assertOfficialExportAllowed()) return;
     const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
     const csv = [
       headers.map(csvEscape).join(","),
@@ -1296,7 +1316,9 @@ function App() {
                 <p>
                   {sheetMode === "reference"
                     ? `${filteredRows.length} employees shown, ${salaryRows.length} total`
-                    : `${filteredOfficialRows.length} calculated rows, net pay preserved from reference`}
+                    : totals.unpackableCount > 0
+                      ? `${filteredOfficialRows.length} rows · ${totals.unpackableCount} unpackable (export blocked)`
+                      : `${filteredOfficialRows.length} calculated rows, net computed from Official components`}
                 </p>
               </div>
               <div className="panel-actions">
@@ -1634,10 +1656,32 @@ function App() {
                   </thead>
                   <tbody>
                     {sortedFilteredOfficialRows.map((row) => {
-                      const hasDiff = Math.abs(row.netPayable - row.referenceNetPayable) > 5;
+                      const hasDiff =
+                        row.unpackable || Math.abs(row.netPayable - row.referenceNetPayable) > 5;
+                      const netDelta = roundMoney(row.netPayable - row.referenceNetPayable);
                       return (
                         <tr key={row.id} className={hasDiff ? "diff-row" : ""}>
-                          <td className="name-cell">{row.name}</td>
+                          <td className="name-cell">
+                            {row.name}
+                            {row.unpackable ? (
+                              <span
+                                title={`Unpackable: Official net ${currency(row.netPayable)} ≠ Reference ${currency(row.referenceNetPayable)} (Δ ${currency(netDelta)}). Export blocked.`}
+                                style={{
+                                  marginLeft: 6,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: "#b42318",
+                                  background: "#fef3f2",
+                                  border: "1px solid #fecdca",
+                                  borderRadius: 4,
+                                  padding: "1px 5px",
+                                  verticalAlign: "middle",
+                                }}
+                              >
+                                unpackable
+                              </span>
+                            ) : null}
+                          </td>
                           <td>
                             <span style={{ fontWeight: 600 }}>{row.wageCategory}</span>
                             {row.sourceCategory !== row.wageCategory && (

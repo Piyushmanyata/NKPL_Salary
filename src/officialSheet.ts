@@ -31,6 +31,8 @@ export type OfficialRow = {
   otherDeduction: number;
   netPayable: number;
   referenceNetPayable: number;
+  /** True when no attendance A packs targetGross ≥ basic. SPEC §6.5 / TICKET-09. */
+  unpackable: boolean;
 };
 export const OFFICIAL_WAGE_DAYS = 26;
 
@@ -124,74 +126,77 @@ export function officialPf(row: SalaryRow, basic: number): number {
  * Base is BASIC (ADR-0002). Never forced on merely because PF is on.
  */
 export function officialEsi(row: SalaryRow, basic: number): number {
-  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
-  if (hasNoEsi) return 0;
+  if (row.category === "Special") return 0;
+  if (!row.esiOptIn) return 0;
   if (basic > ESI_GROSS_LIMIT) return 0;
   return roundMoney(basic * ESI_RATE);
 }
 
+function advanceAmount(row: SalaryRow): number {
+  return Math.max(0, Number(row.advance) || 0);
+}
+
+function targetGrossFor(
+  row: SalaryRow,
+  pf: number,
+  esi: number,
+): number {
+  return roundMoney(
+    row.netPayable + pf + esi + row.professionalTax + advanceAmount(row) + row.otherDeduction,
+  );
+}
+
 /**
- * Single Official path for every employee. Attendance uses the 26-day wage-board
- * frame regardless of PF. SPEC §6.2 / TICKET-07.
- *
- * Packing walk-down and net assembly stay here until TICKET-09 extracts
- * pickPackableAttendance / assembleOfficialRow and the unpackable flag.
+ * Walk A from aMax down to aMin; first A with targetGross ≥ officialBasic packs.
+ * If none pack, return aMin with unpackable=true. SPEC §6.5 / TICKET-09.
  */
-export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
-  const wageCategory = wageBoardCategory(row.category);
-  const rule = wageRules[wageCategory];
-
-  // Calendar absences → Official A_max / A_min (same for PF on or off).
-  const absentDays = Math.max(0, monthDays - row.daysWorked);
-  const aMax = Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, OFFICIAL_WAGE_DAYS - absentDays));
-  const aMin = row.daysWorked > 0 ? 1 : 0;
-
-  // SPEC §6.5: packable(A) ⇔ targetGross(A) ≥ officialBasic(A). Walk A_max → A_min.
-  // (TICKET-09 adds unpackable flag when no A packs; until then A_min is forced.)
-  let attendance = aMin;
-  for (let candidate = aMax; candidate >= aMin; candidate -= 1) {
-    const candidateBasic = officialBasic(row, wageCategory, candidate);
-    const candidatePf = officialPf(row, candidateBasic);
-    const candidateEsi = officialEsi(row, candidateBasic);
-    const candidateGross = Math.max(
-      0,
-      row.netPayable +
-        candidatePf +
-        candidateEsi +
-        row.professionalTax +
-        (row.advance || 0) +
-        row.otherDeduction,
-    );
-
-    if (candidateGross >= candidateBasic || candidate === aMin) {
-      attendance = candidate;
-      break;
+export function pickPackableAttendance(
+  row: SalaryRow,
+  wageCategory: WageCategory,
+  aMax: number,
+  aMin: number,
+): { attendance: number; unpackable: boolean } {
+  for (let A = aMax; A >= aMin; A -= 1) {
+    const basic = officialBasic(row, wageCategory, A);
+    const pf = officialPf(row, basic);
+    const esi = officialEsi(row, basic);
+    const target = targetGrossFor(row, pf, esi);
+    if (target >= basic) {
+      return { attendance: A, unpackable: false };
     }
   }
+  return { attendance: aMin, unpackable: true };
+}
 
+/**
+ * Assemble Official components for a chosen attendance. Net is always computed
+ * from components — never copied from Reference. SPEC §6.6 / TICKET-09.
+ */
+export function assembleOfficialRow(
+  row: SalaryRow,
+  wageCategory: WageCategory,
+  attendance: number,
+  unpackable: boolean,
+): OfficialRow {
+  const rule = wageRules[wageCategory];
   const monthlyBasic = officialBasic(row, wageCategory, attendance);
   const pf = officialPf(row, monthlyBasic);
   const esiValue = officialEsi(row, monthlyBasic);
-  // Assembly residual: elevated-basic (PF-off) rows pack HRA/TA from targetGross with bonus 0.
-  // PF-on rows use wage-board basic and may take residual as bonus (SPEC §6.6 refined in T-09).
-  const isOptOut = !row.pfOptIn && attendance > 0;
-  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const adv = advanceAmount(row);
+  const targetGross = targetGrossFor(row, pf, esiValue);
+  const proratedTotal26 = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const base = Math.min(proratedTotal26, targetGross);
 
-  const targetGross = Math.max(
-    0,
-    row.netPayable + pf + esiValue + row.professionalTax + (row.advance || 0) + row.otherDeduction,
-  );
-  const remainingForHraTa = isOptOut
-    ? Math.max(0, targetGross - monthlyBasic)
-    : Math.max(0, proratedTotalSalary - monthlyBasic);
-  const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
-  const bonus = isOptOut
+  const remainder = Math.max(0, base - monthlyBasic);
+  const monthlyHra = roundMoney(remainder * HRA_SHARE_OF_BALANCE);
+  const monthlyTravelAllowance = roundMoney(remainder - monthlyHra);
+  // unpackable → force bonus 0 so no component goes negative when target < basic
+  const bonus = unpackable
     ? 0
-    : Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
+    : roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance));
   const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
-    grossPayable - pf - esiValue - row.professionalTax - (row.advance || 0) - row.otherDeduction,
+    grossPayable - pf - esiValue - row.professionalTax - adv - row.otherDeduction,
   );
 
   return {
@@ -214,5 +219,21 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     otherDeduction: row.otherDeduction,
     netPayable,
     referenceNetPayable: row.netPayable,
+    unpackable,
   };
+}
+
+/**
+ * Single Official path for every employee. Attendance uses the 26-day wage-board
+ * frame regardless of PF. SPEC §6.2 / TICKET-07 + packing/net from TICKET-09.
+ */
+export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
+  const wageCategory = wageBoardCategory(row.category);
+
+  const absentDays = Math.max(0, monthDays - row.daysWorked);
+  const aMax = Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, OFFICIAL_WAGE_DAYS - absentDays));
+  const aMin = row.daysWorked > 0 ? 1 : 0;
+
+  const { attendance, unpackable } = pickPackableAttendance(row, wageCategory, aMax, aMin);
+  return assembleOfficialRow(row, wageCategory, attendance, unpackable);
 }
