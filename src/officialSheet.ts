@@ -8,13 +8,14 @@ import {
 } from "./salary";
 import type { Category, SalaryRow } from "./types";
 
-/** Official wage-board band (three rows). Special borrows Skilled until TICKET-12. */
+/** Official wage-board band with a daily rate (three rows). Special has none. */
 export type WageCategory = "Unskilled" | "Semi-skilled" | "Skilled";
 
 export type OfficialRow = {
   id: string;
   name: string;
   sourceCategory: string;
+  /** Display wage-board band; Special borrows Skilled (SPEC A1). */
   wageCategory: WageCategory;
   employeeTypes: string;
   allowedBasic: number;
@@ -36,23 +37,34 @@ export type OfficialRow = {
 };
 export const OFFICIAL_WAGE_DAYS = 26;
 
-const wageRules: Record<WageCategory, { employeeTypes: string; basic: number; daily: number }> = {
+/** Wage-board daily basic rates. Special is intentionally absent. SPEC §6.1 / TICKET-12. */
+export const WAGE_BOARD_DAILY: Record<WageCategory, number> = {
+  Unskilled: 400,
+  "Semi-skilled": 440,
+  Skilled: 484,
+};
+
+const SKILLED_DISPLAY = {
+  employeeTypes: "Moulder, Fitter, Machineman, Punchingman, Cuttingman, Mistry, Clerk, Typist",
+  allowedBasic: 12584,
+} as const;
+
+/**
+ * Display-only Official columns. Special borrows the Skilled row (SPEC A1 / TICKET-12).
+ * Basic money never comes from this table for Special — opt-out formula only.
+ */
+const DISPLAY_ROW: Record<Category, { employeeTypes: string; allowedBasic: number }> = {
   Unskilled: {
     employeeTypes: "Cooly, Helper, Peon",
-    basic: 10400,
-    daily: 400,
+    allowedBasic: 10400,
   },
   "Semi-skilled": {
     employeeTypes:
       "Assistant Moulder, Assistant Fitter, Assistant Machineman, Assistant Punchingman, Assistant Cuttingman, Assistant Mistry, Durwan",
-    basic: 11440,
-    daily: 440,
+    allowedBasic: 11440,
   },
-  Skilled: {
-    employeeTypes: "Moulder, Fitter, Machineman, Punchingman, Cuttingman, Mistry, Clerk, Typist",
-    basic: 12584,
-    daily: 484,
-  },
+  Skilled: { ...SKILLED_DISPLAY },
+  Special: { ...SKILLED_DISPLAY },
 };
 
 /**
@@ -81,7 +93,7 @@ export function normalizeCategory(value: unknown): Category | null {
   return CANONICAL[spaced] ?? CANONICAL[compact] ?? CANONICAL[raw] ?? null;
 }
 
-/** Map roster Category → Official wage-board row (Special → Skilled display band until TICKET-12). */
+/** Map roster Category → Official wage-board band for daily rates (Special → Skilled display). */
 export function wageBoardCategory(category: Category | string): WageCategory {
   if (category === "Unskilled" || category === "Semi-skilled" || category === "Skilled") {
     return category;
@@ -92,21 +104,30 @@ export function wageBoardCategory(category: Category | string): WageCategory {
   return "Skilled";
 }
 
+function displayFor(category: Category | string): { employeeTypes: string; allowedBasic: number } {
+  if (category === "Unskilled" || category === "Semi-skilled" || category === "Skilled" || category === "Special") {
+    return DISPLAY_ROW[category];
+  }
+  const n = normalizeCategory(category);
+  if (n) return DISPLAY_ROW[n];
+  return DISPLAY_ROW.Skilled;
+}
+
 /**
- * Official monthly basic for attendance A. SPEC §6.3 / TICKET-08.
+ * Official monthly basic for attendance A. SPEC §6.3 / TICKET-08 / TICKET-12.
  *
- * - PF on  → wage board daily × A (no ₹15,000 display cap; that ceiling is PF-only).
+ * - PF on  → wage board daily × A (Special cannot have PF — throws).
  * - PF off + ESI off → elevated floor max(21100, 0.51 × totalSalary) prorated on 26.
  * - PF off + ESI on  → elevated floor max(15100, 0.51 × totalSalary) prorated on 26.
- *
- * Uses effective `pfOptIn` / `esiOptIn` only (post-eligibility from salary.ts).
  */
 export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: number): number {
   if (A <= 0) return 0;
 
-  // Wage board wins whenever PF is on — ESI opt-out must not elevate the printed basic.
   if (row.pfOptIn) {
-    return roundMoney(A * wageRules[wageCategory].daily);
+    if (row.category === "Special") {
+      throw new Error("Invariant: Special employees cannot have PF on");
+    }
+    return roundMoney(A * WAGE_BOARD_DAILY[wageCategory]);
   }
 
   const fullMonthRate = !row.esiOptIn
@@ -136,11 +157,7 @@ function advanceAmount(row: SalaryRow): number {
   return Math.max(0, Number(row.advance) || 0);
 }
 
-function targetGrossFor(
-  row: SalaryRow,
-  pf: number,
-  esi: number,
-): number {
+function targetGrossFor(row: SalaryRow, pf: number, esi: number): number {
   return roundMoney(
     row.netPayable + pf + esi + row.professionalTax + advanceAmount(row) + row.otherDeduction,
   );
@@ -178,7 +195,7 @@ export function assembleOfficialRow(
   attendance: number,
   unpackable: boolean,
 ): OfficialRow {
-  const rule = wageRules[wageCategory];
+  const display = displayFor(row.category);
   const monthlyBasic = officialBasic(row, wageCategory, attendance);
   const pf = officialPf(row, monthlyBasic);
   const esiValue = officialEsi(row, monthlyBasic);
@@ -190,7 +207,6 @@ export function assembleOfficialRow(
   const remainder = Math.max(0, base - monthlyBasic);
   const monthlyHra = roundMoney(remainder * HRA_SHARE_OF_BALANCE);
   const monthlyTravelAllowance = roundMoney(remainder - monthlyHra);
-  // unpackable → force bonus 0 so no component goes negative when target < basic
   const bonus = unpackable
     ? 0
     : roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance));
@@ -204,8 +220,8 @@ export function assembleOfficialRow(
     name: row.name,
     sourceCategory: row.category,
     wageCategory,
-    employeeTypes: rule.employeeTypes,
-    allowedBasic: rule.basic,
+    employeeTypes: display.employeeTypes,
+    allowedBasic: display.allowedBasic,
     monthlyBasic,
     monthlyHra,
     monthlyTravelAllowance,
