@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { redisDel, redisGetJson, redisKeys, redisSetJson } from './redis';
+import { redisDel, redisGetJson, redisKeys, redisSetJson } from './_lib/redis.js';
 
 const DEFAULT_COMPANY = 'NKPL';
 
