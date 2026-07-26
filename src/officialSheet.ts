@@ -4,8 +4,6 @@ import {
   HRA_SHARE_OF_BALANCE,
   PF_BASIC_LIMIT,
   PF_RATE,
-  clampDays,
-  numberValue,
   roundMoney,
 } from "./salary";
 import type { Category, SalaryRow } from "./types";
@@ -92,10 +90,6 @@ export function wageBoardCategory(category: Category | string): WageCategory {
   return "Skilled";
 }
 
-function clampOfficialAttendance(value: unknown) {
-  return Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, Math.floor(numberValue(value))));
-}
-
 function getOptOutBasicRate(totalSalary: number, hasNoPf: boolean, hasNoEsi: boolean): number {
   if (hasNoEsi) {
     return Math.max(21100, Math.round(totalSalary * 0.51));
@@ -106,109 +100,72 @@ function getOptOutBasicRate(totalSalary: number, hasNoPf: boolean, hasNoEsi: boo
   return 0;
 }
 
-interface StatutoryComponents {
-  pf: number;
-  esiValue: number;
-  monthlyHra: number;
-  monthlyTravelAllowance: number;
-  bonus: number;
-  grossPayable: number;
-}
-
-function calculateStatutoryComponents(
-  row: SalaryRow,
-  monthlyBasic: number,
-  isOptOut: boolean,
-  proratedTotalSalary: number,
-  hasNoEsi: boolean
-): StatutoryComponents {
-  const pf = row.pfOptIn ? roundMoney(Math.min(monthlyBasic, PF_BASIC_LIMIT) * PF_RATE) : 0;
-  const esiActive = !hasNoEsi && row.esiOptIn && monthlyBasic <= ESI_GROSS_LIMIT;
-  const esiValue = esiActive ? roundMoney(monthlyBasic * ESI_RATE) : 0;
-  const targetGross = Math.max(
-    0,
-    row.netPayable + pf + esiValue + row.professionalTax + (row.advance || 0) + row.otherDeduction
-  );
-  
-  const remainingForHraTa = isOptOut ? Math.max(0, targetGross - monthlyBasic) : Math.max(0, proratedTotalSalary - monthlyBasic);
-  const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
-  const bonus = isOptOut ? 0 : Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
-  const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
-
-  return { pf, esiValue, monthlyHra, monthlyTravelAllowance, bonus, grossPayable };
-}
-
-export function buildReferenceOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
-  const wageCategory = wageBoardCategory(row.category);
-  const rule = wageRules[wageCategory];
-  const attendance = row.daysWorked;
-  const proratedTotalSalary = roundMoney((row.totalSalary / monthDays) * attendance);
+/**
+ * Official monthly basic for attendance A.
+ * Current formula (pre–TICKET-08): opt-out elevation when PF or ESI is off;
+ * PF-on still applies the ₹15,000 display cap (removed in TICKET-08).
+ * SPEC §6.3 / TICKET-07 extraction.
+ */
+export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: number): number {
+  if (A <= 0) return 0;
   const hasNoPf = !row.pfOptIn || row.pfOptedOut;
   const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
-  const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
-  const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
-  
-  const monthlyBasic = isOptOut ? roundMoney((fullMonthBasicRate / monthDays) * attendance) : row.basicSalary;
-  const stats = calculateStatutoryComponents(row, monthlyBasic, isOptOut, proratedTotalSalary, hasNoEsi);
+  const rule = wageRules[wageCategory];
 
-  return {
-    id: row.id,
-    name: row.name,
-    sourceCategory: row.category,
-    wageCategory,
-    employeeTypes: rule.employeeTypes,
-    allowedBasic: rule.basic,
-    monthlyBasic,
-    monthlyHra: stats.monthlyHra,
-    monthlyTravelAllowance: stats.monthlyTravelAllowance,
-    attendance,
-    bonus: stats.bonus,
-    grossPayable: stats.grossPayable,
-    pf: stats.pf,
-    esi: stats.esiValue,
-    professionalTax: row.professionalTax,
-    advance: row.advance,
-    otherDeduction: row.otherDeduction,
-    netPayable: row.netPayable,
-    referenceNetPayable: row.netPayable,
-  };
+  let basic: number;
+  if (hasNoPf || hasNoEsi) {
+    const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
+    basic = (fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * A;
+  } else {
+    basic = A * rule.daily;
+  }
+  // Display cap while PF is active — TICKET-08 drops this (EPF ceiling stays in officialPf).
+  if (row.pfOptIn) {
+    basic = Math.min(basic, PF_BASIC_LIMIT);
+  }
+  return roundMoney(basic);
 }
 
+/** Official employee PF: 12% of min(basic, 15,000) when PF is on. SPEC §6.4 */
+export function officialPf(row: SalaryRow, basic: number): number {
+  if (!row.pfOptIn) return 0;
+  return roundMoney(Math.min(basic, PF_BASIC_LIMIT) * PF_RATE);
+}
+
+/**
+ * Official employee ESI: 0.75% of Official basic when eligible.
+ * Base is BASIC (ADR-0002). Never forced on merely because PF is on.
+ */
+export function officialEsi(row: SalaryRow, basic: number): number {
+  const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
+  if (hasNoEsi) return 0;
+  if (basic > ESI_GROSS_LIMIT) return 0;
+  return roundMoney(basic * ESI_RATE);
+}
+
+/**
+ * Single Official path for every employee. Attendance uses the 26-day wage-board
+ * frame regardless of PF. SPEC §6.2 / TICKET-07.
+ *
+ * Packing walk-down and net assembly stay here until TICKET-09 extracts
+ * pickPackableAttendance / assembleOfficialRow and the unpackable flag.
+ */
 export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
-  const pfActive = row.pfOptIn;
-
-  if (!pfActive) {
-    return buildReferenceOfficialRow(row, monthDays);
-  }
-
   const wageCategory = wageBoardCategory(row.category);
   const rule = wageRules[wageCategory];
-  const presentDays = clampDays(row.daysWorked, monthDays);
-  const absentDays = Math.max(0, monthDays - presentDays);
 
-  const minCandidate = row.daysWorked > 0 ? 1 : 0;
-  const formulaAttendance = Math.max(
-    minCandidate,
-    clampOfficialAttendance(OFFICIAL_WAGE_DAYS - absentDays),
-  );
+  // Calendar absences → Official A_max / A_min (same for PF on or off).
+  const absentDays = Math.max(0, monthDays - row.daysWorked);
+  const aMax = Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, OFFICIAL_WAGE_DAYS - absentDays));
+  const aMin = row.daysWorked > 0 ? 1 : 0;
 
-  let attendance = minCandidate;
-  for (let candidate = formulaAttendance; candidate >= minCandidate; candidate -= 1) {
-    const candidateProratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * candidate);
-    let candidateBasic = roundMoney(candidate * rule.daily);
-    const hasNoPf = !row.pfOptIn || row.pfOptedOut;
-    const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
-    if ((hasNoPf || hasNoEsi) && candidate > 0) {
-      const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
-      candidateBasic = roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * candidate);
-    }
-    if (pfActive) {
-      candidateBasic = Math.min(candidateBasic, PF_BASIC_LIMIT);
-    }
-    const candidatePf = roundMoney(Math.min(candidateBasic, PF_BASIC_LIMIT) * PF_RATE);
-    const candidateEsiActive = !hasNoEsi && row.esiOptIn && candidateBasic <= ESI_GROSS_LIMIT;
-    const candidateEsi = candidateEsiActive ? roundMoney(candidateBasic * ESI_RATE) : 0;
+  // SPEC §6.5: packable(A) ⇔ targetGross(A) ≥ officialBasic(A). Walk A_max → A_min.
+  // (TICKET-09 adds unpackable flag when no A packs; until then A_min is forced.)
+  let attendance = aMin;
+  for (let candidate = aMax; candidate >= aMin; candidate -= 1) {
+    const candidateBasic = officialBasic(row, wageCategory, candidate);
+    const candidatePf = officialPf(row, candidateBasic);
+    const candidateEsi = officialEsi(row, candidateBasic);
     const candidateGross = Math.max(
       0,
       row.netPayable +
@@ -219,29 +176,35 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
         row.otherDeduction,
     );
 
-    if ((candidateGross >= candidateProratedTotalSalary && candidateGross >= candidateBasic) || candidate === minCandidate) {
+    if (candidateGross >= candidateBasic || candidate === aMin) {
       attendance = candidate;
       break;
     }
   }
 
-  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const monthlyBasic = officialBasic(row, wageCategory, attendance);
+  const pf = officialPf(row, monthlyBasic);
+  const esiValue = officialEsi(row, monthlyBasic);
   const hasNoPf = !row.pfOptIn || row.pfOptedOut;
   const hasNoEsi = !row.esiOptIn || row.esiOptedOut;
   const isOptOut = (hasNoPf || hasNoEsi) && attendance > 0;
-  const fullMonthBasicRate = getOptOutBasicRate(row.totalSalary, hasNoPf, hasNoEsi);
-  
-  let statutoryBasic = isOptOut 
-    ? roundMoney((fullMonthBasicRate / OFFICIAL_WAGE_DAYS) * attendance) 
-    : roundMoney(attendance * rule.daily);
-  if (pfActive) {
-    statutoryBasic = Math.min(statutoryBasic, PF_BASIC_LIMIT);
-  }
-  const monthlyBasic = statutoryBasic;
-  const stats = calculateStatutoryComponents(row, monthlyBasic, isOptOut, proratedTotalSalary, hasNoEsi);
-  const finalGross = stats.grossPayable;
+  const proratedTotalSalary = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+
+  const targetGross = Math.max(
+    0,
+    row.netPayable + pf + esiValue + row.professionalTax + (row.advance || 0) + row.otherDeduction,
+  );
+  const remainingForHraTa = isOptOut
+    ? Math.max(0, targetGross - monthlyBasic)
+    : Math.max(0, proratedTotalSalary - monthlyBasic);
+  const monthlyHra = roundMoney(remainingForHraTa * HRA_SHARE_OF_BALANCE);
+  const monthlyTravelAllowance = roundMoney(remainingForHraTa - monthlyHra);
+  const bonus = isOptOut
+    ? 0
+    : Math.max(0, roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance)));
+  const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
-    finalGross - stats.pf - stats.esiValue - row.professionalTax - (row.advance || 0) - row.otherDeduction,
+    grossPayable - pf - esiValue - row.professionalTax - (row.advance || 0) - row.otherDeduction,
   );
 
   return {
@@ -252,13 +215,13 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     employeeTypes: rule.employeeTypes,
     allowedBasic: rule.basic,
     monthlyBasic,
-    monthlyHra: stats.monthlyHra,
-    monthlyTravelAllowance: stats.monthlyTravelAllowance,
+    monthlyHra,
+    monthlyTravelAllowance,
     attendance,
-    bonus: stats.bonus,
-    grossPayable: finalGross,
-    pf: stats.pf,
-    esi: stats.esiValue,
+    bonus,
+    grossPayable,
+    pf,
+    esi: esiValue,
     professionalTax: row.professionalTax,
     advance: row.advance,
     otherDeduction: row.otherDeduction,
@@ -266,5 +229,3 @@ export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow
     referenceNetPayable: row.netPayable,
   };
 }
-
-
