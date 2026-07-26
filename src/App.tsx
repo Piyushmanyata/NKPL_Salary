@@ -247,7 +247,8 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays = WORKING_DAY
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
     esiOptIn: isSpecial ? false : row.esiOptIn !== false,
     isSpecial,
-    advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) !== 0 ? numberValue(row.advance) : undefined,
+    // Positive advance = recovered from net. Negatives (legacy UI convention) clamp to absent.
+    advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) > 0 ? numberValue(row.advance) : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
     officialAttendance: row.officialAttendance !== undefined ? numberValue(row.officialAttendance) : undefined,
     officialBonus: row.officialBonus !== undefined ? numberValue(row.officialBonus) : undefined,
@@ -567,7 +568,7 @@ function App() {
         pf +
         esi +
         professionalTax +
-        officialRows.reduce((total, row) => total - (row.advance || 0) + row.otherDeduction, 0);
+        officialRows.reduce((total, row) => total + (row.advance || 0) + row.otherDeduction, 0);
       const cost = gross + employerPf + employerEsi;
       return {
         employees: officialRows.length,
@@ -593,7 +594,7 @@ function App() {
         pf +
         esi +
         professionalTax +
-        -sum(salaryRows, "advance") +
+        sum(salaryRows, "advance") +
         sum(salaryRows, "otherDeduction");
       const cost = sum(salaryRows, "totalCost");
       return {
@@ -689,9 +690,13 @@ function App() {
 
         if (field === "advance") {
           const val = value === undefined || value === "" ? undefined : Number(value);
+          // Reject negatives: advance is stored positive and always subtracted (TICKET-06).
+          if (val !== undefined && (Number.isNaN(val) || val < 0)) {
+            return { ...employee, advance: undefined };
+          }
           return {
             ...employee,
-            advance: val === 0 ? undefined : val,
+            advance: val === 0 || val === undefined ? undefined : val,
           };
         }
 
@@ -1000,7 +1005,8 @@ function App() {
           PF: roundMoney(row.pf),
           ESI: roundMoney(row.esi),
           "P-Tax": roundMoney(row.professionalTax),
-          Advance: row.advance !== undefined && row.advance !== null ? roundMoney(row.advance) : "",
+          // Display sign: negative means recovered (engine stores positive).
+          Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
           "Other Deduction": roundMoney(row.otherDeduction),
           "Net Payable": roundMoney(row.netPayable),
           "Reference Net Payable": roundMoney(row.referenceNetPayable),
@@ -1032,7 +1038,8 @@ function App() {
           "ESI Deduction": roundMoney(row.esi),
           "Employer ESI Contribution": roundMoney(row.employerEsi),
           "P-Tax": roundMoney(row.professionalTax),
-          Advance: row.advance !== undefined && row.advance !== null ? roundMoney(row.advance) : "",
+          // Display sign: negative means recovered (engine stores positive).
+          Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
           "Other Deduction": roundMoney(row.otherDeduction),
           "Net Payable": roundMoney(row.netPayable),
           "Employer Total Cost": roundMoney(row.totalCost),
@@ -1685,7 +1692,7 @@ function App() {
                 />
                 <Rule label="ESI" value={`${ESI_RATE * 100}% on Salary/Month when ESI is enabled (auto-off above ${currency(ESI_GROSS_LIMIT)} Basic)`} />
                 <Rule label="P-Tax" value="Based on Gross Payable (before PF/ESI) slab" />
-                <Rule label="Advance" value="Positive adds to net pay, negative subtracts from net pay" />
+                <Rule label="Advance" value="Amount advanced to the employee, recovered from this month's net pay" />
                 <Rule label="Performance Bonus" value="Carried from reference sheet, or Sunday bonus if attendance synced" />
               </div>
             </article>

@@ -114,7 +114,9 @@ export function calculateSalary(
   const hasBasicAbove15k = standardBasic > 15000;
   const requestedPfOptIn = (isSpecial || hasBasicAbove15k) ? false : (input.pfOptIn !== false);
   const requestedEsiOptIn = isSpecial ? false : (input.esiOptIn !== false);
-  const advance = numberValue(input.advance);
+  // Stored positive = amount advanced and recovered this month. Engine always
+  // subtracts. Negative input is clamped to 0 at the boundary (TICKET-06).
+  const advance = Math.max(0, numberValue(input.advance));
   const otherDeduction = Math.max(0, numberValue(input.otherDeduction));
   const perDayWage = salaryPerDay;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
@@ -165,7 +167,7 @@ export function calculateSalary(
     pfOptedOut: input.pfOptIn === false,
     esiOptedOut: input.esiOptIn === false,
     isSpecial,
-    advance: input.advance,
+    advance,
     otherDeduction,
     perDayWage,
     absentDeduction,

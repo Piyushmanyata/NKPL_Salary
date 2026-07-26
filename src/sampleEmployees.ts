@@ -130,7 +130,7 @@ export const sampleEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": true,
     "esiOptIn": true,
-    "advance": -1500,
+    "advance": 1500,
     "otherDeduction": 0
   },
   {
@@ -143,7 +143,7 @@ export const sampleEmployees: EmployeeInput[] = [
     "basicPercent": 70,
     "pfOptIn": true,
     "esiOptIn": true,
-    "advance": -500,
+    "advance": 500,
     "otherDeduction": 0
   },
   {
