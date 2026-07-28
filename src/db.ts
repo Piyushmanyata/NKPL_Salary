@@ -139,6 +139,12 @@ export interface EmployeeRate {
   name: string;
   salaryPerDay: number;
   bonusPerDay: number;
+  /**
+   * Standing package for the fixed-monthly categories, the way salaryPerDay is
+   * the standing rate for Unskilled. Optional so pre-existing blobs still load.
+   */
+  monthlySalary?: number;
+  totalSalary?: number;
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;

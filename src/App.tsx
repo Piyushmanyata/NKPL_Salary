@@ -239,6 +239,14 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     category,
     isSecurity,
     monthlySalary,
+    // Typed package anchor for the fixed-monthly categories; never below M, and
+    // never stored for Unskilled (whose total stays derived from r and b).
+    totalSalary:
+      category === "Unskilled"
+        ? undefined
+        : Math.max(0, numberValue(row.totalSalary)) > monthlySalary
+          ? Math.max(0, numberValue(row.totalSalary))
+          : undefined,
     salaryPerDay,
     bonusPerDay,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
@@ -280,10 +288,16 @@ const applyEmployeeRates = (list: EmployeeInput[], rates: EmployeeRateMap): Empl
     if (!rate) {
       return employee;
     }
+    const monthlySalary = Math.max(0, numberValue(rate.monthlySalary));
+    const totalSalary = Math.max(0, numberValue(rate.totalSalary));
     return {
       ...employee,
       salaryPerDay: Math.max(0, numberValue(rate.salaryPerDay)),
       bonusPerDay: Math.max(0, numberValue(rate.bonusPerDay)),
+      // Only overlay a package that was actually stored — a legacy rate blob has
+      // neither field, and a 0 there must never wipe a good monthly salary.
+      ...(monthlySalary > 0 ? { monthlySalary } : {}),
+      ...(totalSalary > monthlySalary ? { totalSalary } : {}),
     };
   });
 
@@ -298,6 +312,8 @@ const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
       name: employee.name,
       salaryPerDay: Math.max(0, numberValue(employee.salaryPerDay)),
       bonusPerDay: Math.max(0, numberValue(employee.bonusPerDay)),
+      monthlySalary: Math.max(0, numberValue(employee.monthlySalary)),
+      totalSalary: Math.max(0, numberValue(employee.totalSalary)),
     };
   });
   return map;
@@ -695,6 +711,24 @@ function App() {
           return {
             ...employee,
             [field]: booleanValue(value),
+          };
+        }
+
+        // M and T are the typed anchors for the fixed-monthly categories; b is
+        // derived from them. Editing M holds bonus/day and carries T along;
+        // editing T sets the package directly. T below M means "no bonus".
+        if (field === "monthlySalary" || field === "totalSalary") {
+          const D = effectiveMonthDays;
+          const oldM = Math.max(0, numberValue(employee.monthlySalary));
+          const oldT = Math.max(0, numberValue(employee.totalSalary));
+          const bonus = oldT > oldM ? (oldT - oldM) / D : Math.max(0, numberValue(employee.bonusPerDay));
+          const typed = Math.max(0, numberValue(value));
+          const monthlySalary = field === "monthlySalary" ? typed : oldM;
+          const total = field === "totalSalary" ? typed : monthlySalary + D * bonus;
+          return {
+            ...employee,
+            monthlySalary,
+            totalSalary: total > monthlySalary ? roundMoney(total) : undefined,
           };
         }
 
@@ -1484,34 +1518,70 @@ function App() {
                             <tr className="settings-row">
                               <td colSpan={17}>
                                 <div className="settings-panel">
-                                  <div className="settings-column">
-                                    <span>Salary per Day</span>
-                                    <NumberInput
-                                      value={row.salaryPerDay}
-                                      min={0}
-                                      onChange={(value) => updateEmployee(row.id, "salaryPerDay", value)}
-                                    />
-                                    <small>Applies to every month for this employee</small>
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Bonus per Day</span>
-                                    <NumberInput
-                                      value={row.bonusPerDay}
-                                      min={0}
-                                      onChange={(value) => updateEmployee(row.id, "bonusPerDay", value)}
-                                    />
-                                    <small>Applies to every month for this employee</small>
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Salary per Month</span>
-                                    <strong>{currency(row.monthlySalary)}</strong>
-                                    <small>{effectiveMonthDays} days &times; {currency(row.salaryPerDay)}</small>
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Total Salary</span>
-                                    <strong>{currency(row.totalSalary)}</strong>
-                                    <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
-                                  </div>
+                                  {/* Anchor fields follow Category (SPEC §2.2): Unskilled is paid
+                                      off a day rate, the other three off a fixed monthly package.
+                                      Only the anchors are editable — derived values stay readouts. */}
+                                  {row.category === "Unskilled" ? (
+                                    <>
+                                      <div className="settings-column">
+                                        <span>Salary per Day</span>
+                                        <NumberInput
+                                          value={row.salaryPerDay}
+                                          min={0}
+                                          onChange={(value) => updateEmployee(row.id, "salaryPerDay", value)}
+                                        />
+                                        <small>Applies to every month for this employee</small>
+                                      </div>
+                                      <div className="settings-column">
+                                        <span>Bonus per Day</span>
+                                        <NumberInput
+                                          value={row.bonusPerDay}
+                                          min={0}
+                                          onChange={(value) => updateEmployee(row.id, "bonusPerDay", value)}
+                                        />
+                                        <small>Applies to every month for this employee</small>
+                                      </div>
+                                      <div className="settings-column">
+                                        <span>Salary per Month</span>
+                                        <strong>{currency(row.monthlySalary)}</strong>
+                                        <small>{effectiveMonthDays} days &times; {currency(row.salaryPerDay)}</small>
+                                      </div>
+                                      <div className="settings-column">
+                                        <span>Total Salary</span>
+                                        <strong>{currency(row.totalSalary)}</strong>
+                                        <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="settings-column">
+                                        <span>Salary per Month</span>
+                                        <NumberInput
+                                          value={row.monthlySalary}
+                                          min={0}
+                                          onChange={(value) => updateEmployee(row.id, "monthlySalary", value)}
+                                        />
+                                        <small>
+                                          {isSpecial
+                                            ? "Fixed package — paid in full every month"
+                                            : `Fixed monthly salary — day rate ${currency(row.salaryPerDay)} is derived from it`}
+                                        </small>
+                                      </div>
+                                      <div className="settings-column">
+                                        <span>Total Salary</span>
+                                        <NumberInput
+                                          value={row.totalSalary}
+                                          min={0}
+                                          onChange={(value) => updateEmployee(row.id, "totalSalary", value)}
+                                        />
+                                        <small>
+                                          {row.totalSalary > row.monthlySalary
+                                            ? `Full package — sets bonus/day ${currency(row.bonusPerDay)} and the Official 51% basic floor`
+                                            : "Full package — sets the Official 51% basic floor. Leave at monthly for no bonus."}
+                                        </small>
+                                      </div>
+                                    </>
+                                  )}
                                   <div className="settings-column">
                                     <span>TDS</span>
                                     <NumberInput

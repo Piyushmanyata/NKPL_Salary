@@ -205,8 +205,17 @@ export function calculateSalary(
       break;
   }
 
+  // Fixed-monthly categories anchor on M and T (both typed); b is derived, never
+  // typed. Unskilled keeps r/b as the anchors and leaves T derived. Absent a
+  // stored T this is a no-op, so legacy rosters compute exactly as before.
+  const storedTotal = Math.max(0, numberValue(input.totalSalary));
+  const usesStoredTotal = category !== "Unskilled" && storedTotal > monthlySalary;
+  if (usesStoredTotal && !isSpecial) {
+    bonusPerDay = roundMoney((storedTotal - monthlySalary) / workingDays);
+  }
+
   const dailyBonus = isSpecial ? 0 : roundMoney(workingDays * bonusPerDay);
-  const totalSalary = roundMoney(monthlySalary + dailyBonus);
+  const totalSalary = usesStoredTotal ? storedTotal : roundMoney(monthlySalary + dailyBonus);
 
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
   const standardBasic = monthlySalary * basicShare;

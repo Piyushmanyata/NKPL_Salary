@@ -49,6 +49,34 @@ This is the single most important table in this document.
 | **Skilled** | `M` | `r = M / D` | No. `M` is fixed; `r` floats inversely with `D`. |
 | **Special** | `M` | `r = 0` — **no day rate exists** | No. `M` is invariant to `D` and to attendance. |
 
+### 2.2.0 Which anchors are *typed*
+
+The table above states the derivation. This states what a user enters.
+
+| Category | Typed | Derived (read-only) |
+|---|---|---|
+| **Unskilled** | `r`, `b` | `M = D × r`, `T = M + D × b` |
+| **Semi-skilled / Skilled** | `M`, `T` | `r = M / D`, `b = (T − M) / D` |
+| **Special** | `M`, `T` | `r = 0`, `b = 0` |
+
+`T` (`totalSalary`) is a **stored, optional** anchor on `EmployeeInput` for the three
+fixed-monthly categories. It is never stored for Unskilled, whose total stays derived.
+
+Rationale: `M` and `T` drive different money. `M` sets Reference `earnedSalary` → `basicSalary`
+→ the PF gate. `T` sets the Official opt-out basic floor `max(21100 | 15100, 0.51 × T)` (§6.3)
+and `proratedTotal26`. Because PF is always off for Special, `0.51 × T` is the **only** lever on a
+Special employee's Official basic — so `T` must be enterable independently of `M`.
+
+`T ≤ M` means "no bonus" and is stored as absent. When `T` is absent the engine falls back to
+`T = M + D × b`, so every pre-existing roster computes bit-identically.
+
+**Special keeps `b = 0`.** A `T > M` on a Special row raises the Official basic without adding any
+Reference earnings — `dailyBonus` and `earnedBonus` stay `0`, so Reference gross remains `M`.
+
+*(Replaces the read-only `<strong>` readouts at `App.tsx:1505-1514`, which left `M` — the anchor for
+three of the four categories — with no editor at all, while exposing a `salaryPerDay` input that
+`calculateSalary` unconditionally overwrote.)*
+
 ### 2.2.1 Rate back-fill is a ONE-TIME repair, not a per-calculation step
 
 When a stored employee is missing the anchor their Category requires, the missing value is

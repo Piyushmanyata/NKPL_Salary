@@ -36,6 +36,12 @@ export type EmployeeInput = {
   /** When true: no Sunday package (no auto-paid Sunday, no double pay). SPEC §2.3 / TICKET-02. */
   isSecurity?: boolean;
   monthlySalary: number;
+  /**
+   * Stored package anchor (M + D×b) for Semi-skilled / Skilled / Special, where
+   * the user types M and T and `b` is derived. Absent for Unskilled, whose
+   * anchor is `r` and whose total stays derived. SPEC §2.2.
+   */
+  totalSalary?: number;
   salaryPerDay?: number;
   bonusPerDay?: number;
   daysWorked: number;
