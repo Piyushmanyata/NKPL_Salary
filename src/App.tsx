@@ -251,7 +251,9 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     salaryPerDay,
     bonusPerDay,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
-    extraDays: isSpecial || isSecurity ? 0 : Math.max(0, numberValue(row.extraDays)),
+    // Security keeps typed Extra Days (the Sunday package is still withheld by
+    // the attendance layer); only Special has none at all.
+    extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
     esiOptIn: isSpecial ? false : row.esiOptIn !== false,
@@ -721,8 +723,9 @@ function App() {
           return {
             ...employee,
             isSecurity: next,
-            // Security has no Sunday package — clear extra days when toggled on.
-            extraDays: next || isSpecialCategory(employee.category) ? 0 : employee.extraDays,
+            // Toggling Security no longer wipes Extra Days — they stay manually
+            // editable. Only Special has no Extra Days concept at all.
+            extraDays: isSpecialCategory(employee.category) ? 0 : employee.extraDays,
           };
         }
 
@@ -1522,7 +1525,7 @@ function App() {
                                 className="number-input number-input--compact"
                                 value={row.extraDays}
                                 min={0}
-                                disabled={isSpecial || isSecurity}
+                                disabled={isSpecial}
                                 onChange={(value) => updateEmployee(row.id, "extraDays", value)}
                               />
                             </td>
@@ -1706,7 +1709,7 @@ function App() {
                                     <strong>{isSecurity ? "On" : "Off"}</strong>
                                     <small>
                                       {isSecurity
-                                        ? "No Sunday package (Security)"
+                                        ? "No automatic Sunday package — Extra Days can still be set by hand"
                                         : "Toggle if this employee is security staff"}
                                     </small>
                                     <button

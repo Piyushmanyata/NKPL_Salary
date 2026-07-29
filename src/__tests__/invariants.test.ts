@@ -7,6 +7,7 @@ import { buildOfficialRow } from "../officialSheet";
 import {
   calculateSalary,
   clampBasicPercent,
+  isSpecialCategory,
   repairRates,
   roundMoney,
 } from "../salary";
@@ -154,8 +155,10 @@ describe("TICKET-14: invariants I1–I10 over 200k seeded cases", () => {
           }
         }
 
-        // I6 — security never earns extra-day performance
-        if (ref.isSecurity && !(ref.extraDays === 0 && ref.performanceBonus === 0)) {
+        // I6 — Special never earns extra-day performance. Security is no longer
+        // covered here: it gets no *automatic* Sunday package (an attendance-layer
+        // rule, see issue1_attendance) but typed Extra Days are honoured.
+        if (isSpecialCategory(ref.category) && !(ref.extraDays === 0 && ref.performanceBonus === 0)) {
           v.I6 += 1;
         }
 

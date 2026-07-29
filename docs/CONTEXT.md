@@ -56,8 +56,8 @@ A **Category**, not a role flag and not a name list. Mutually exclusive with Uns
 _Avoid_: Director-only, name-list specials, `isSpecial` boolean overlay on another category
 
 **Security Employee**:
-Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no Sunday package (no auto-paid Sunday, no Extra Days / double pay). A worked Sunday still counts as a normal Present Day only. Previously inferred from the name string and discarded; the field is now stored.
-_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone
+Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no **automatic** Sunday package — no auto-paid Sunday and no auto-granted Extra Day. A worked Sunday still counts as a normal Present Day only. **Extra Days remain manually editable** and are paid when typed. Previously inferred from the name string and discarded; the field is now stored.
+_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone; treating a typed Extra Day on a guard as invalid
 
 ### Time and attendance
 
@@ -74,7 +74,7 @@ Reference attendance input: effective present days after short-stay rules, unapp
 _Avoid_: Official attendance, raw punch count
 
 **Extra Days**:
-Count of Sunday double-pay units (and any other approved extra-day units). Each unit pays one full day rate of (wage per day + bonus per day) on Reference. Forced to 0 for Security and Special.
+Count of Sunday double-pay units (and any other approved extra-day units). Each unit pays one full day rate of (wage per day + bonus per day) on Reference. **Forced to 0 for Special only.** Security is never *auto-granted* an Extra Day by the attendance layer, but an operator may type one in — approved extra work is a manual decision.
 _Avoid_: Overtime hours, present days
 
 **Present Day**:

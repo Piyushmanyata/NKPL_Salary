@@ -121,4 +121,28 @@ readout beneath. This is the same number the workbook's `Increase in Salary Amou
 for, and it makes `J = K + N` visible instead of showing two boxes that echo each other. Storage
 shape is unchanged — `totalSalary` remains the persisted anchor, still dropped when it does not
 exceed Monthly Salary, so **no data migration**. Labour keeps its day-rate and bonus-per-day
-inputs, which already match how the workbooks' grade rows type `L` and `M` directly.
+inputs, which mirror how the workbooks' grade rows type `L` and `M` directly.
+
+## Correction (2026-07-29)
+
+The paragraph above originally claimed Labour's stored rates "already match" the workbook grade
+rows, and that claim was carried into issue #24's Out of Scope list. **It was not verified, and it
+was false for 20 of NKPL's 29 Labour rows.** Those rows had `bonusPerDay = 0` with the bonus
+flattened into an inflated day rate — e.g. SOMNATH MONDAL held `413.33 + 0` against the workbook's
+`335 + 65`. `413.33` is `12,400 / 30`: the 31-day monthly divided by 30, the signature of the
+`repairRates` back-fill (`if (r <= 0 && M > 0) r = M / D`) running on a row whose day rate had
+already been lost.
+
+This matters because `b` sits **outside the basic track** — `earnedSalary` is `D × r` only, and
+`earnedBonus` flows entirely into the HRA/TA remainder. Folding `b` into `r` inflates Basic, and
+therefore PF and (since this ADR) ESI. Corrected on NKPL July 2026 via
+`scripts/apply-workbook-rates.mjs`: 20 rows, gross −₹4,304.10, PF −₹2,194, ESI −₹197,
+**net −₹1,913.10**.
+
+APTUS was checked and left alone: its stored Labour bonuses already match, and its July sheet has
+column `M` filled on only 2 of 22 grade rows while May and June have 22 of 22. A blank `M` means
+"not filled in yet", not "the bonus is zero" — applying it verbatim would have deleted 17 real
+bonuses. The script now refuses to zero a non-zero stored bonus from a blank workbook cell.
+
+**Lesson for future reviews:** an Out of Scope entry asserting that something "already matches"
+is a claim, not a boundary. Verify it or do not record it.

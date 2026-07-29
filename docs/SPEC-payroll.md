@@ -118,7 +118,7 @@ which produced `M = 0` and a ₹0 salary whenever `r` was absent.)*
 
 | Field | Type | Rule |
 |---|---|---|
-| `isSecurity` | `boolean`, **persisted** | When `true`, `Xd` is forced to `0` and no auto-paid Sunday is granted. Independent of Category. *(New field. Previously inferred from the name string at `attendance.ts:23-30` and then discarded at `App.tsx:1780`.)* |
+| `isSecurity` | `boolean`, **persisted** | When `true`, no **automatic** Sunday package: no auto-paid Sunday and no auto-granted `Xd`. A **manually typed `Xd` is honoured** — approved extra work is an operator decision, and the engine no longer zeroes it (changed 2026-07-29; was forced to `0`). Independent of Category. |
 | `pfOptIn` | `boolean` | Employee-level opt-in. Forced `false` for Special and when full-month basic > ₹15,000. |
 | `esiOptIn` | `boolean` | Employee-level opt-in. Forced `false` for Special. Independent of `pfOptIn`. |
 

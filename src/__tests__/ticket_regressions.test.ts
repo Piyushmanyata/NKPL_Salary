@@ -45,8 +45,11 @@ describe("TICKET-14: targeted ticket regressions", () => {
     expect(d31.daysWorked).toBe(31);
   });
 
-  it("security_never_earns_extra_days", () => {
-    const row = refFrom({
+  // Security gets no *automatic* Sunday package (asserted in issue1_attendance),
+  // but Extra Days typed by hand are honoured — approved extra work is a manual
+  // decision. Special remains the only category with no Extra Days at all.
+  it("security_honours_manually_typed_extra_days", () => {
+    const guard = refFrom({
       id: "t02",
       name: "Guard",
       category: "Semi-skilled",
@@ -58,8 +61,23 @@ describe("TICKET-14: targeted ticket regressions", () => {
       esiOptIn: true,
       otherDeduction: 0,
     });
-    expect(row.extraDays).toBe(0);
-    expect(row.performanceBonus).toBe(0);
+    expect(guard.extraDays).toBe(5);
+    expect(guard.performanceBonus).toBeGreaterThan(0);
+
+    const special = refFrom({
+      id: "t02b",
+      name: "Special",
+      category: "Special",
+      monthlySalary: 15000,
+      daysWorked: 28,
+      extraDays: 5,
+      isSecurity: true,
+      pfOptIn: true,
+      esiOptIn: true,
+      otherDeduction: 0,
+    });
+    expect(special.extraDays).toBe(0);
+    expect(special.performanceBonus).toBe(0);
   });
 
   it("month_days_from_label", () => {

@@ -136,9 +136,10 @@ export function calculateSalary(
     category === "Unskilled" ? salaryPerDay <= 0 : monthlySalary <= 0;
 
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
-  // Security and Special: no Sunday package — force Xd to 0 (SPEC §2.3 / I6 / TICKET-02).
-  const extraDays =
-    isSecurity || isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
+  // Special has no Extra Days at all. Security gets no *automatic* Sunday
+  // package — the attendance layer never grants them one — but a typed Extra
+  // Day is honoured, because approved extra work is a manual decision.
+  const extraDays = isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
   // Stored positive = amount advanced and recovered this month. Engine always
   // subtracts. Negative input is clamped to 0 at the boundary (TICKET-06).
   const advance = Math.max(0, numberValue(input.advance));

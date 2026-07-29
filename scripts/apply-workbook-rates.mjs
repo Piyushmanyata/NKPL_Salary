@@ -10,9 +10,14 @@
  * alone is silently reverted on the next page load. The rate card is the
  * authoritative store for M and T; the month record is a snapshot.
  *
- * Only the fixed-monthly rows are touched. The workbook's grade rows (`I` =
- * A/B/C/D) type `L` and `M` directly and carry no `K`/`N` — those are Labour,
- * whose day-rate anchoring already matches (ADR-0004 / issue #24).
+ * Two row shapes, two anchorings (SPEC §2.2):
+ *   fixed-monthly rows type `K`/`N` -> Monthly Salary + Monthly Allowance
+ *   grade rows (`I` = A/B/C/D) type `L`/`M` -> Salary Per Day + Bonus Per Day
+ * Labour's bonus must stay a separate per-day figure: `b` sits outside the basic
+ * track, so folding it into `r` inflates Basic, PF and ESI.
+ *
+ * A blank workbook `M` means "not filled in yet", never "the bonus is zero" —
+ * those rows are skipped and reported rather than applied.
  *
  * A timestamped backup of every key it writes is dropped in scripts/logs/.
  */
@@ -46,7 +51,16 @@ const rateKeyFor = (t) => `employee_rates/${t.company}`;
 // Workbook column map, 0-indexed. Identical across both workbooks.
 const COL_TOTAL = 9; //  J — TOTAL Salary P.M (typed; see the J != K+N check)
 const COL_SALARY = 10; // K — Salary P.M            -> Monthly Salary
+const COL_PER_DAY = 11; // L — Salary Day/Month      -> Salary Per Day   (grade rows)
+const COL_INC_DAY = 12; // M — Increase in Salary    -> Bonus Per Day    (grade rows)
 const COL_INCREASE = 13; // N — Increase in Salary Amount -> Monthly Allowance
+
+// Two kinds of row, two anchorings (SPEC §2.2):
+//   fixed-monthly rows type K and N  -> Monthly Salary + Monthly Allowance
+//   grade rows (I = A/B/C/D) type L and M -> Salary Per Day + Bonus Per Day
+// A grade row carries no K and no J. Labour is paid off the day rate, so its
+// bonus MUST stay a separate per-day figure: `b` is deliberately outside the
+// basic track, and folding it into `r` inflates Basic, PF and ESI.
 
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
@@ -64,6 +78,8 @@ function loadEnvLocal() {
     if (process.env[key] === undefined) process.env[key] = val;
   }
 }
+
+const round2 = (v) => Math.round(v * 100) / 100;
 
 const num = (v) => {
   const n = Number(v);
@@ -95,7 +111,8 @@ function readWorkbook({ file, sheet, nameCol }) {
     raw: true,
     defval: null,
   });
-  const out = new Map();
+  const monthly = new Map();
+  const grade = new Map();
   for (let i = 2; i < rows.length; i++) {
     const r = rows[i] || [];
     const name = String(r[nameCol] ?? "").trim();
@@ -103,11 +120,15 @@ function readWorkbook({ file, sheet, nameCol }) {
     const K = num(r[COL_SALARY]);
     const N = num(r[COL_INCREASE]);
     const J = num(r[COL_TOTAL]);
-    // Grade rows carry no K and no J — they anchor on L/M and are out of scope.
-    if (K <= 0 && J <= 0) continue;
-    out.set(norm(name), { row: i + 1, name, K, N, J });
+    const L = round2(num(r[COL_PER_DAY]));
+    const M = round2(num(r[COL_INC_DAY]));
+    if (K > 0 || J > 0) {
+      monthly.set(norm(name), { row: i + 1, name, K, N, J });
+    } else if (L > 0) {
+      grade.set(norm(name), { row: i + 1, name, L, M });
+    }
   }
-  return out;
+  return { monthly, grade };
 }
 
 const MONTHS = [
@@ -185,7 +206,7 @@ async function main() {
   console.log(`target: ${REDIS_URL.replace(/:[^:@/]+@/, ":***@")}\n`);
 
   for (const t of TARGETS) {
-    const wb = readWorkbook(t);
+    const { monthly: wb, grade: wbGrade } = readWorkbook(t);
     const monthKey = monthKeyFor(t);
     const rateKey = rateKeyFor(t);
     let monthRaw = await redis.get(monthKey);
@@ -232,20 +253,47 @@ async function main() {
 
     const matched = new Set();
     const changes = [];
+    const skippedBlank = [];
     for (const e of month.employees) {
-      const w = wb.get(norm(e.name));
+      const key = norm(e.name);
+      const w = wb.get(key);
+      const g = wbGrade.get(key);
+
       if (w) {
-        matched.add(norm(e.name));
+        matched.add(key);
         const mNow = num(e.monthlySalary);
         const tNow = num(e.totalSalary);
         const aNow = tNow > mNow ? tNow - mNow : 0;
         if (mNow !== w.K || aNow !== w.N) {
-          changes.push({ id: e.id, name: e.name, mNow, aNow, K: w.K, N: w.N });
+          changes.push({
+            kind: "monthly", id: e.id, name: e.name,
+            from: `M ${mNow} + allow ${aNow}`, to: `M ${w.K} + allow ${w.N}`,
+          });
           // Storage shape is unchanged (ADR-0004): totalSalary is the persisted
           // anchor and is dropped when it does not exceed monthlySalary.
           e.monthlySalary = w.K;
           if (w.N > 0) e.totalSalary = w.K + w.N;
           else delete e.totalSalary;
+        }
+      } else if (g) {
+        matched.add(key);
+        const rNow = num(e.salaryPerDay);
+        const bNow = num(e.bonusPerDay);
+        // A blank `M` is "not filled in yet", never "the bonus is now zero".
+        // APTUS July has M on 2 of 22 grade rows while May and June have 22/22
+        // — applying it verbatim would have deleted 17 real bonuses.
+        if (g.M === 0 && bNow > 0) {
+          skippedBlank.push(`${e.name} (keeping b=${bNow}; workbook M is blank)`);
+        } else if (rNow !== g.L || bNow !== g.M) {
+          changes.push({
+            kind: "grade", id: e.id, name: e.name,
+            from: `r ${rNow} + b ${bNow}`, to: `r ${g.L} + b ${g.M}`,
+          });
+          e.salaryPerDay = g.L;
+          e.bonusPerDay = g.M;
+          // Unskilled anchors on r; M is derived as D x r and T stays derived.
+          e.monthlySalary = round2(t.days * g.L);
+          delete e.totalSalary;
         }
       }
 
@@ -273,19 +321,22 @@ async function main() {
     console.log(`\n${monthKey}  (${month.employees.length} employees, days=${month.days})`);
     if (!changes.length) console.log("  no changes — already matches the workbook");
     for (const c of changes) {
-      console.log(
-        `  ${c.id.padEnd(7)} ${c.name.padEnd(24)} M ${String(c.mNow).padStart(9)} -> ${String(c.K).padStart(7)}   allowance ${String(c.aNow).padStart(6)} -> ${String(c.N).padStart(6)}`,
-      );
+      console.log(`  [${c.kind.padEnd(7)}] ${c.id.padEnd(9)} ${c.name.padEnd(26)} ${c.from.padEnd(26)} -> ${c.to}`);
     }
 
-    const unmatched = [...wb.values()].filter((w) => !matched.has(norm(w.name)));
+    if (skippedBlank.length) {
+      console.log(`  skipped ${skippedBlank.length} grade row(s) — workbook column M not filled for this month:`);
+      for (const line of skippedBlank) console.log(`    ${line}`);
+    }
+
+    const unmatched = [...wb.values(), ...wbGrade.values()].filter((w) => !matched.has(norm(w.name)));
     if (unmatched.length) {
       const roster = month.employees.map((e) => e.name);
       console.log("  in workbook, no matching employee (NOT added):");
       for (const w of unmatched) {
         const near = nearMisses(w.name, roster);
         console.log(
-          `    r${w.row} ${w.name}  K=${w.K} N=${w.N}` +
+          `    r${w.row} ${w.name}  ${w.K !== undefined ? `K=${w.K} N=${w.N}` : `L=${w.L} M=${w.M}`}` +
             (near.length ? `   <-- looks like "${near.join('", "')}" — confirm before merging` : ""),
         );
       }
