@@ -233,8 +233,8 @@ matches the June sheets.
 
 `pfEligible` and `esiEligible` are **independent**. Neither forces the other.
 
-Steps 16, 19 and 20 reproduce the Source Workbooks (`Excel/SALARY OLD NKPL.xlsx` col `X`/`W`,
-`Excel/SALARY OLD APTUS.xlsx` col `W`/`V`) to the rupee — `ROUNDUP` for ESI, `ROUND` for PF.
+Steps 16, 19 and 20 reproduce the Source Workbooks (`data/SALARY OLD NKPL.xlsx` col `X`/`W`,
+`data/SALARY OLD APTUS.xlsx` col `W`/`V`) to the rupee — `ROUNDUP` for ESI, `ROUND` for PF.
 The asymmetry is in the source. **ADR-0004** supersedes ADR-0002's Reference clause; ADR-0002's
 Official clause (step 6.4, ESI on Official Monthly Basic) is unchanged. `pfEligible` deliberately
 stays on the **full-month** basic `M × p`, not the earned basic the NKPL workbook tests, so PF
@@ -509,8 +509,8 @@ every ESI-eligible employee. **These deltas do not include the advance-sign corr
 
 ### 10.4 Source Workbook parity — 2026-07-29 (issue #24 / ADR-0004)
 
-Reference statutory arithmetic re-aligned to `Excel/SALARY OLD NKPL.xlsx` and
-`Excel/SALARY OLD APTUS.xlsx`. Measured against the superseded June goldens:
+Reference statutory arithmetic re-aligned to `data/SALARY OLD NKPL.xlsx` and
+`data/SALARY OLD APTUS.xlsx`. Measured against the superseded June goldens:
 
 | | NKPL | APTUS |
 |---|---|---|

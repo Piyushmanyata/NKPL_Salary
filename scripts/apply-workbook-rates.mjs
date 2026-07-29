@@ -24,13 +24,24 @@ import * as XLSX from "xlsx";
 const TARGETS = [
   {
     company: "NKPL",
-    monthKey: "monthly_salary/NKPL/July 2026",
-    rateKey: "employee_rates/NKPL",
-    file: "Excel/SALARY OLD NKPL.xlsx",
+    month: "July 2026",
+    days: 31,
+    file: "SALARY OLD NKPL.xlsx",
     sheet: "ACTUAL (4)",
     nameCol: 2, // NKPL: C = NAME OF EMPLOYEE
   },
+  {
+    company: "APTUS",
+    month: "July 2026",
+    days: 31,
+    file: "SALARY OLD APTUS.xlsx",
+    sheet: "ACTUALL (4)",
+    nameCol: 1, // APTUS: B = NAME OF EMPLOYEE
+  },
 ];
+
+const monthKeyFor = (t) => `monthly_salary/${t.company}/${t.month}`;
+const rateKeyFor = (t) => `employee_rates/${t.company}`;
 
 // Workbook column map, 0-indexed. Identical across both workbooks.
 const COL_TOTAL = 9; //  J — TOTAL Salary P.M (typed; see the J != K+N check)
@@ -66,8 +77,19 @@ const norm = (s) =>
     .replace(/\(.*?\)/g, "")
     .replace(/[^a-z]/g, "");
 
+/** The workbooks have lived in both data/ and Excel/; take whichever exists. */
+const WORKBOOK_DIRS = ["data", "Excel", "."];
+
+function resolveWorkbook(file) {
+  for (const dir of WORKBOOK_DIRS) {
+    const path = resolve(process.cwd(), dir, file);
+    if (existsSync(path)) return path;
+  }
+  throw new Error(`workbook not found in ${WORKBOOK_DIRS.join(", ")}: ${file}`);
+}
+
 function readWorkbook({ file, sheet, nameCol }) {
-  const wb = XLSX.read(readFileSync(file));
+  const wb = XLSX.read(readFileSync(resolveWorkbook(file)));
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], {
     header: 1,
     raw: true,
@@ -88,6 +110,66 @@ function readWorkbook({ file, sheet, nameCol }) {
   return out;
 }
 
+const MONTHS = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+const monthKey = (label) => {
+  const year = Number(String(label).match(/\b(20\d{2})\b/)?.[1]);
+  const idx = MONTHS.findIndex((m) => String(label).toLowerCase().includes(m.slice(0, 3)));
+  return idx < 0 || !Number.isFinite(year) ? Number.NaN : year * 12 + idx;
+};
+
+/** Most recent month for this company strictly before the target. */
+async function latestMonthBefore(t) {
+  const prefix = `monthly_salary/${t.company}/`;
+  const keys = await redis.keys(`${prefix}*`);
+  const target = monthKey(t.month);
+  return (
+    keys
+      .map((k) => k.slice(prefix.length))
+      .filter((m) => Number.isFinite(monthKey(m)) && monthKey(m) < target)
+      .sort((a, b) => monthKey(a) - monthKey(b))
+      .pop() ?? ""
+  );
+}
+
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/**
+ * Names that nearly match — a payroll script must never merge these on a guess,
+ * but silently dropping someone because of a one-character typo ("Champa" vs
+ * "Chapa") is just as bad. Surface them and let a human decide.
+ */
+function nearMisses(name, candidates) {
+  const a = norm(name);
+  return candidates.filter((c) => {
+    const b = norm(c);
+    if (a === b) return false;
+    return (
+      a.includes(b) ||
+      b.includes(a) ||
+      editDistance(a, b) <= 2 ||
+      (a.slice(0, 5) === b.slice(0, 5) && a.length > 4)
+    );
+  });
+}
+
 loadEnvLocal();
 const DRY = process.argv.includes("--dry-run");
 const REDIS_URL = process.env.REDIS_URL;
@@ -104,13 +186,37 @@ async function main() {
 
   for (const t of TARGETS) {
     const wb = readWorkbook(t);
-    const monthRaw = await redis.get(t.monthKey);
-    const rateRaw = await redis.get(t.rateKey);
+    const monthKey = monthKeyFor(t);
+    const rateKey = rateKeyFor(t);
+    let monthRaw = await redis.get(monthKey);
+    const rateRaw = await redis.get(rateKey);
+
+    // The month may not exist yet. Carry the roster forward from the most
+    // recent month for this company, resetting the per-month attendance
+    // inputs — the same rule App.tsx applies when you open a new month.
     if (!monthRaw) {
-      console.error(`${t.monthKey}: MISSING — skipping`);
-      continue;
+      const source = await latestMonthBefore(t);
+      if (!source) {
+        console.error(`${monthKey}: MISSING and no earlier month to carry from — skipping`);
+        continue;
+      }
+      const src = JSON.parse(await redis.get(`monthly_salary/${t.company}/${source}`));
+      const carried = {
+        monthLabel: t.month,
+        days: t.days,
+        company: t.company,
+        employees: src.employees.map((e) => {
+          const { advance, specialBonus, ...rest } = e;
+          return { ...rest, daysWorked: t.days, extraDays: 0 };
+        }),
+        updatedAt: new Date().toISOString(),
+      };
+      monthRaw = JSON.stringify(carried);
+      console.log(`${monthKey}: created by carrying ${source} forward (attendance reset)`);
     }
+
     const month = JSON.parse(monthRaw);
+    month.days = t.days;
     const rates = rateRaw ? JSON.parse(rateRaw) : {};
 
     // Workbook rows whose typed J disagrees with K + N. J is a typed constant on
@@ -128,30 +234,43 @@ async function main() {
     const changes = [];
     for (const e of month.employees) {
       const w = wb.get(norm(e.name));
-      if (!w) continue;
-      matched.add(norm(e.name));
-
-      const mNow = num(e.monthlySalary);
-      const tNow = num(e.totalSalary);
-      const aNow = tNow > mNow ? tNow - mNow : 0;
-      if (mNow === w.K && aNow === w.N) continue;
-
-      changes.push({ id: e.id, name: e.name, mNow, aNow, K: w.K, N: w.N });
-
-      // Storage shape is unchanged (ADR-0004): totalSalary is the persisted
-      // anchor and is dropped when it does not exceed monthlySalary.
-      e.monthlySalary = w.K;
-      if (w.N > 0) e.totalSalary = w.K + w.N;
-      else delete e.totalSalary;
-
-      const rate = rates[e.id];
-      if (rate) {
-        rate.monthlySalary = w.K;
-        rate.totalSalary = w.N > 0 ? w.K + w.N : 0;
+      if (w) {
+        matched.add(norm(e.name));
+        const mNow = num(e.monthlySalary);
+        const tNow = num(e.totalSalary);
+        const aNow = tNow > mNow ? tNow - mNow : 0;
+        if (mNow !== w.K || aNow !== w.N) {
+          changes.push({ id: e.id, name: e.name, mNow, aNow, K: w.K, N: w.N });
+          // Storage shape is unchanged (ADR-0004): totalSalary is the persisted
+          // anchor and is dropped when it does not exceed monthlySalary.
+          e.monthlySalary = w.K;
+          if (w.N > 0) e.totalSalary = w.K + w.N;
+          else delete e.totalSalary;
+        }
       }
+
+      // The rate card is what the app overlays onto every month, so it must
+      // carry M and T for every employee on this roster — not just the ones the
+      // workbook moved, and not only where an entry already existed.
+      rates[e.id] = {
+        ...(rates[e.id] ?? {}),
+        id: e.id,
+        name: e.name,
+        salaryPerDay: num(rates[e.id]?.salaryPerDay ?? e.salaryPerDay),
+        bonusPerDay: num(rates[e.id]?.bonusPerDay ?? e.bonusPerDay),
+        monthlySalary: num(e.monthlySalary),
+        totalSalary: num(e.totalSalary) > num(e.monthlySalary) ? num(e.totalSalary) : 0,
+      };
     }
 
-    console.log(`\n${t.monthKey}  (${month.employees.length} employees, days=${month.days})`);
+    // A rate card belongs to one company; drop anyone not on this roster so a
+    // cross-company contamination cannot survive a re-run.
+    const rosterIds = new Set(month.employees.map((e) => e.id));
+    for (const id of Object.keys(rates)) {
+      if (!rosterIds.has(id)) delete rates[id];
+    }
+
+    console.log(`\n${monthKey}  (${month.employees.length} employees, days=${month.days})`);
     if (!changes.length) console.log("  no changes — already matches the workbook");
     for (const c of changes) {
       console.log(
@@ -161,21 +280,35 @@ async function main() {
 
     const unmatched = [...wb.values()].filter((w) => !matched.has(norm(w.name)));
     if (unmatched.length) {
+      const roster = month.employees.map((e) => e.name);
       console.log("  in workbook, no matching employee (NOT added):");
-      for (const w of unmatched) console.log(`    r${w.row} ${w.name}  K=${w.K} N=${w.N}`);
+      for (const w of unmatched) {
+        const near = nearMisses(w.name, roster);
+        console.log(
+          `    r${w.row} ${w.name}  K=${w.K} N=${w.N}` +
+            (near.length ? `   <-- looks like "${near.join('", "')}" — confirm before merging` : ""),
+        );
+      }
     }
 
-    if (!DRY && changes.length) {
+    if (!DRY) {
       mkdirSync("scripts/logs", { recursive: true });
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       writeFileSync(
         `scripts/logs/backup-${t.company}-${stamp}.json`,
-        JSON.stringify({ [t.monthKey]: JSON.parse(monthRaw), [t.rateKey]: JSON.parse(rateRaw ?? "{}") }, null, 2),
+        JSON.stringify(
+          {
+            [monthKey]: JSON.parse((await redis.get(monthKey)) ?? "null"),
+            [rateKey]: JSON.parse(rateRaw ?? "{}"),
+          },
+          null,
+          2,
+        ),
       );
       month.updatedAt = new Date().toISOString();
-      await redis.set(t.monthKey, JSON.stringify(month));
-      if (rateRaw) await redis.set(t.rateKey, JSON.stringify(rates));
-      console.log(`  wrote ${t.monthKey}${rateRaw ? ` and ${t.rateKey}` : ""} (backup in scripts/logs/)`);
+      await redis.set(monthKey, JSON.stringify(month));
+      await redis.set(rateKey, JSON.stringify(rates));
+      console.log(`  wrote ${monthKey} and ${rateKey} (backup in scripts/logs/)`);
     }
   }
 

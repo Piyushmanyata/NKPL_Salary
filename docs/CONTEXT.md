@@ -193,8 +193,22 @@ _Avoid_: Hiding the mismatch by copying Reference net; allowing negative compone
 Legal payroll entity in this app (NKPL or APTUS). Same pay language and rules; separate rosters and rates only.
 _Avoid_: Different rule engines per company without an explicit decision
 
+### Month lifecycle
+
+**Rate Card** (`employee_rates/<COMPANY>`):
+Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary** and **Total Salary**, saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward; it is deliberately **not** re-applied to a month that already has its own saved data, so a raise entered today cannot retroactively rewrite a filed month. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
+_Avoid_: Treating it as a per-month record; overlaying it onto closed months
+
+**Month Carry-Forward**:
+Opening a month with no saved data automatically copies the roster from the nearest earlier month for that company — every employee, salary, allowance, category, PF/ESI choice and TDS carries over. Only the per-month inputs reset: **Days Worked** to full attendance, **Extra Days** to 0, and advance and special bonus cleared. The user is never asked to pick a month to copy from; the picker survives only for the genuine first month of a company, where there is nothing to carry.
+_Avoid_: Copying last month's attendance forward; prompting the user to copy a month by hand
+
+**Scope Guard**:
+The rule that a roster may only be written to the company+month it was loaded for. Switching company changes the active company a render before the new roster arrives, so without this guard the debounced auto-save writes the previous company's employees under the new company's key. This is not hypothetical — it put all 51 NKPL employees into `monthly_salary/APTUS/July 2026` and `employee_rates/APTUS` on 2026-07-29.
+_Avoid_: Keying an auto-save on the active company alone
+
 ### Sources
 
 **Source Workbook**:
-The historical Excel payroll files under `Excel/` — `SALARY OLD NKPL.xlsx` (sheets `ACTUAL`, `ACTUAL (2..4)`) and `SALARY OLD APTUS.xlsx` (sheets `ACTUALL`, `ACTUALL (2..4)`) — which still carry their live formulas. The **Reference Sheet** reproduces their statutory arithmetic; where it deliberately does not (HRA/TA split, PF eligibility base), the divergence is recorded in ADR-0004.
+The historical Excel payroll files under `data/` — `SALARY OLD NKPL.xlsx` (sheets `ACTUAL`, `ACTUAL (2..4)`) and `SALARY OLD APTUS.xlsx` (sheets `ACTUALL`, `ACTUALL (2..4)`) — which still carry their live formulas. The **Reference Sheet** reproduces their statutory arithmetic; where it deliberately does not (HRA/TA split, PF eligibility base), the divergence is recorded in ADR-0004.
 _Avoid_: The stale `.xls` exports under `data/`; treating a workbook column as authoritative for Official construction

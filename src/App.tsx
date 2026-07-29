@@ -65,6 +65,7 @@ import {
   getBestWorksheet,
   namesMatch,
   parseAttendanceExcel,
+  pickCarrySource,
   sortMonthsChronologically,
 } from "./attendance";
 
@@ -263,6 +264,20 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
   };
 };
 
+// A new month inherits the roster and every standing rate from the month
+// before it — salary, allowance, category, PF/ESI choices and TDS all carry.
+// Only the per-month inputs reset, because attendance is the thing that
+// actually differs month to month. Days Worked starts at full attendance and
+// the Attendance Checker (or the user) marks people down from there; carrying
+// last month's absences forward would quietly bill them twice.
+const carryForwardEmployee = (employee: EmployeeInput, monthDays: number): EmployeeInput => ({
+  ...employee,
+  daysWorked: clampMonthDays(monthDays),
+  extraDays: 0,
+  advance: undefined,
+  specialBonus: undefined,
+});
+
 // NKPL is the only company with bundled sample/demo data; a newly added
 // company like APTUS starts blank until real employees are entered.
 const defaultEmployeesForCompany = (company: CompanyCode, monthLabel?: string) => {
@@ -376,6 +391,13 @@ function App() {
   const prevMonthRef = useRef(monthLabel);
   const prevCompanyRef = useRef(activeCompany);
   const justLoadedRef = useRef(false);
+  // Which company+month the `employees` state actually belongs to. Switching
+  // company flips `activeCompany` a render before the new roster arrives, and
+  // without this guard the debounced auto-saves below write the OLD company's
+  // roster under the NEW company's key. That is how NKPL's 51 employees once
+  // landed in monthly_salary/APTUS/July 2026 and employee_rates/APTUS.
+  const loadedForRef = useRef("");
+  const scopeOf = (company: string, month: string) => `${company}::${normalizeMonthLabel(month)}`;
 
   // Shared salary/day + bonus/day rates for the active company, kept in sync
   // with the cloud store (see api/rates.ts) independently of month records.
@@ -868,39 +890,51 @@ function App() {
       }
 
       setDbLoading(true);
+      // Nothing may be written for this scope until its own data has landed.
+      loadedForRef.current = "";
       try {
         const [data, rates] = await Promise.all([
           getMonthData(activeCompany, normalized),
           getEmployeeRates(activeCompany),
         ]);
         if (!active) return;
+        loadedForRef.current = scopeOf(activeCompany, normalized);
         setEmployeeRates(rates);
         ratesSignatureRef.current = JSON.stringify(rates);
         if (data) {
           justLoadedRef.current = true;
           // Ignore stored data.days — calendar days come from the month label.
           const days = calendarDaysForMonth(normalized);
+          // A month that already has data keeps the salaries it was saved with.
+          // The shared rate card seeds NEW months (see carryMonthInto); applying
+          // it here too would let today's raise retroactively rewrite a filed
+          // month's payroll, which is the opposite of "carry it forward".
           setEmployees(
-            applyEmployeeRates(
-              data.employees
-                .map((emp, index) => sanitizeEmployee(emp, index, days))
-                .filter((emp): emp is EmployeeInput => Boolean(emp)),
-              rates,
-            ),
+            data.employees
+              .map((emp, index) => sanitizeEmployee(emp, index, days))
+              .filter((emp): emp is EmployeeInput => Boolean(emp)),
           );
         } else {
-          // No data saved for this company + month yet
-          setNoDataMonth(normalized);
+          // No data saved for this company + month yet. The roster and every
+          // rate carry forward from the previous month automatically — the user
+          // should never have to copy a month by hand. Only when there is no
+          // earlier month at all is there a genuine choice to make.
           const months = sortMonthsChronologically(await getAllMonthLabels(activeCompany));
-          if (active) {
-            setAllMonths(months);
-            if (months.length > 0) {
-              setCopySourceMonth(months[months.length - 1]);
-            } else {
-              setCopySourceMonth("");
+          if (!active) return;
+          setAllMonths(months);
+          setNoDataMonth(normalized);
+          const source = pickCarrySource(months, normalized);
+          if (source) {
+            justLoadedRef.current = true;
+            const carried = await carryMonthInto(source, normalized, rates);
+            if (!active) return;
+            if (carried) {
+              showToast(`${normalized} started from ${source} — salaries kept, attendance reset`);
+              return;
             }
-            setShowNoDataModal(true);
           }
+          setCopySourceMonth(source);
+          setShowNoDataModal(true);
         }
       } catch (err) {
         console.error("Failed to load month data from database:", err);
@@ -925,6 +959,8 @@ function App() {
     }
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
+    // Never write a roster into a scope it was not loaded for (company switch).
+    if (loadedForRef.current !== scopeOf(activeCompany, normalized)) return;
 
     const delayDebounce = setTimeout(async () => {
       try {
@@ -945,6 +981,9 @@ function App() {
   // deductions, etc.) don't trigger redundant writes.
   useEffect(() => {
     if (dbLoading || showNoDataModal) return;
+    // Same scope guard as the month save: a company switch must not push the
+    // previous company's people into the new company's shared rate card.
+    if (loadedForRef.current !== scopeOf(activeCompany, monthLabel)) return;
     const nextRates = buildRateMap(employees);
     const signature = JSON.stringify(nextRates);
     if (signature === ratesSignatureRef.current) return;
@@ -960,7 +999,7 @@ function App() {
     }, 500);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, activeCompany, dbLoading, showNoDataModal]);
+  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
   // Month initialization methods
   const handleCreateBlankMonth = async () => {
@@ -997,26 +1036,41 @@ function App() {
     }
   };
 
+  // Carry a month's roster forward into `target`, resetting the per-month
+  // attendance inputs. Shared by the automatic carry on opening a new month and
+  // by the explicit picker, so both behave identically.
+  const carryMonthInto = async (
+    source: string,
+    target: string,
+    rates: EmployeeRateMap,
+  ): Promise<boolean> => {
+    const sourceData = await getMonthData(activeCompany, source);
+    if (!sourceData) return false;
+    const targetDays = calendarDaysForMonth(target);
+    const carried = applyEmployeeRates(
+      sourceData.employees
+        .map((emp, index) => sanitizeEmployee(emp, index, targetDays))
+        .filter((emp): emp is EmployeeInput => Boolean(emp))
+        .map((emp) => carryForwardEmployee(emp, targetDays)),
+      rates,
+    );
+    setEmployees(carried);
+    await saveMonthData(activeCompany, target, targetDays, carried);
+    setAllMonths(sortMonthsChronologically(await getAllMonthLabels(activeCompany)));
+    return true;
+  };
+
   const handleCopyMonth = async (source: string) => {
     if (!source) return;
     setDbLoading(true);
     setShowNoDataModal(false);
     try {
-      const sourceData = await getMonthData(activeCompany, source);
-      if (sourceData) {
-        const targetDays = calendarDaysForMonth(noDataMonth);
-        const sanitizedEmployees = applyEmployeeRates(
-          sourceData.employees.map((emp, index) => sanitizeEmployee(emp, index, targetDays)!).filter(Boolean),
-          employeeRates,
-        );
-        setEmployees(sanitizedEmployees);
-        await saveMonthData(activeCompany, noDataMonth, targetDays, sanitizedEmployees);
-        showToast(`Copied employee list from ${source} to ${noDataMonth} (${targetDays} days)`);
+      const targetDays = calendarDaysForMonth(noDataMonth);
+      if (await carryMonthInto(source, noDataMonth, employeeRates)) {
+        showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, attendance reset)`);
       } else {
         showToast(`Failed to copy: source month ${source} has no data`, "error");
       }
-      const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(sortMonthsChronologically(months));
     } catch (err) {
       console.error(err);
       showToast("Error copying month data", "error");

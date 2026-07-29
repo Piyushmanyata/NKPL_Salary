@@ -201,6 +201,26 @@ export function sortMonthsChronologically(months: string[]): string[] {
   });
 }
 
+/**
+ * Which month a brand-new month should inherit its roster and rates from:
+ * the nearest month before it, or failing that the nearest after it (so
+ * back-filling an older month still starts from the real roster). Returns ""
+ * when there is nothing to carry — the genuine first-month case.
+ */
+export function pickCarrySource(months: string[], target: string): string {
+  const key = (label: string) => {
+    const parsed = parseMonthYearString(label);
+    return parsed ? parsed.year * 12 + parsed.monthIndex : Number.NaN;
+  };
+  const targetKey = key(target);
+  if (!Number.isFinite(targetKey)) return "";
+
+  const candidates = months.filter((m) => m !== target && Number.isFinite(key(m)));
+  const sorted = [...candidates].sort((a, b) => key(a) - key(b));
+  const before = sorted.filter((m) => key(m) < targetKey);
+  return before.length ? before[before.length - 1] : (sorted[0] ?? "");
+}
+
 export function parseMonthYearString(str: string) {
   if (!str) return null;
   const yearMatch = str.match(/\b\d{4}\b/);

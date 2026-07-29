@@ -11,8 +11,8 @@ remains correct. The two sheets keep deliberately different ESI bases.
 The Reference Sheet exists to reproduce the payroll the business has always run in Excel. Two
 Source Workbooks still carry their live formulas:
 
-- `Excel/SALARY OLD NKPL.xlsx` — sheets `ACTUAL`, `ACTUAL (2..4)`
-- `Excel/SALARY OLD APTUS.xlsx` — sheets `ACTUALL`, `ACTUALL (2..4)`
+- `data/SALARY OLD NKPL.xlsx` — sheets `ACTUAL`, `ACTUAL (2..4)`
+- `data/SALARY OLD APTUS.xlsx` — sheets `ACTUALL`, `ACTUALL (2..4)`
 
 Comparing them to the engine showed a different Net Payable for most employees. The gap was
 entirely in two statutory lines. The workbook formulas are character-identical across both files
