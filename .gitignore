@@ -1,14 +1,26 @@
+# dependencies
 node_modules/
-dist/
-.vercel/
-*.log
-~$*.xlsx
-*.tmp
 
+# build output
+dist/
+
+# deployment
+.vercel/
 .vercel
+
+# env
 .env*
 
+# logs & temp
+*.log
+*.tmp
 scripts/logs/
-.scratch-payroll-issue-map.txt
-.scratch-issue-urls.txt
 
+# office lockfiles
+~$*
+
+# tooling scratch
+graphify-out/
+src/graphify-out/
+.playwright-cli/
+.scratch-*
