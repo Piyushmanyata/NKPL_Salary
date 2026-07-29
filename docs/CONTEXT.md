@@ -115,6 +115,14 @@ _Avoid_: Official daily wage-board rate (400/440/484) as the Reference rate
 Fixed monthly package for Semi-skilled, Skilled, and Special; for Labour, calendar days × salary per day.
 _Avoid_: Gross payable, total salary including all bonuses
 
+**Monthly Allowance**:
+The Source Workbook's `Increase in Salary Amount` (col `N`). Equals **Total Salary − Monthly Salary**, and is earned pro-rata as **Bonus Per Day** × Days Worked. Typed directly in the settings panel for the fixed-monthly categories, where Total Salary is the computed readout (`J = K + N`). Zero, not blank, when an employee has no allowance. Never negative — Total Salary can never fall below Monthly Salary.
+_Avoid_: Special bonus, performance bonus, treating Total Salary as a second independently typed number
+
+**Total Salary**:
+Monthly Salary plus the **Monthly Allowance**. The persisted anchor (`totalSalary`), dropped when it does not exceed Monthly Salary. Sets Bonus Per Day, decides Reference **ESI (Reference)** eligibility, and feeds the Official 51% **Opt-Out Basic** floor.
+_Avoid_: Gross payable; a duplicate of Monthly Salary
+
 **Bonus Per Day**:
 Standing daily allowance on the rate card, earned proportional to Days Worked on Reference, and included in the pool that feeds HRA/TA after basic. Ignored (0) for Special.
 _Avoid_: Performance bonus, special bonus, Extra Days pay
@@ -124,8 +132,8 @@ Fraction of earned salary taken as Basic on Reference (configurable per employee
 _Avoid_: Official monthly basic
 
 **HRA / Travel Allowance**:
-Reference allowances: 70% and 30% of the post-basic remainder of prorated package (earned salary + earned daily bonus).
-_Avoid_: Official HRA/TA packing residual
+Reference allowances: 70% and 30% of the post-basic remainder of prorated package (earned salary + earned daily bonus). **Deliberately diverges from the Source Workbooks**, which compute HRA as `earnedSalary × (1 − basicShare)` and pay the earned allowance outright as TA. Gross Payable is the same total under either split, so Net Payable parity is unaffected — only these two displayed component amounts differ (ADR-0004).
+_Avoid_: Official HRA/TA packing residual; treating the workbook split difference as a bug
 
 **Performance Bonus**:
 Pay for Extra Days: (salary per day + bonus per day) × extra days. Outside the basic/HRA/TA split.
@@ -146,16 +154,16 @@ Whether employee PF applies. Forced off for Special Employees and when full-mont
 _Avoid_: ESI
 
 **ESI (Reference)**:
-Employee state insurance on Reference: 0.75% of Reference **Gross Payable**, only if that gross is at most ₹21,000 and the employee is not excluded (special / opted out). Employer ESI is 3.25% of the same base when employee ESI applies.
-_Avoid_: ESI on Official basic, ESI on earned-only
+Employee state insurance on Reference: 0.75% of **Earned Salary**, **rounded up to the whole rupee**, only if **Total Salary** is at most ₹21,000 and the employee is not excluded (special / opted out). Eligibility is a property of the package, so it does not flip because someone missed days this month. Employer ESI is 3.25% of the same base, rounded up the same way, when employee ESI applies. Reproduces the **Source Workbook** formula `=IF(J<=21000, ROUNDUP(O*0.75%, 0), 0)` (ADR-0004, superseding ADR-0002's Reference clause).
+_Avoid_: ESI on Gross Payable, ESI eligibility on this month's gross, ESI on Official basic, sub-rupee ESI
 
 **ESI (Official)**:
 Employee state insurance on Official: 0.75% of Official **Monthly Basic**, only if that basic is at most ₹21,000 and not opted out. Must not be forced on merely because PF is on. Employer ESI follows the same Official base when employee ESI applies.
 _Avoid_: Using Reference gross for Official ESI
 
 **Professional Tax**:
-Slab tax computed from Reference Gross Payable and shown as the same rupee amount on both sheets.
-_Avoid_: PF, ESI
+Slab tax computed from Reference Gross Payable and shown as the same rupee amount on both sheets. **Waived entirely for TDS payers** — any employee with a non-zero TDS (stored as `otherDeduction`) pays ₹0 Professional Tax (TICKET-15, resolved 2026-07-29). This restores the ₹0 P-Tax the **Source Workbooks** show for PUNIT SODHANI and Nawneet Sodhani.
+_Avoid_: PF, ESI; charging P-Tax on a row that already carries TDS
 
 **Advance / Other Deduction**:
 Non-statutory deductions. Both are **stored positive** (`≥ 0`) and **always subtracted** from net; a negative input is clamped to 0 at the boundary. Same inputs on both sheets when nets are aligned. The UI may show a leading minus for presentation only.
@@ -184,3 +192,9 @@ _Avoid_: Hiding the mismatch by copying Reference net; allowing negative compone
 **Company**:
 Legal payroll entity in this app (NKPL or APTUS). Same pay language and rules; separate rosters and rates only.
 _Avoid_: Different rule engines per company without an explicit decision
+
+### Sources
+
+**Source Workbook**:
+The historical Excel payroll files under `Excel/` — `SALARY OLD NKPL.xlsx` (sheets `ACTUAL`, `ACTUAL (2..4)`) and `SALARY OLD APTUS.xlsx` (sheets `ACTUALL`, `ACTUALL (2..4)`) — which still carry their live formulas. The **Reference Sheet** reproduces their statutory arithmetic; where it deliberately does not (HRA/TA split, PF eligibility base), the divergence is recorded in ADR-0004.
+_Avoid_: The stale `.xls` exports under `data/`; treating a workbook column as authoritative for Official construction

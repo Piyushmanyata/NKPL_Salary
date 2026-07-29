@@ -47,17 +47,17 @@ function bidyutRay(): SalaryRow {
 }
 
 describe("TICKET-08: Official basic = wage board when PF on; no ₹15k display cap", () => {
-  it("BIDYUT RAY: Official basic 12,584 / PF 1,510.08 / gross 23,866.92 / net 22,226.84", () => {
+  it("BIDYUT RAY: Official basic 12,584 / PF 1,510.08 / gross 23,867.08 / net 22,227 (re-pinned by issue #24; prior 23,866.92 / 22,226.84)", () => {
     const ref = bidyutRay();
-    expect(ref.netPayable).toBeCloseTo(22226.84, 2);
+    expect(ref.netPayable).toBeCloseTo(22227, 2);
 
     const off = buildOfficialRow(ref, 30);
     expect(off.attendance).toBe(26);
     expect(off.monthlyBasic).toBe(12584);
     expect(off.pf).toBe(1510.08);
     expect(off.esi).toBe(0);
-    expect(off.grossPayable).toBeCloseTo(23866.92, 2);
-    expect(off.netPayable).toBeCloseTo(22226.84, 2);
+    expect(off.grossPayable).toBeCloseTo(23867.08, 2);
+    expect(off.netPayable).toBeCloseTo(22227, 2);
     expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
   });
 

@@ -242,16 +242,21 @@ export function calculateSalary(
   const hra = remainingSalary * HRA_SHARE_OF_BALANCE;
   const travelAllowance = remainingSalary * TA_SHARE_OF_BALANCE;
 
-  const employeePf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
-  const employerPf = pfOptIn ? roundMoney(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
+  // Source workbook `=ROUND(IF(V<=15000, V*12%, 0), 0)` — whole rupee (ADR-0004).
+  const employeePf = pfOptIn ? Math.round(Math.min(basicSalary, PF_BASIC_LIMIT) * PF_RATE) : 0;
+  const employerPf = employeePf;
 
   const grossPayable = basicSalary + hra + travelAllowance + performanceBonus + specialBonus;
-  const esiOptIn = requestedEsiOptIn && grossPayable <= ESI_GROSS_LIMIT;
 
-  const esi = esiOptIn ? roundMoney(grossPayable * ESI_RATE) : 0;
-  const employerEsi = esiOptIn ? roundMoney(grossPayable * ESI_EMPLOYER_RATE) : 0;
+  // Source workbook `=IF(J<=21000, ROUNDUP(O*0.75%, 0), 0)` — eligibility on Total
+  // Salary (the package), base on Earned Salary, rounded up to the rupee (ADR-0004).
+  const esiOptIn = requestedEsiOptIn && totalSalary <= ESI_GROSS_LIMIT;
+  const esi = esiOptIn ? Math.ceil(earnedSalary * ESI_RATE) : 0;
+  const employerEsi = esiOptIn ? Math.ceil(earnedSalary * ESI_EMPLOYER_RATE) : 0;
 
-  const professionalTax = calculateProfessionalTax(grossPayable);
+  // TDS payers are exempt from Professional Tax (TICKET-15, resolved 2026-07-29).
+  // Official copies this figure, so the exemption reaches both sheets from here.
+  const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
   const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
 
   return {

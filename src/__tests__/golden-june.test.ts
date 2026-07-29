@@ -129,15 +129,17 @@ describe("TICKET-14: golden-master June 2026", () => {
     const bidyut = juneEmployees.find((e) => e.name === "BIDYUT RAY");
     expect(bidyut).toBeDefined();
     const { ref, off } = compute(bidyut!, 30);
+    // Re-pinned by issue #24 (workbook-parity ESI/PF rounding). Prior values:
+    // gross 23,866.92 · net 22,226.84 · Ashok ref net 16,527.87.
     expect(off.monthlyBasic).toBe(12584);
     expect(off.pf).toBe(1510.08);
-    expect(off.grossPayable).toBeCloseTo(23866.92, 2);
-    expect(off.netPayable).toBeCloseTo(22226.84, 2);
-    expect(ref.netPayable).toBeCloseTo(22226.84, 2);
+    expect(off.grossPayable).toBeCloseTo(23867.08, 2);
+    expect(off.netPayable).toBeCloseTo(22227, 2);
+    expect(ref.netPayable).toBeCloseTo(22227, 2);
 
     const ashok = juneEmployees.find((e) => e.name === "Ashok Ram");
     expect(ashok).toBeDefined();
     const ashokRef = compute(ashok!, 30).ref;
-    expect(ashokRef.netPayable).toBeCloseTo(16527.87, 2);
+    expect(ashokRef.netPayable).toBeCloseTo(16557, 2);
   });
 });

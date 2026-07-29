@@ -215,23 +215,30 @@ matches the June sheets.
                   && pfOptIn !== false
                   && fullMonthBasic ≤ 15000
 
-16  employeePf  = pfEligible ? 0.12 × min(basicSalary, 15000) : 0
+16  employeePf  = pfEligible ? round(0.12 × min(basicSalary, 15000)) : 0    // whole rupee
 17  employerPf  = employeePf
 
 18  esiEligible = Category !== "Special"
                   && esiOptIn !== false
-                  && grossPayable ≤ 21000              // base is GROSS — ADR-0002
+                  && totalSalary ≤ 21000               // package, not this month — ADR-0004
 
-19  esi         = esiEligible ? 0.0075 × grossPayable : 0
-20  employerEsi = esiEligible ? 0.0325 × grossPayable : 0
+19  esi         = esiEligible ? ceil(0.0075 × earnedSalary) : 0             // whole rupee
+20  employerEsi = esiEligible ? ceil(0.0325 × earnedSalary) : 0
 
-21  professionalTax = wbSlab(grossPayable)
+21  professionalTax = otherDeduction > 0 ? 0 : wbSlab(grossPayable)   // TDS payers exempt
 
 22  netPayable = grossPayable − employeePf − esi − professionalTax − advance − otherDeduction
 23  totalCost  = grossPayable + employerPf + employerEsi
 ```
 
 `pfEligible` and `esiEligible` are **independent**. Neither forces the other.
+
+Steps 16, 19 and 20 reproduce the Source Workbooks (`Excel/SALARY OLD NKPL.xlsx` col `X`/`W`,
+`Excel/SALARY OLD APTUS.xlsx` col `W`/`V`) to the rupee — `ROUNDUP` for ESI, `ROUND` for PF.
+The asymmetry is in the source. **ADR-0004** supersedes ADR-0002's Reference clause; ADR-0002's
+Official clause (step 6.4, ESI on Official Monthly Basic) is unchanged. `pfEligible` deliberately
+stays on the **full-month** basic `M × p`, not the earned basic the NKPL workbook tests, so PF
+status is stable month to month.
 
 **West Bengal Professional Tax slab** (`wbSlab`, on `grossPayable`):
 
@@ -495,6 +502,32 @@ Largest movers, with attribution:
 The long tail of −₹16 to −₹38 deltas is entirely the ESI base correction, which applies to
 every ESI-eligible employee. **These deltas do not include the advance-sign correction
 (TICKET-06)**, which is computed here against the already-correct 2026-07-07 figures.
+
+> **Reversed 2026-07-29 (issue #24 / ADR-0004).** The ESI base move recorded in the last row above
+> has been undone: the Source Workbooks charge ESI on Earned Salary, not Gross, and the workbooks
+> are the historical payroll. See §5.1 for the current formulas.
+
+### 10.4 Source Workbook parity — 2026-07-29 (issue #24 / ADR-0004)
+
+Reference statutory arithmetic re-aligned to `Excel/SALARY OLD NKPL.xlsx` and
+`Excel/SALARY OLD APTUS.xlsx`. Measured against the superseded June goldens:
+
+| | NKPL | APTUS |
+|---|---|---|
+| Rows whose Reference net changes | 37 of 51 | 29 of 36 |
+| Net total change | **+₹452.75** | **+₹418.45** |
+| Roster ESI | ₹2,797.48 → **₹2,344** | ₹2,219.78 → **₹1,803** |
+| Rows flipping `esiOptIn` | **0** | **0** |
+| `unpackable` | **0** | **0** |
+
+Landed alongside it, **TICKET-15 is resolved**: TDS payers are exempt from Professional Tax
+(step 21). This restores PUNIT SODHANI to ₹45,000 and Nawneet Sodhani to ₹79,990 — the figures the
+2026-07-07 export and the Source Workbooks both show — and reverses the two −₹200 movers in §10.2.
+Assumption **A2** above is superseded: Professional Tax applies to Special employees only when they
+carry no TDS.
+
+No ESI/PF row moves more than ~₹37. Gross Payable, Professional Tax and Days Worked are unchanged for
+every row. The 200k-case fuzz (§10.1) and the net-equality packing fuzz pass unchanged.
 
 ### 10.3 What is not yet verified
 

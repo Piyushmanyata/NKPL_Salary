@@ -651,7 +651,7 @@ function App() {
 
   const updateEmployee = (
     id: string,
-    field: keyof EmployeeInput,
+    field: keyof EmployeeInput | "allowance",
     value: string | number | boolean | undefined,
   ) => {
     if (id === newlyAddedId && field === "name") {
@@ -714,17 +714,23 @@ function App() {
           };
         }
 
-        // M and T are the typed anchors for the fixed-monthly categories; b is
-        // derived from them. Editing M holds bonus/day and carries T along;
-        // editing T sets the package directly. T below M means "no bonus".
-        if (field === "monthlySalary" || field === "totalSalary") {
+        // M and the Monthly Allowance are what the user types for the fixed-monthly
+        // categories; T = M + allowance is the stored anchor and b is derived from it.
+        // Editing M holds the allowance and carries T along; editing the allowance
+        // leaves M alone. T at or below M means "no allowance".
+        if (field === "monthlySalary" || field === "totalSalary" || field === "allowance") {
           const D = effectiveMonthDays;
           const oldM = Math.max(0, numberValue(employee.monthlySalary));
           const oldT = Math.max(0, numberValue(employee.totalSalary));
           const bonus = oldT > oldM ? (oldT - oldM) / D : Math.max(0, numberValue(employee.bonusPerDay));
           const typed = Math.max(0, numberValue(value));
           const monthlySalary = field === "monthlySalary" ? typed : oldM;
-          const total = field === "totalSalary" ? typed : monthlySalary + D * bonus;
+          const total =
+            field === "totalSalary"
+              ? typed
+              : field === "allowance"
+                ? monthlySalary + typed
+                : monthlySalary + D * bonus;
           return {
             ...employee,
             monthlySalary,
@@ -1568,16 +1574,17 @@ function App() {
                                         </small>
                                       </div>
                                       <div className="settings-column">
-                                        <span>Total Salary</span>
+                                        <span>Allowance / Month</span>
                                         <NumberInput
-                                          value={row.totalSalary}
+                                          value={Math.max(0, roundMoney(row.totalSalary - row.monthlySalary))}
                                           min={0}
-                                          onChange={(value) => updateEmployee(row.id, "totalSalary", value)}
+                                          onChange={(value) => updateEmployee(row.id, "allowance", value)}
                                         />
                                         <small>
+                                          Total Salary <strong>{currency(row.totalSalary)}</strong> = monthly + allowance
                                           {row.totalSalary > row.monthlySalary
-                                            ? `Full package — sets bonus/day ${currency(row.bonusPerDay)} and the Official 51% basic floor`
-                                            : "Full package — sets the Official 51% basic floor. Leave at monthly for no bonus."}
+                                            ? ` — sets bonus/day ${currency(row.bonusPerDay)} and the Official 51% basic floor`
+                                            : " — 0 means no allowance"}
                                         </small>
                                       </div>
                                     </>

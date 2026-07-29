@@ -4,7 +4,7 @@ import { calculateSalary } from "../salary";
 import type { EmployeeInput } from "../types";
 
 describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
-  it("Reference ESI: 0.75% of Reference Gross Payable when gross <= 21,000; employer ESI 3.25% on same base", () => {
+  it("Reference ESI: ROUNDUP(0.75% of Earned Salary) when Total Salary <= 21,000; employer ESI 3.25% on same base", () => {
     const input: EmployeeInput = {
       id: "emp-ref-esi",
       name: "ESI Eligible Worker",
@@ -20,13 +20,13 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
     };
 
     const ref = calculateSalary(input, { workingDays: 30 });
-    expect(ref.grossPayable).toBeLessThanOrEqual(21000);
+    expect(ref.totalSalary).toBeLessThanOrEqual(21000);
     expect(ref.esiOptIn).toBe(true);
-    expect(ref.esi).toBe(Math.round(ref.grossPayable * 0.0075 * 100) / 100);
-    expect(ref.employerEsi).toBe(Math.round(ref.grossPayable * 0.0325 * 100) / 100);
+    expect(ref.esi).toBe(Math.ceil(ref.earnedSalary * 0.0075));
+    expect(ref.employerEsi).toBe(Math.ceil(ref.earnedSalary * 0.0325));
   });
 
-  it("Reference ESI includes performanceBonus and specialBonus in Gross Payable base", () => {
+  it("Reference ESI excludes performanceBonus and specialBonus — base is Earned Salary, not Gross", () => {
     const input: EmployeeInput = {
       id: "emp-bonus-esi",
       name: "Bonus Worker",
@@ -43,9 +43,10 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
     };
 
     const ref = calculateSalary(input, { workingDays: 30 });
-    // grossPayable = 12000 + 800 + 1000 = 13800 <= 21000
+    // grossPayable = 12000 + 800 + 1000 = 13800, but ESI rides earnedSalary = 12000
     expect(ref.grossPayable).toBe(13800);
-    expect(ref.esi).toBe(Math.round(13800 * 0.0075 * 100) / 100);
+    expect(ref.earnedSalary).toBe(12000);
+    expect(ref.esi).toBe(Math.ceil(12000 * 0.0075));
   });
 
   it("Reference PF: 12% of min(basic, 15,000); auto-off when full-month basic > 15,000", () => {
@@ -107,9 +108,8 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
     const ref = calculateSalary(input, { workingDays: 30 });
     const off = buildOfficialRow(ref, 30);
 
-    // Reference ESI is computed on Gross Payable (21,000)
-    // Official ESI is computed on Official Basic (11,440)
-    expect(ref.esi).toBe(Math.round(ref.grossPayable * 0.0075 * 100) / 100);
+    // Reference ESI is computed on Earned Salary; Official ESI on Official Basic (11,440)
+    expect(ref.esi).toBe(Math.ceil(ref.earnedSalary * 0.0075));
     expect(off.esi).toBe(Math.round(off.monthlyBasic * 0.0075 * 100) / 100);
     expect(off.esi).not.toBe(ref.esi); // Divergent!
     expect(off.netPayable).toBeCloseTo(ref.netPayable, 2); // Net Equality preserved!
