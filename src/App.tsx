@@ -47,7 +47,6 @@ import {
   clampDays,
   clampMonthDays,
   currency,
-  dailyFromMonthly,
   isSpecialCategory,
   monthlyFromDaily,
   numberValue,
@@ -696,12 +695,14 @@ function App() {
           // typed through the Per Month toggle is stored as M / D, and its monthly
           // allowance as allowance / D. Nothing else changes shape.
           if (employee.category === "Unskilled") {
+            // Full precision on the way in: rounding r to paise meant a typed
+            // 12,000 came back as D × 387.10 = 11,999.10, i.e. the box refused
+            // the number entered. M = D × r now round-trips exactly.
             return {
               ...employee,
               monthlySalary,
-              salaryPerDay: dailyFromMonthly(monthlySalary, D),
-              bonusPerDay:
-                field === "allowance" ? dailyFromMonthly(typed, D) : employee.bonusPerDay,
+              salaryPerDay: monthlySalary / D,
+              bonusPerDay: field === "allowance" ? typed / D : employee.bonusPerDay,
             };
           }
           const total =
@@ -3010,20 +3011,28 @@ function NumberInput({
   allowBlank?: boolean;
   disabled?: boolean;
 }) {
-  const displayValue =
+  const canonical =
     allowBlank && (value === undefined || value === "") ? "" : Number.isFinite(value) ? value : 0;
+  // While the field is focused we show exactly what was typed. The model still
+  // updates on every keystroke, but a value that comes back rounded or derived
+  // (Salary per Month for Unskilled, Allowance) must not overwrite the digits
+  // mid-word — that made the box snap to 0 or refuse the number entered.
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <input
       className={className}
       type="number"
       min={min}
       max={max}
-      value={displayValue}
+      value={draft ?? canonical}
       disabled={disabled}
+      onFocus={(event) => setDraft(event.target.value)}
+      onBlur={() => setDraft(null)}
       onChange={(event) => {
         const val = event.target.value;
-        if (allowBlank && val === "") {
-          onChange(undefined);
+        setDraft(val);
+        if (val === "") {
+          onChange(allowBlank ? undefined : 0);
         } else {
           onChange(numberValue(val));
         }
