@@ -77,6 +77,23 @@ Reference earnings — `dailyBonus` and `earnedBonus` stay `0`, so Reference gro
 three of the four categories — with no editor at all, while exposing a `salaryPerDay` input that
 `calculateSalary` unconditionally overwrote.)*
 
+#### 2.2.0.1 Per Day / Per Month input switch
+
+The table above is the **default** input form, not a restriction. Settings carries a
+**Per Day / Per Month** toggle that lets either form of the same salary be typed for any
+non-Special category; the UI converts with `M = D × r` (`monthlyFromDaily` /
+`dailyFromMonthly` in `salary.ts`) and stores the Category's anchor unchanged:
+
+| Category | Typed per month | Typed per day |
+|---|---|---|
+| **Unskilled** | stores `r = M / D`, allowance stores `b = allowance / D` | stores `r`, `b` (default) |
+| **Semi-skilled / Skilled** | stores `M`, `T = M + allowance` (default) | stores `M = D × r`, allowance on `T` preserved |
+| **Special** | stores `M`, `T` — no day rate exists, so the toggle is not shown | n/a |
+
+Anchoring, derivation and every downstream formula are untouched: the toggle changes only
+which number the user types. Round-trip equality is asserted in
+`src/__tests__/salary_input_mode.test.ts`.
+
 ### 2.2.1 Rate back-fill is a ONE-TIME repair, not a per-calculation step
 
 When a stored employee is missing the anchor their Category requires, the missing value is

@@ -1,6 +1,8 @@
 /**
- * Shared Redis client for serverless API routes.
- * Uses REDIS_URL from the Vercel Redis marketplace integration (TCP / rediss).
+ * Shared Redis client for serverless API routes — the app's only database.
+ * REDIS_URL is a standard redis:// / rediss:// connection string, so any
+ * provider works (Upstash, Redis Cloud, self-hosted); swapping providers is an
+ * env var change, not a code change.
  */
 import Redis from "ioredis";
 

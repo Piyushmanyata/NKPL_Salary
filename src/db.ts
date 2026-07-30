@@ -65,7 +65,7 @@ export async function saveMonthData(
 }
 
 export async function getMonthData(company: string, monthLabel: string): Promise<MonthRecord | null> {
-  // 1. Try to fetch from Vercel serverless cloud database first
+  // 1. Try Redis (via the serverless API) first — it is the source of truth.
   try {
     const response = await fetch(
       `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`,
@@ -141,7 +141,7 @@ export interface EmployeeRate {
   bonusPerDay: number;
   /**
    * Standing package for the fixed-monthly categories, the way salaryPerDay is
-   * the standing rate for Unskilled. Optional so pre-existing blobs still load.
+   * the standing rate for Unskilled. Optional so pre-existing records still load.
    */
   monthlySalary?: number;
   totalSalary?: number;
@@ -153,7 +153,7 @@ const employeeRatesCacheKey = (company: string) => `salary-sheet-employee-rates-
 
 // Employee per-day rates are the one thing that must stay identical for every
 // visitor and consistent across every month, so they live in a single small
-// cloud blob per company (see api/rates.ts) instead of being duplicated --
+// Redis key per company (see api/rates.ts) instead of being duplicated --
 // and able to drift -- inside every month's record.
 export async function getEmployeeRates(company: string): Promise<EmployeeRateMap> {
   try {

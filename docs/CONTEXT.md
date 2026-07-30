@@ -46,6 +46,10 @@ _Avoid_: Helper-only, cooly-only (those are employee types under Unskilled)
 Wage categories whose **monthly salary (`M`) is fixed** for the month; wage per day is derived as `r = M / D`. Changing calendar days leaves `M` unchanged and floats `r`.
 _Avoid_: Treating them as pure daily-wage like Labour; treating them as the only non-Special categories without naming Special as a peer Category
 
+**Salary Input Mode**:
+Which form of the same salary the user types — per day or per month — switched by a toggle in Settings and converted with `M = D × r` (SPEC §2.2.0.1). Purely an input affordance: the stored **anchor** still follows Category, so switching the mode never changes what anyone is paid.
+_Avoid_: Confusing input mode with rate anchoring; treating the toggle as a way to re-anchor a Category
+
 **Special Employee** (Category = `"Special"`):
 A **Category**, not a role flag and not a name list. Mutually exclusive with Unskilled, Semi-skilled, and Skilled. Constraints (SPEC §2.2):
 - Anchor is fixed monthly salary `M`; no day rate is stored or used after migration (`r` ignored / discarded).

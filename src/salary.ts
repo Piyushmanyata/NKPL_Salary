@@ -69,6 +69,19 @@ export function isSpecialCategory(category: Category | string | undefined | null
 }
 
 /**
+ * The two ways one salary can be typed: M = D × r. Used by the Per Day / Per
+ * Month toggle in Settings so switching the input mode is lossless, and by
+ * repairRates for the same conversion at load time.
+ */
+export function monthlyFromDaily(salaryPerDay: unknown, monthDays: unknown) {
+  return roundMoney(clampMonthDays(monthDays) * Math.max(0, numberValue(salaryPerDay)));
+}
+
+export function dailyFromMonthly(monthlySalary: unknown, monthDays: unknown) {
+  return roundMoney(Math.max(0, numberValue(monthlySalary)) / clampMonthDays(monthDays));
+}
+
+/**
  * SPEC §2.2.1 — one-time rate repair at load/migration.
  *
  * Must NOT run inside `calculateSalary`. Per-calculation Unskilled back-fill
@@ -94,11 +107,11 @@ export function repairRates(
 
   if (category === "Unskilled") {
     if (r <= 0 && M > 0) {
-      r = roundMoney(M / D);
+      r = dailyFromMonthly(M, D);
     }
   } else {
     if (M <= 0 && r > 0) {
-      M = roundMoney(D * r);
+      M = monthlyFromDaily(r, D);
     }
     if (category === "Special") {
       r = 0;

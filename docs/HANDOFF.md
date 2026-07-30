@@ -152,7 +152,9 @@ test **fails** when your fix is reverted. A test that passes both ways is not a 
   net equals Reference net on rows where Official net is *copied from* Reference net. Do not
   trust a green result from it. `TICKET-14` replaces it.
 - **Data lives in Redis** (`api/db.ts`, `REDIS_URL` in `.env.local`), one record per
-  company-month, plus a cross-month rate blob (`api/rates.ts`). Two tickets (01, 06) need
+  company-month (`monthly_salary/<company>/<month>`), plus a cross-month rate card
+  (`employee_rates/<company>`, `api/rates.ts`). Redis is the **only** datastore — the browser
+  keeps a localStorage read-cache and nothing else. Two tickets (01, 06) need
   migrations against it. **Dry-run every migration and keep the log.**
 - **Deployment is Vercel.** `VERCEL_GIT_COMMIT_SHA` in `.env.local` is empty, so it does not
   tell you what is live — check the Vercel dashboard (`TICKET-15`).

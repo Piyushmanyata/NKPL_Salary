@@ -8,7 +8,7 @@ function normalizeCompany(value: unknown): string {
   return text || DEFAULT_COMPANY;
 }
 
-// A single small JSON blob per company holds every employee's per-day rates:
+// A single small JSON value per company holds every employee's per-day rates:
 // { [employeeId]: { id, name, salaryPerDay, bonusPerDay } }.
 // This is the one piece of employee data meant to persist across every
 // month -- everything else (attendance, deductions, bonuses, etc.) still

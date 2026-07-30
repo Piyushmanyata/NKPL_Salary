@@ -971,6 +971,26 @@ td input {
   background: #fdedc9;
 }
 
+.rate-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.06);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.rate-mode-toggle:hover {
+  background: rgba(37, 99, 235, 0.12);
+}
+
 .warning-row td {
   color: #855000;
   background: #fff8df;

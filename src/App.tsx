@@ -24,8 +24,6 @@ import {
   Building2,
 } from "lucide-react";
 import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { sampleEmployees } from "./sampleEmployees";
-import { juneEmployees } from "./juneEmployees";
 import {
   saveMonthData,
   getMonthData,
@@ -49,7 +47,9 @@ import {
   clampDays,
   clampMonthDays,
   currency,
+  dailyFromMonthly,
   isSpecialCategory,
+  monthlyFromDaily,
   numberValue,
   repairRates,
   roundMoney,
@@ -103,10 +103,8 @@ const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
 
 const DEFAULT_COMPANY: CompanyCode = "NKPL";
-const legacyEmployeesStorageKey = "salary-sheet-employees-may-2026-v2";
 const legacyMonthConfigStorageKey = "salary-sheet-month-config";
 const activeCompanyStorageKey = "salary-sheet-active-company";
-const employeesStorageKey = (company: string) => `salary-sheet-employees-${company}-v2`;
 const monthConfigStorageKey = (company: string) => `salary-sheet-month-config-${company}`;
 const companyLabelStorageKey = (company: string) => `salary-sheet-company-label-${company}`;
 const csvEscape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
@@ -281,8 +279,13 @@ const carryForwardEmployee = (employee: EmployeeInput, monthDays: number): Emplo
 });
 
 // NKPL is the only company with bundled sample/demo data; a newly added
-// company like APTUS starts blank until real employees are entered.
-const defaultEmployeesForCompany = (company: CompanyCode, monthLabel?: string) => {
+// company like APTUS starts blank until real employees are entered. Loaded on
+// demand so ~30 kB of seed roster stays out of the initial bundle — it is only
+// ever needed behind the "Use Default Sample Employees" button.
+const defaultEmployeesForCompany = async (
+  company: CompanyCode,
+  monthLabel?: string,
+): Promise<EmployeeInput[]> => {
   if (company !== "NKPL") {
     return [];
   }
@@ -290,9 +293,9 @@ const defaultEmployeesForCompany = (company: CompanyCode, monthLabel?: string) =
   // specific month; every other month falls back to the general sample
   // roster (originally sourced from May 2026).
   if (monthLabel && normalizeMonthLabel(monthLabel) === "June 2026") {
-    return juneEmployees;
+    return (await import("./juneEmployees")).juneEmployees;
   }
-  return sampleEmployees;
+  return (await import("./sampleEmployees")).sampleEmployees;
 };
 
 // Salary/day and bonus/day are shared across every month for a given
@@ -336,39 +339,22 @@ const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-const loadEmployees = (company: CompanyCode, monthDays: number, monthLabel?: string) => {
-  const fallback = defaultEmployeesForCompany(company, monthLabel);
-  const stored =
-    localStorage.getItem(employeesStorageKey(company)) ??
-    (company === DEFAULT_COMPANY ? localStorage.getItem(legacyEmployeesStorageKey) : null);
-  if (!stored) {
-    return fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-    const rows = Array.isArray(parsed)
-      ? parsed
-          .map((employee, index) => sanitizeEmployee(employee, index, monthDays))
-          .filter((employee): employee is EmployeeInput => Boolean(employee))
-      : [];
-    return rows.length ? rows : fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
-  } catch {
-    return fallback.map((employee, index) => sanitizeEmployee(employee, index, monthDays)!);
-  }
-};
-
 function App() {
   const [activeCompany, setActiveCompany] = useState<CompanyCode>(loadActiveCompany);
   const initialMonthConfig = useMemo(() => loadMonthConfig(activeCompany), []);
   const [monthLabel, setMonthLabel] = useState(initialMonthConfig.label);
-  const [employees, setEmployees] = useState<EmployeeInput[]>(() =>
-    loadEmployees(activeCompany, initialMonthConfig.days, initialMonthConfig.label),
-  );
+  // Always starts empty: the roster is owned by Redis and arrives from the load
+  // effect below. Seeding it here only ever produced a flash of stale rows.
+  const [employees, setEmployees] = useState<EmployeeInput[]>([]);
   const [query, setQuery] = useState("");
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState(() => loadCompanyLabel(activeCompany));
   const [openSettingsId, setOpenSettingsId] = useState<string | null>(null);
+  // How salary is typed in the open Settings panel. null = follow the category
+  // default (Unskilled per day, everything else per month); the toggle button
+  // overrides it. Only one panel is open at a time, so one value is enough, and
+  // it resets naturally when a different row is opened.
+  const [rateMode, setRateMode] = useState<"perDay" | "perMonth" | null>(null);
   const [sheetMode, setSheetMode] = useState<SheetMode>("reference");
   const [attendanceData, setAttendanceData] = useState<AttendanceEmployee[] | null>(null);
   const [attendanceMonth, setAttendanceMonth] = useState<string>("");
@@ -379,7 +365,6 @@ function App() {
     () => calendarDaysForMonth(monthLabel),
     [monthLabel],
   );
-  const employeesRef = useRef(employees);
 
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
@@ -420,58 +405,15 @@ function App() {
     }, 4000);
   };
 
-  // Keep a ref to the latest employees so the default-attendance loader below can
-  // match names without needing `employees` in its dependency array (adding it
-  // there caused a full re-fetch + re-parse of MAY.xls on every keystroke, which
-  // also silently wiped out any manual attendance overrides the user had made).
+  // The Attendance Checker is a local audit/import tool: it parses an uploaded
+  // punch-in/out Excel file into a day-by-day breakdown purely to help review
+  // and correct present days before syncing. The breakdown itself is never
+  // persisted -- only its end result (each employee's present day count)
+  // matters, and that lives in `daysWorked`, which is saved to Redis. So the
+  // audit view is simply discarded whenever the month or company changes.
   useEffect(() => {
-    employeesRef.current = employees;
-  }, [employees]);
-
-  // The Attendance Checker is a local audit/import tool: it parses an
-  // uploaded punch-in/out Excel file into a detailed day-by-day breakdown
-  // purely to help review and correct present days before syncing. That
-  // detailed breakdown itself is never persisted -- only its end result
-  // (each employee's present day count) matters, and that already lives in
-  // `daysWorked` on the employee record, which is saved and shared via the
-  // existing per-company-per-month payroll database (see the auto-save
-  // effect below). So this effect only resets/re-derives the local audit
-  // view when the month or company changes; NKPL's bundled May 2026 demo
-  // file is the sole legacy exception used as a starting point.
-  useEffect(() => {
-    const normalized = normalizeMonthLabel(monthLabel);
-    if (normalized !== monthLabel) {
-      return; // wait until committed/normalized
-    }
-    if (!(activeCompany === "NKPL" && normalized === "May 2026")) {
-      setAttendanceData(null);
-      setAttendanceMonth("");
-      return;
-    }
-    let cancelled = false;
-    async function loadDefaultAttendance() {
-      try {
-        const response = await fetch("/MAY.xls");
-        if (response.ok) {
-          const buffer = await response.arrayBuffer();
-          const XLSX = await loadXLSX();
-          const workbook = XLSX.read(buffer, { type: "array" });
-          const worksheet = getBestWorksheet(workbook, monthLabel);
-          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-          const parsed = parseAttendanceExcel(rows, employeesRef.current);
-          if (!cancelled) {
-            setAttendanceData(parsed.employees);
-            setAttendanceMonth(parsed.monthLabel);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading default MAY.xls file:", err);
-      }
-    }
-    loadDefaultAttendance();
-    return () => {
-      cancelled = true;
-    };
+    setAttendanceData(null);
+    setAttendanceMonth("");
   }, [monthLabel, activeCompany]);
 
   const salaryRows = useMemo(
@@ -750,6 +692,18 @@ function App() {
           const bonus = oldT > oldM ? (oldT - oldM) / D : Math.max(0, numberValue(employee.bonusPerDay));
           const typed = Math.max(0, numberValue(value));
           const monthlySalary = field === "monthlySalary" ? typed : oldM;
+          // Unskilled stays anchored on the day rate (SPEC §2.2): a monthly figure
+          // typed through the Per Month toggle is stored as M / D, and its monthly
+          // allowance as allowance / D. Nothing else changes shape.
+          if (employee.category === "Unskilled") {
+            return {
+              ...employee,
+              monthlySalary,
+              salaryPerDay: dailyFromMonthly(monthlySalary, D),
+              bonusPerDay:
+                field === "allowance" ? dailyFromMonthly(typed, D) : employee.bonusPerDay,
+            };
+          }
           const total =
             field === "totalSalary"
               ? typed
@@ -760,6 +714,25 @@ function App() {
             ...employee,
             monthlySalary,
             totalSalary: total > monthlySalary ? roundMoney(total) : undefined,
+          };
+        }
+
+        // Mirror of the branch above for the Per Day input mode. Unskilled already
+        // anchors on r; for the fixed-monthly categories a typed day rate sets the
+        // package M = D × r and keeps whatever allowance was already on the row.
+        if (field === "salaryPerDay" && employee.category !== "Unskilled") {
+          const salaryPerDay = Math.max(0, numberValue(value));
+          const monthlySalary = monthlyFromDaily(salaryPerDay, effectiveMonthDays);
+          const allowance = Math.max(
+            0,
+            Math.max(0, numberValue(employee.totalSalary)) -
+              Math.max(0, numberValue(employee.monthlySalary)),
+          );
+          return {
+            ...employee,
+            salaryPerDay,
+            monthlySalary,
+            totalSalary: allowance > 0 ? roundMoney(monthlySalary + allowance) : undefined,
           };
         }
 
@@ -968,8 +941,9 @@ function App() {
     const delayDebounce = setTimeout(async () => {
       try {
         await saveMonthData(activeCompany, normalized, effectiveMonthDays, employees);
-        const months = await getAllMonthLabels(activeCompany);
-        setAllMonths(months);
+        // No month-list refetch here: every save targets a month that is already
+        // in `allMonths` (it is put there when the month is created/carried), and
+        // re-listing meant a full Redis SCAN after every debounced keystroke.
       } catch (err) {
         console.error("Failed to save month data:", err);
       }
@@ -1004,14 +978,20 @@ function App() {
     return () => clearTimeout(delayDebounce);
   }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
+  // A month that was just written exists; record it locally rather than paying
+  // for another Redis SCAN to be told what we already know.
+  const rememberMonth = (label: string) =>
+    setAllMonths((current) =>
+      current.includes(label) ? current : sortMonthsChronologically([...current, label]),
+    );
+
   // Month initialization methods
   const handleCreateBlankMonth = async () => {
     setShowNoDataModal(false);
     setEmployees([]);
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
-      const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(sortMonthsChronologically(months));
+      rememberMonth(noDataMonth);
       showToast(`Created blank payroll sheet for ${noDataMonth}`);
     } catch (err) {
       console.error(err);
@@ -1021,17 +1001,15 @@ function App() {
 
   const handleCreateSampleMonth = async () => {
     setShowNoDataModal(false);
+    const defaults = await defaultEmployeesForCompany(activeCompany, noDataMonth);
     const sanitized = applyEmployeeRates(
-      defaultEmployeesForCompany(activeCompany, noDataMonth).map(
-        (emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!,
-      ),
+      defaults.map((emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!),
       employeeRates,
     );
     setEmployees(sanitized);
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
-      const months = await getAllMonthLabels(activeCompany);
-      setAllMonths(sortMonthsChronologically(months));
+      rememberMonth(noDataMonth);
       showToast(`Initialized ${noDataMonth} with sample employees`);
     } catch (err) {
       console.error(err);
@@ -1059,7 +1037,7 @@ function App() {
     );
     setEmployees(carried);
     await saveMonthData(activeCompany, target, targetDays, carried);
-    setAllMonths(sortMonthsChronologically(await getAllMonthLabels(activeCompany)));
+    rememberMonth(target);
     return true;
   };
 
@@ -1484,6 +1462,10 @@ function App() {
                       const isSpecial = isSpecialCategory(row.category);
                       const isSecurity = row.isSecurity === true;
                       const missingRate = row.missingRate === true;
+                      // Special is paid a flat package and has no day rate, so it is
+                      // always typed per month regardless of the toggle.
+                      const perDayInput =
+                        !isSpecial && (rateMode ?? (row.category === "Unskilled" ? "perDay" : "perMonth")) === "perDay";
                       return (
                         <Fragment key={row.id}>
                           <tr className={missingRate ? "row-missing-rate" : undefined}>
@@ -1559,9 +1541,10 @@ function App() {
                                 className="icon-button"
                                 title="Employee settings"
                                 type="button"
-                                onClick={() =>
-                                  setOpenSettingsId((current) => (current === row.id ? null : row.id))
-                                }
+                                onClick={() => {
+                                  setRateMode(null);
+                                  setOpenSettingsId((current) => (current === row.id ? null : row.id));
+                                }}
                               >
                                 <Settings2 size={16} />
                               </button>
@@ -1581,10 +1564,31 @@ function App() {
                             <tr className="settings-row">
                               <td colSpan={17}>
                                 <div className="settings-panel">
-                                  {/* Anchor fields follow Category (SPEC §2.2): Unskilled is paid
-                                      off a day rate, the other three off a fixed monthly package.
-                                      Only the anchors are editable — derived values stay readouts. */}
-                                  {row.category === "Unskilled" ? (
+                                  {/* Salary can be typed either way round — the button
+                                      switches the input mode and converts (M = D × r).
+                                      The stored anchor still follows Category (SPEC §2.2):
+                                      Unskilled keeps the day rate, the rest keep the
+                                      monthly package. Special has no day rate at all. */}
+                                  {!isSpecial ? (
+                                    <div className="settings-column">
+                                      <span>Salary Input</span>
+                                      <button
+                                        type="button"
+                                        className="rate-mode-toggle"
+                                        aria-pressed={perDayInput}
+                                        title="Switch between typing salary per day and per month"
+                                        onClick={() => setRateMode(perDayInput ? "perMonth" : "perDay")}
+                                      >
+                                        <RefreshCw size={13} />
+                                        {perDayInput ? "Per Day" : "Per Month"}
+                                      </button>
+                                      <small>
+                                        Tap to type the {perDayInput ? "monthly package" : "day rate"} instead —{" "}
+                                        {effectiveMonthDays} days &times; day rate = month.
+                                      </small>
+                                    </div>
+                                  ) : null}
+                                  {perDayInput ? (
                                     <>
                                       <div className="settings-column">
                                         <span>Salary per Day</span>
@@ -1627,7 +1631,7 @@ function App() {
                                         <small>
                                           {isSpecial
                                             ? "Fixed package — paid in full every month"
-                                            : `Fixed monthly salary — day rate ${currency(row.salaryPerDay)} is derived from it`}
+                                            : `Day rate ${currency(row.salaryPerDay)} is derived from it`}
                                         </small>
                                       </div>
                                       <div className="settings-column">
@@ -1672,7 +1676,7 @@ function App() {
                                   <div className="settings-column">
                                     <span>PF</span>
                                     <strong>{row.pfOptIn ? "On" : "Off"}</strong>
-                                    <small>{row.basicSalary > PF_BASIC_LIMIT ? `PF caps at ${currency(PF_BASIC_LIMIT * PF_RATE)} (12% of ${currency(PF_BASIC_LIMIT)} Basic)` : "Toggle controls employee PF choice"}</small>
+                                    <small>{row.monthlySalary * (row.basicPercent / 100) > PF_BASIC_LIMIT ? `PF is off automatically above ${currency(PF_BASIC_LIMIT)} Basic` : "Toggle controls employee PF choice"}</small>
                                     <button
                                       type="button"
                                       className={row.pfOptIn ? "toggle-on" : "toggle-off"}
@@ -1685,7 +1689,7 @@ function App() {
                                   <div className="settings-column">
                                     <span>ESI</span>
                                     <strong>{row.esiOptIn ? "On" : "Off"}</strong>
-                                    <small>{(row.monthlySalary * (row.basicPercent / 100)) > ESI_GROSS_LIMIT ? `ESI is disabled above ${currency(ESI_GROSS_LIMIT)} Basic salary` : "Toggle controls employee ESI choice"}</small>
+                                    <small>{row.totalSalary > ESI_GROSS_LIMIT ? `ESI is off automatically above ${currency(ESI_GROSS_LIMIT)} Total Salary` : "Toggle controls employee ESI choice"}</small>
                                     <button
                                       type="button"
                                       className={row.esiOptIn ? "toggle-on" : "toggle-off"}
@@ -1860,7 +1864,7 @@ function App() {
             </div>
             <div className="table-note">
               {sheetMode === "reference"
-                ? "Categories are assigned automatically from total salary bands. Earned is Salary/Month prorated by present days. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
+                ? "Category is set by hand, never guessed from salary. Earned is Salary/Month prorated by present days. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
                 : `For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - present days), then reduces when needed so Basic always equals attendance x category daily wage. HRA/travel allowance are attendance-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
             </div>
           </article>
@@ -1874,7 +1878,8 @@ function App() {
                 </div>
               </div>
               <div className="rule-list">
-                <Rule label="Category" value="Below 12k Unskilled, 12k to below 20k Semi-skilled, 20k and above Skilled" />
+                <Rule label="Category" value="Chosen per employee — Unskilled, Semi-skilled, Skilled or Special. Never inferred from salary." />
+                <Rule label="Salary Anchor" value="Unskilled is anchored on salary/day; the rest on salary/month. Either can be typed — Settings has a Per Day / Per Month switch." />
                 <Rule label="Calendar Days" value={`${effectiveMonthDays} days for ${monthLabel || "selected month"}`} />
                 <Rule label="Earned Salary" value="Salary/Month / calendar days x present days" />
                 <Rule label="Reference Basic" value="Earned Salary x Basic %" />
@@ -1895,10 +1900,10 @@ function App() {
                   label="PF"
                   value={`${PF_RATE * 100}% on Basic (capped at ${currency(PF_BASIC_LIMIT)} Basic) when PF is enabled`}
                 />
-                <Rule label="ESI" value={`${ESI_RATE * 100}% on Salary/Month when ESI is enabled (auto-off above ${currency(ESI_GROSS_LIMIT)} Basic)`} />
+                <Rule label="ESI" value={`${ESI_RATE * 100}% on Earned Salary when ESI is enabled (auto-off when Total Salary exceeds ${currency(ESI_GROSS_LIMIT)})`} />
                 <Rule label="P-Tax" value="Based on Gross Payable (before PF/ESI) slab" />
                 <Rule label="Advance" value="Amount advanced to the employee, recovered from this month's net pay" />
-                <Rule label="Performance Bonus" value="Carried from reference sheet, or Sunday bonus if attendance synced" />
+                <Rule label="Performance Bonus" value="(salary/day + bonus/day) x Extra Days" />
               </div>
             </article>
 
@@ -2122,8 +2127,8 @@ function App() {
               <div style={{ marginBottom: "20px", padding: "16px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "10px", color: "#065f46", fontSize: "14px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
                 <Cloud size={20} style={{ color: "#059669", flexShrink: 0, marginTop: "2px" }} />
                 <div>
-                  <strong style={{ display: "block", marginBottom: "4px", fontSize: "15px" }}>Global Vercel Blob Sync Active</strong>
-                  The application is successfully linked to your Vercel Blob store <strong>nawkiran-salary-blob</strong>. All database operations load and sync automatically by company and month for everyone who opens the app &mdash; NKPL and APTUS data are kept completely separate.
+                  <strong style={{ display: "block", marginBottom: "4px", fontSize: "15px" }}>Redis Sync Active</strong>
+                  Payroll is stored in Redis and is the single source of truth. Every month record and the shared rate card load and sync automatically by company and month for everyone who opens the app &mdash; NKPL and APTUS data are kept completely separate.
                 </div>
               </div>
 
@@ -2135,11 +2140,11 @@ function App() {
               </div>
 
               <div style={{ fontSize: "13px", color: "#64748b", background: "#f8fafc", padding: "14px", borderRadius: "8px", border: "1px solid #e2e8f0", lineHeight: "1.5" }}>
-                <strong>Vercel Blob Advantages:</strong>
+                <strong>Keys in use:</strong>
                 <ul style={{ paddingLeft: "18px", marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", listStyleType: "disc" }}>
-                  <li><strong>Zero Pauses</strong>: Free-tier Vercel Blob storage never pauses or sleeps, even with zero activity.</li>
-                  <li><strong>Instant Access</strong>: Loads database entries within milliseconds for all visitors globally.</li>
-                  <li><strong>No Configuration Required</strong>: Managed securely on Vercel's cloud infrastructure without leaking tokens to the frontend.</li>
+                  <li><code>monthly_salary/&lt;company&gt;/&lt;month&gt;</code> &mdash; one record per company per month.</li>
+                  <li><code>employee_rates/&lt;company&gt;</code> &mdash; the shared rate card that carries across months.</li>
+                  <li>The connection string never reaches the browser; all reads and writes go through <code>/api/db</code> and <code>/api/rates</code>.</li>
                 </ul>
               </div>
             </div>
