@@ -11,7 +11,6 @@ import {
   Search,
   Settings2,
   Trash2,
-  Upload,
   Users,
   AlertTriangle,
   Calendar,
@@ -23,16 +22,21 @@ import {
   Wifi,
   Building2,
 } from "lucide-react";
-import { ChangeEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   saveMonthData,
   getMonthData,
   getAllMonthLabels,
   getEmployeeRates,
   saveEmployeeRates,
+  getAttendance,
+  getAttendanceMeta,
+  saveAttendanceMeta,
   EmployeeRateMap
 } from "./db";
 import { AttendanceUpload } from "./AttendanceUpload";
+import { AttendanceMappingModal } from "./AttendanceMappingModal";
+import { reconcile } from "./reconcile";
 import {
   ESI_EMPLOYER_RATE,
   ESI_GROSS_LIMIT,
@@ -55,19 +59,28 @@ import {
   roundMoney,
   uid,
 } from "./salary";
-import type { AttendanceEmployee, Category, EmployeeInput, SalaryRow } from "./types";
+import type {
+  AttendanceEmployee,
+  AttendanceMetaV1,
+  Category,
+  EmployeeInput,
+  SalaryRow,
+} from "./types";
 import { buildOfficialRow, normalizeCategory } from "./officialSheet";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
   calculateEmployeeAttendanceStats,
   calendarDaysForMonth,
-  getBestWorksheet,
   namesMatch,
-  parseAttendanceExcel,
+  normalizeKey,
   pickCarrySource,
   sortMonthsChronologically,
 } from "./attendance";
+
+function emptyAttendanceMeta(company: string): AttendanceMetaV1 {
+  return { v: 1, c: company, u: new Date().toISOString(), map: {}, excluded: [] };
+}
 
 type SheetMode = "reference" | "main";
 
@@ -359,7 +372,7 @@ function App() {
   const [attendanceData, setAttendanceData] = useState<AttendanceEmployee[] | null>(null);
   const [attendanceMonth, setAttendanceMonth] = useState<string>("");
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
-  const attendanceFileRef = useRef<HTMLInputElement>(null);
+
   // D is a pure function of the month label — never independently editable (TICKET-03).
   const effectiveMonthDays = useMemo(
     () => calendarDaysForMonth(monthLabel),
@@ -1230,31 +1243,6 @@ function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
-  const handleAttendanceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    try {
-      const buffer = await file.arrayBuffer();
-      const XLSX = await loadXLSX();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const { sheet: worksheet } = getBestWorksheet(workbook, monthLabel);
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-      const parsed = parseAttendanceExcel(rows, employees);
-      setAttendanceData(parsed.employees);
-      setAttendanceMonth(parsed.monthLabel);
-      setIsAttendanceModalOpen(true);
-      showToast("Attendance file loaded successfully.");
-    } catch (err) {
-      console.error(err);
-      showToast("Error parsing the Excel file. Please check format.", "error");
-    } finally {
-      event.target.value = "";
-    }
-  };
-
   return (
     <>
       {saveError && (
@@ -1332,11 +1320,11 @@ function App() {
               className="ghost-button"
               type="button"
               onClick={() => {
-                if (attendanceData && attendanceData.length > 0) {
-                  setIsAttendanceModalOpen(true);
-                } else {
-                  attendanceFileRef.current?.click();
+                if (!attendanceData) {
+                  setAttendanceData([]);
+                  setAttendanceMonth(monthLabel);
                 }
+                setIsAttendanceModalOpen(true);
               }}
             >
               <FileSpreadsheet size={17} />
@@ -1367,13 +1355,6 @@ function App() {
               <FileSpreadsheet size={17} />
               Excel
             </button>
-            <input
-              ref={attendanceFileRef}
-              className="hidden-input"
-              type="file"
-              accept=".xls,.xlsx"
-              onChange={handleAttendanceUpload}
-            />
           </div>
         </section>
 
@@ -2019,6 +2000,7 @@ function App() {
         <AttendanceCheckerModal
           data={attendanceData}
           month={attendanceMonth}
+          company={activeCompany}
           onClose={() => setIsAttendanceModalOpen(false)}
           employees={employees}
           onUploadNewFile={(newData, newMonth) => {
@@ -2252,6 +2234,7 @@ function App() {
 interface AttendanceCheckerModalProps {
   data: AttendanceEmployee[];
   month: string;
+  company: string;
   onClose: () => void;
   employees: EmployeeInput[];
   onUploadNewFile: (data: AttendanceEmployee[], month: string) => void;
@@ -2262,36 +2245,109 @@ interface AttendanceCheckerModalProps {
 function AttendanceCheckerModal({
   data,
   month,
+  company,
   onClose,
   employees,
   onUploadNewFile,
   onSyncAttendance,
   showToast,
 }: AttendanceCheckerModalProps) {
-  const modalFileRef = useRef<HTMLInputElement>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(data[0]?.id || null);
+  const [meta, setMeta] = useState<AttendanceMetaV1>(() => emptyAttendanceMeta(company));
+  const [manualSource, setManualSource] = useState<AttendanceEmployee[] | null>(null);
+  const [biometricSource, setBiometricSource] = useState<AttendanceEmployee[] | null>(null);
+  const [hasSavedAttendance, setHasSavedAttendance] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [excludedOpen, setExcludedOpen] = useState(false);
+  const [excludedPeople, setExcludedPeople] = useState<Array<{ key: string; name: string }>>([]);
+  const [unmappedCount, setUnmappedCount] = useState(0);
 
-  const handleModalUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const buffer = await file.arrayBuffer();
-      const XLSX = await loadXLSX();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const { sheet: worksheet } = getBestWorksheet(workbook, month);
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-      const parsed = parseAttendanceExcel(rows, employees);
-      onUploadNewFile(parsed.employees, parsed.monthLabel);
-      showToast("Successfully uploaded and parsed new attendance file.");
-    } catch (err) {
-      console.error(err);
-      showToast("Error parsing the Excel file. Please check format.", "error");
-    } finally {
-      event.target.value = "";
+  // Load meta + whether this month already has saved attendance (A10).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [loadedMeta, saved] = await Promise.all([
+        getAttendanceMeta(company),
+        getAttendance(company, month),
+      ]);
+      if (!active) return;
+      if (loadedMeta && loadedMeta.v === 1) {
+        setMeta(loadedMeta);
+        setExcludedPeople(
+          (loadedMeta.excluded || []).map((key) => ({ key, name: key }))
+        );
+      } else {
+        setMeta(emptyAttendanceMeta(company));
+      }
+      setHasSavedAttendance(Boolean(saved && saved.v === 1));
+    })();
+    return () => {
+      active = false;
+    };
+  }, [company, month]);
+
+  const runReconcile = (
+    manual: AttendanceEmployee[] | null,
+    biometric: AttendanceEmployee[] | null,
+    nextMeta: AttendanceMetaV1,
+    monthLabel: string,
+    fallbackData?: AttendanceEmployee[]
+  ) => {
+    // No dual sources yet — apply soft exclusions on the current grid only.
+    if (!manual && !biometric) {
+      const excluded = new Set(nextMeta.excluded || []);
+      const base = fallbackData || data;
+      const filtered = base.filter((e) => !excluded.has(normalizeKey(e.name)));
+      setUnmappedCount(0);
+      onUploadNewFile(filtered, monthLabel);
+      return { merged: filtered, conflicts: [], unmapped: 0 };
+    }
+    const { employees: merged, conflicts } = reconcile({
+      manual,
+      biometric,
+      roster: employees,
+      meta: nextMeta,
+      monthLabel,
+    });
+    const unmapped = conflicts.filter((c) => c.kind === "unmapped-biometric").length;
+    setUnmappedCount(unmapped);
+    onUploadNewFile(merged.length ? merged : manual || biometric || [], monthLabel);
+    return { merged, conflicts, unmapped };
+  };
+
+  const persistMeta = async (next: AttendanceMetaV1) => {
+    setMeta(next);
+    const result = await saveAttendanceMeta(company, next);
+    if (!result.ok) {
+      showToast(result.error || "Failed to save attendance mapping.", "error");
     }
   };
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(data[0]?.id || null);
+  const handleDualParsed = (args: {
+    slot: "biometric" | "manual";
+    employees: AttendanceEmployee[];
+    monthLabel: string;
+  }) => {
+    const nextManual = args.slot === "manual" ? args.employees : manualSource;
+    const nextBio = args.slot === "biometric" ? args.employees : biometricSource;
+    if (args.slot === "manual") setManualSource(args.employees);
+    else setBiometricSource(args.employees);
+
+    const { unmapped } = runReconcile(nextManual, nextBio, meta, args.monthLabel);
+    if (args.slot === "manual" && !nextBio) {
+      showToast("Manual sheet loaded. Upload biometric for full reconciliation.");
+    } else if (args.slot === "biometric" && !nextManual) {
+      showToast("Biometric loaded (R4 fallback — no Manual Sheet).");
+    } else {
+      showToast(
+        unmapped > 0
+          ? `Reconciled. ${unmapped} biometric row(s) need mapping.`
+          : "Reconciled both sources."
+      );
+    }
+    if (unmapped > 0) setMappingOpen(true);
+  };
 
   // Uploading a different attendance file replaces `data`; if the previously
   // selected employee no longer exists, fall back to the first row instead of
@@ -2465,18 +2521,27 @@ function AttendanceCheckerModal({
               monthLabel={month}
               employees={employees}
               loadXLSX={loadXLSX}
-              onParsed={({ employees: emps, monthLabel }) => {
-                onUploadNewFile(emps, monthLabel);
-                showToast("Attendance file loaded.");
+              onParsed={({ slot, employees: emps, monthLabel }) => {
+                handleDualParsed({ slot, employees: emps, monthLabel });
               }}
               onError={(msg) => showToast(msg, "error")}
-              hasSavedAttendance={false}
+              hasSavedAttendance={hasSavedAttendance}
               onConfirmOverwrite={() =>
                 window.confirm(
                   "This month already has saved attendance. Overwrite decisions and conflicts?"
                 )
               }
             />
+            {biometricSource && (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setMappingOpen(true)}
+                style={{ minHeight: 36, height: 36, padding: "0 12px", fontSize: 12 }}
+              >
+                Map IDs{unmappedCount > 0 ? ` (${unmappedCount})` : ""}
+              </button>
+            )}
             <button
               className="primary-button"
               type="button"
@@ -2485,21 +2550,6 @@ function AttendanceCheckerModal({
             >
               <Check size={14} /> Sync to Payroll
             </button>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => modalFileRef.current?.click()}
-              style={{ minHeight: "36px", height: "36px", padding: "0 12px", fontSize: "13px" }}
-            >
-              <Upload size={15} /> Upload New File
-            </button>
-            <input
-              ref={modalFileRef}
-              className="hidden-input"
-              type="file"
-              accept=".xls,.xlsx"
-              onChange={handleModalUpload}
-            />
             <button
               className="icon-button close-modal"
               type="button"
@@ -2510,6 +2560,26 @@ function AttendanceCheckerModal({
             </button>
           </div>
         </header>
+
+        {mappingOpen && biometricSource && (
+          <AttendanceMappingModal
+            biometric={biometricSource}
+            roster={employees}
+            meta={meta}
+            onClose={() => setMappingOpen(false)}
+            onSave={async (nextMap) => {
+              const nextMeta: AttendanceMetaV1 = {
+                ...meta,
+                map: nextMap,
+                u: new Date().toISOString(),
+              };
+              await persistMeta(nextMeta);
+              runReconcile(manualSource, biometricSource, nextMeta, month);
+              setMappingOpen(false);
+              showToast("Biometric mapping saved.");
+            }}
+          />
+        )}
 
         {/* Tab Selector Bar */}
         <div className="attendance-tabs">
@@ -2573,7 +2643,60 @@ function AttendanceCheckerModal({
                           onClick={() => setSelectedId(emp.id)}
                           className={`clickable-row ${isSelected ? "selected-row" : ""}`}
                         >
-                          <td className="name-cell font-bold" style={{ fontSize: "11.5px" }}>{emp.name}</td>
+                          <td className="name-cell font-bold" style={{ fontSize: "11.5px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ flex: 1 }}>{emp.name}</span>
+                              <button
+                                type="button"
+                                title="Exclude from attendance (does not delete payroll roster)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (
+                                    !window.confirm(
+                                      `Exclude ${emp.name} from attendance checks? Their payroll roster row is kept.`
+                                    )
+                                  ) {
+                                    return;
+                                  }
+                                  const key = normalizeKey(emp.name);
+                                  const nextExcluded = Array.from(
+                                    new Set([...(meta.excluded || []), key])
+                                  );
+                                  const nextMeta: AttendanceMetaV1 = {
+                                    ...meta,
+                                    excluded: nextExcluded,
+                                    u: new Date().toISOString(),
+                                  };
+                                  setExcludedPeople((prev) =>
+                                    prev.some((p) => p.key === key)
+                                      ? prev
+                                      : [...prev, { key, name: emp.name }]
+                                  );
+                                  void persistMeta(nextMeta);
+                                  runReconcile(
+                                    manualSource,
+                                    biometricSource,
+                                    nextMeta,
+                                    month,
+                                    data.filter((e) => e.id !== emp.id)
+                                  );
+                                  showToast(`${emp.name} excluded from attendance.`);
+                                }}
+                                style={{
+                                  fontSize: 9,
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  border: "1px solid #fecaca",
+                                  background: "#fef2f2",
+                                  color: "#b91c1c",
+                                  cursor: "pointer",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Exclude
+                              </button>
+                            </div>
+                          </td>
                           <td className="text-right">{emp.presentDays} Days</td>
                           <td className="text-right">{xd}</td>
                         </tr>
@@ -2587,6 +2710,63 @@ function AttendanceCheckerModal({
                   </tbody>
                 </table>
               </div>
+
+              {excludedPeople.length > 0 && (
+                <div style={{ borderTop: "1px solid #e2e8f0", padding: "8px 12px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setExcludedOpen((o) => !o)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#64748b",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    {excludedOpen ? "▼" : "▶"} Excluded ({excludedPeople.length})
+                  </button>
+                  {excludedOpen && (
+                    <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0 }}>
+                      {excludedPeople.map((p) => (
+                        <li
+                          key={p.key}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 12,
+                            padding: "4px 0",
+                          }}
+                        >
+                          <span>{p.name}</span>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            style={{ minHeight: 28, height: 28, padding: "0 8px", fontSize: 11 }}
+                            onClick={() => {
+                              const nextExcluded = (meta.excluded || []).filter((k) => k !== p.key);
+                              const nextMeta: AttendanceMetaV1 = {
+                                ...meta,
+                                excluded: nextExcluded,
+                                u: new Date().toISOString(),
+                              };
+                              setExcludedPeople((prev) => prev.filter((x) => x.key !== p.key));
+                              void persistMeta(nextMeta);
+                              runReconcile(manualSource, biometricSource, nextMeta, month);
+                              showToast(`${p.name} restored to attendance.`);
+                            }}
+                          >
+                            Restore
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right Column: Selected Employee Audit Detail */}
