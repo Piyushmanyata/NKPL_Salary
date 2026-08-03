@@ -297,18 +297,17 @@ const carryForwardEmployee = (employee: EmployeeInput, monthDays: number): Emplo
 // ever needed behind the "Use Default Sample Employees" button.
 const defaultEmployeesForCompany = async (
   company: CompanyCode,
-  monthLabel?: string,
+  _monthLabel?: string,
 ): Promise<EmployeeInput[]> => {
   if (company !== "NKPL") {
     return [];
   }
-  // NKPL's real June 2026 payroll sheet is the bundled default for that
-  // specific month; every other month falls back to the general sample
-  // roster (originally sourced from May 2026).
-  if (monthLabel && normalizeMonthLabel(monthLabel) === "June 2026") {
-    return (await import("./juneEmployees")).juneEmployees;
-  }
-  return (await import("./sampleEmployees")).sampleEmployees;
+  // Always use the real June 2026 payroll roster as the NKPL seed. The older
+  // sampleEmployees list (May-sourced) omitted people who still appear on
+  // later Manual Sheets / biometric (e.g. UTTAM DAS, PRIYOJIT GHOSH), so
+  // attendance could not join them to payroll. Per-month days/extra/advance
+  // are reset by sanitizeEmployee / carryForwardEmployee.
+  return (await import("./juneEmployees")).juneEmployees;
 };
 
 // Salary/day and bonus/day are shared across every month for a given
@@ -2008,80 +2007,106 @@ function App() {
             setAttendanceMonth(newMonth);
           }}
           onSyncAttendance={(auditedEmps) => {
-            setEmployees((current) => {
-              let matchedCount = 0;
-              let importCount = 0;
+            // An empty grid means "no sheet is loaded", not "nobody worked" --
+            // the checker seeds attendanceData with [] when it is opened before
+            // any upload, and syncing that would zero the whole roster.
+            if (auditedEmps.length === 0) {
+              showToast(
+                "No attendance rows loaded — upload a sheet before syncing.",
+                "error",
+              );
+              return;
+            }
 
-              // 1. Map existing employees and update their attendance.
-              // Keep persisted isSecurity; attendance already used it for Sunday stats.
-              const updatedExisting = current.map((emp) => {
-                const matched = auditedEmps.find((d) => namesMatch(emp.name, d.name));
-                if (matched) {
-                  matchedCount++;
-                  const isSecurity = emp.isSecurity === true || matched.isSecurity;
-                  return {
-                    ...emp,
-                    isSecurity,
-                    daysWorked: matched.presentDays,
-                    // SPEC-attendance §8: doubles pay as Extra Days (including Security).
-                    // Never add doubles to daysWorked (A6).
-                    extraDays: isSpecialCategory(emp.category)
-                      ? 0
-                      : isSecurity
-                        ? matched.doubleShiftDays
-                        : matched.sundaysEligible + matched.doubleShiftDays,
-                  };
-                }
-                // Sync employees without matching attendance in the sheet to 0 days worked & 0 extra days
+            const matchOf = (emp: EmployeeInput) =>
+              auditedEmps.find((d) => namesMatch(emp.name, d.name));
+
+            // A name-match miss and a genuine absence are indistinguishable
+            // here (sheet spellings drift from the roster), so never zero
+            // anyone silently -- name them and let the user decide.
+            const unmatched = employees.filter((emp) => !matchOf(emp));
+            let zeroUnmatched = false;
+            if (unmatched.length > 0) {
+              const shown = unmatched.slice(0, 10).map((emp) => `• ${emp.name}`);
+              if (unmatched.length > 10) {
+                shown.push(`…and ${unmatched.length - 10} more`);
+              }
+              zeroUnmatched = window.confirm(
+                `${unmatched.length} employee(s) on the roster are not on this attendance sheet:\n\n` +
+                  `${shown.join("\n")}\n\n` +
+                  `OK — set them to 0 days worked (they genuinely did not work).\n\n` +
+                  `Cancel — leave their days untouched (their names are just spelled differently on the sheet).`,
+              );
+            }
+
+            let matchedCount = 0;
+            let importCount = 0;
+
+            // 1. Map existing employees and update their attendance.
+            // Keep persisted isSecurity; attendance already used it for Sunday stats.
+            const updatedExisting = employees.map((emp) => {
+              const matched = matchOf(emp);
+              if (matched) {
+                matchedCount++;
+                const isSecurity = emp.isSecurity === true || matched.isSecurity;
                 return {
                   ...emp,
-                  daysWorked: 0,
-                  extraDays: 0,
+                  isSecurity,
+                  daysWorked: matched.presentDays,
+                  // SPEC-attendance §8: doubles pay as Extra Days (including Security).
+                  // Never add doubles to daysWorked (A6).
+                  extraDays: isSpecialCategory(emp.category)
+                    ? 0
+                    : isSecurity
+                      ? matched.doubleShiftDays
+                      : matched.sundaysEligible + matched.doubleShiftDays,
                 };
-              });
-
-              // 2. Identify and import new employees that aren't in the current roster.
-              // Do not overload category with security status (TICKET-02).
-              const newEmployees: EmployeeInput[] = [];
-              auditedEmps.forEach((d) => {
-                const exists = current.some((emp) => namesMatch(emp.name, d.name));
-                if (!exists) {
-                  importCount++;
-                  newEmployees.push({
-                    id: uid(),
-                    name: d.name,
-                    category: "Unskilled",
-                    isSecurity: d.isSecurity,
-                    monthlySalary: 0,
-                    salaryPerDay: 0,
-                    bonusPerDay: 0,
-                    daysWorked: d.presentDays,
-                    extraDays: d.isSecurity
-                      ? d.doubleShiftDays
-                      : d.sundaysEligible + d.doubleShiftDays,
-                    basicPercent: 70,
-                    pfOptIn: true,
-                    esiOptIn: true,
-                    advance: undefined,
-                    otherDeduction: 0,
-                    specialBonus: undefined,
-                  });
-                }
-              });
-
-              const next = [...updatedExisting, ...newEmployees];
-
-              let toastMsg = `Synced attendance: ${matchedCount} employees matched.`;
-              if (importCount > 0) {
-                toastMsg += ` Imported ${importCount} new employees from attendance sheet.`;
               }
-              const zeroedCount = current.length - matchedCount;
-              if (zeroedCount > 0) {
-                toastMsg += ` ${zeroedCount} set to 0 due to no attendance.`;
-              }
-              showToast(toastMsg, "success");
-              return next;
+              // Not on the sheet -- only zeroed when the user confirmed above.
+              return zeroUnmatched ? { ...emp, daysWorked: 0, extraDays: 0 } : emp;
             });
+
+            // 2. Identify and import new employees that aren't in the current roster.
+            // Do not overload category with security status (TICKET-02).
+            const newEmployees: EmployeeInput[] = [];
+            auditedEmps.forEach((d) => {
+              const exists = employees.some((emp) => namesMatch(emp.name, d.name));
+              if (!exists) {
+                importCount++;
+                newEmployees.push({
+                  id: uid(),
+                  name: d.name,
+                  category: "Unskilled",
+                  isSecurity: d.isSecurity,
+                  monthlySalary: 0,
+                  salaryPerDay: 0,
+                  bonusPerDay: 0,
+                  daysWorked: d.presentDays,
+                  extraDays: d.isSecurity
+                    ? d.doubleShiftDays
+                    : d.sundaysEligible + d.doubleShiftDays,
+                  basicPercent: 70,
+                  pfOptIn: true,
+                  esiOptIn: true,
+                  advance: undefined,
+                  otherDeduction: 0,
+                  specialBonus: undefined,
+                });
+              }
+            });
+
+            setEmployees([...updatedExisting, ...newEmployees]);
+
+            let toastMsg = `Synced attendance: ${matchedCount} employees matched.`;
+            if (importCount > 0) {
+              toastMsg += ` Imported ${importCount} new employees from attendance sheet.`;
+            }
+            if (unmatched.length > 0) {
+              toastMsg += zeroUnmatched
+                ? ` ${unmatched.length} set to 0 due to no attendance.`
+                : ` ${unmatched.length} left unchanged (not on the sheet).`;
+            }
+            showToast(toastMsg, "success");
             setIsAttendanceModalOpen(false);
           }}
           showToast={showToast}

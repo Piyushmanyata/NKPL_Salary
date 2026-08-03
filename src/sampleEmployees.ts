@@ -92,6 +92,38 @@ export const sampleEmployees: EmployeeInput[] = [
     "advance": null,
     "otherDeduction": 0,
   },
+  // Standing NKPL people present on June+ payroll and July attendance, but
+  // historically missing from this May-sourced sample (broke name→roster join).
+  {
+    "id": "emp-j1",
+    "name": "UTTAM DAS",
+    "category": "Skilled",
+    "monthlySalary": 15000,
+    "salaryPerDay": 500,
+    "bonusPerDay": 400,
+    "daysWorked": 30,
+    "extraDays": 0,
+    "basicPercent": 70,
+    "pfOptIn": true,
+    "esiOptIn": false,
+    "advance": null,
+    "otherDeduction": 0
+  },
+  {
+    "id": "emp-j2",
+    "name": "PRIYOJIT GHOSH",
+    "category": "Skilled",
+    "monthlySalary": 16710,
+    "salaryPerDay": 557,
+    "bonusPerDay": 193,
+    "daysWorked": 30,
+    "extraDays": 0,
+    "basicPercent": 70,
+    "pfOptIn": false,
+    "esiOptIn": false,
+    "advance": null,
+    "otherDeduction": 0
+  },
   {
     "id": "emp-8",
     "name": "SAUMYA ROY",

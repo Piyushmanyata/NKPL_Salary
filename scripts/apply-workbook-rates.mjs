@@ -297,15 +297,29 @@ async function main() {
         }
       }
 
-      // The rate card is what the app overlays onto every month, so it must
-      // carry M and T for every employee on this roster — not just the ones the
-      // workbook moved, and not only where an entry already existed.
+      // The rate card seeds every NEW month (applyEmployeeRates in
+      // carryMonthInto), so it must carry M and T for every employee on this
+      // roster — not just the ones the workbook moved, and not only where an
+      // entry already existed.
+      //
+      // Where the workbook DID supply a row, its figures are the new standing
+      // rate and must reach the rate card verbatim. Preferring the existing
+      // entry here would move r/b in the month record while the rate card kept
+      // the old number, and next month would carry the stale rate forward —
+      // exactly the drift this script exists to prevent. Employees the workbook
+      // does not mention keep whatever the rate card already holds, so a
+      // month-specific edit is not promoted into the standing rate.
+      const fromWorkbook = Boolean(w || g);
       rates[e.id] = {
         ...(rates[e.id] ?? {}),
         id: e.id,
         name: e.name,
-        salaryPerDay: num(rates[e.id]?.salaryPerDay ?? e.salaryPerDay),
-        bonusPerDay: num(rates[e.id]?.bonusPerDay ?? e.bonusPerDay),
+        salaryPerDay: fromWorkbook
+          ? num(e.salaryPerDay)
+          : num(rates[e.id]?.salaryPerDay ?? e.salaryPerDay),
+        bonusPerDay: fromWorkbook
+          ? num(e.bonusPerDay)
+          : num(rates[e.id]?.bonusPerDay ?? e.bonusPerDay),
         monthlySalary: num(e.monthlySalary),
         totalSalary: num(e.totalSalary) > num(e.monthlySalary) ? num(e.totalSalary) : 0,
       };

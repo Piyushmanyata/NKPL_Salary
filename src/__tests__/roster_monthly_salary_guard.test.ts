@@ -45,4 +45,22 @@ describe("TICKET-05: bundled roster monthlySalary is base only", () => {
     // totalSalary = M + D×b = 12000 + 30×165 = 16950
     expect(sisir!.monthlySalary + 30 * (sisir!.bonusPerDay ?? 0)).toBe(16950);
   });
+
+  // UTTAM DAS / PRIYOJIT GHOSH appear on July Manual + biometric; seeds must
+  // include them or attendance cannot join to the payroll roster by name.
+  it("standing seeds include UTTAM DAS and PRIYOJIT GHOSH (July attendance join)", () => {
+    for (const [label, roster] of [
+      ["juneEmployees", juneEmployees],
+      ["sampleEmployees", sampleEmployees],
+    ] as const) {
+      expect(
+        roster.some((e) => e.name === "UTTAM DAS"),
+        `${label} missing UTTAM DAS`,
+      ).toBe(true);
+      expect(
+        roster.some((e) => e.name === "PRIYOJIT GHOSH"),
+        `${label} missing PRIYOJIT GHOSH`,
+      ).toBe(true);
+    }
+  });
 });
