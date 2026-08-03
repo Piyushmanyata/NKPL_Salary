@@ -178,6 +178,11 @@ export function calculateEmployeeAttendanceStats(
 
   const avgHours = rawPresentDays > 0 ? totalHours / rawPresentDays : 0;
 
+  // doubleShiftDays / extraDaysTotal: full rules land in Phase 3 (resolveDay).
+  // Until then count isDoubleShift flags on daysDetail and use Sunday-only Xd.
+  const doubleShiftDays = daysDetail.filter((d) => d.isDoubleShift).length;
+  const extraDaysTotal = isSecurity ? doubleShiftDays : sundayBonusDays + doubleShiftDays;
+
   return {
     presentDays: finalPresentDays,
     avgHours,
@@ -185,6 +190,8 @@ export function calculateEmployeeAttendanceStats(
     sundaysEligible: sundayBonusDays,
     meetsMonthThreshold,
     sundayDetails,
+    doubleShiftDays,
+    extraDaysTotal,
   };
 }
 
