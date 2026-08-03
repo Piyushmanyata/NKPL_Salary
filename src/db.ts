@@ -1,4 +1,4 @@
-import { EmployeeInput } from "./types";
+import type { AttendanceMetaV1, AttendanceRecordV1, EmployeeInput } from "./types";
 
 export interface MonthRecord {
   id: string;
@@ -33,7 +33,7 @@ export async function saveMonthData(
   monthLabel: string,
   days: number,
   employees: EmployeeInput[],
-): Promise<void> {
+): Promise<{ ok: boolean; error?: string }> {
   const record: MonthRecord = {
     id: recordId(company, monthLabel),
     company,
@@ -57,10 +57,14 @@ export async function saveMonthData(
     });
 
     if (!response.ok) {
-      console.error("Cloud database sync failed:", await response.text());
+      const error = await response.text();
+      console.error("Cloud database sync failed:", error);
+      return { ok: false, error };
     }
-  } catch (error) {
+    return { ok: true };
+  } catch (error: any) {
     console.error("Error syncing to cloud database:", error);
+    return { ok: false, error: error?.message || String(error) };
   }
 }
 
@@ -185,7 +189,10 @@ export async function getEmployeeRates(company: string): Promise<EmployeeRateMap
   return {};
 }
 
-export async function saveEmployeeRates(company: string, rates: EmployeeRateMap): Promise<void> {
+export async function saveEmployeeRates(
+  company: string,
+  rates: EmployeeRateMap
+): Promise<{ ok: boolean; error?: string }> {
   try {
     localStorage.setItem(employeeRatesCacheKey(company), JSON.stringify(rates));
   } catch {
@@ -199,10 +206,127 @@ export async function saveEmployeeRates(company: string, rates: EmployeeRateMap)
       body: JSON.stringify({ company, rates }),
     });
     if (!response.ok) {
-      console.error("Failed to save employee rates:", await response.text());
+      const error = await response.text();
+      console.error("Failed to save employee rates:", error);
+      return { ok: false, error };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    console.error("Error saving employee rates:", error);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+// ── Attendance month records (separate from monthly_salary) ──────────────
+
+const attendanceCacheKey = (company: string, month: string) =>
+  `${STORE_KEY_PREFIX}attendance::${company}::${month}`;
+
+const attendanceMetaCacheKey = (company: string) =>
+  `${STORE_KEY_PREFIX}attendance_meta::${company}`;
+
+export async function getAttendance(
+  company: string,
+  monthLabel: string
+): Promise<AttendanceRecordV1 | null> {
+  try {
+    const response = await fetch(
+      `/api/attendance?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`
+    );
+    if (response.status === 404) return null;
+    if (response.ok) {
+      const data = await response.json();
+      try {
+        localStorage.setItem(attendanceCacheKey(company, monthLabel), JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
+      return data as AttendanceRecordV1;
     }
   } catch (error) {
-    console.error("Error saving employee rates:", error);
+    console.error("Error fetching attendance:", error);
+  }
+  try {
+    const cached = localStorage.getItem(attendanceCacheKey(company, monthLabel));
+    if (cached) return JSON.parse(cached) as AttendanceRecordV1;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export async function saveAttendance(
+  company: string,
+  record: AttendanceRecordV1
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    localStorage.setItem(attendanceCacheKey(company, record.m), JSON.stringify(record));
+  } catch {
+    /* ignore */
+  }
+  try {
+    const response = await fetch("/api/attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...record, company, monthLabel: record.m }),
+    });
+    if (!response.ok) {
+      return { ok: false, error: await response.text() };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+export async function getAttendanceMeta(company: string): Promise<AttendanceMetaV1 | null> {
+  try {
+    const response = await fetch(
+      `/api/attendance-meta?company=${encodeURIComponent(company)}&t=${Date.now()}`
+    );
+    if (response.status === 404) return null;
+    if (response.ok) {
+      const data = await response.json();
+      try {
+        localStorage.setItem(attendanceMetaCacheKey(company), JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
+      return data as AttendanceMetaV1;
+    }
+  } catch (error) {
+    console.error("Error fetching attendance meta:", error);
+  }
+  try {
+    const cached = localStorage.getItem(attendanceMetaCacheKey(company));
+    if (cached) return JSON.parse(cached) as AttendanceMetaV1;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export async function saveAttendanceMeta(
+  company: string,
+  meta: AttendanceMetaV1
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    localStorage.setItem(attendanceMetaCacheKey(company), JSON.stringify(meta));
+  } catch {
+    /* ignore */
+  }
+  try {
+    const response = await fetch("/api/attendance-meta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...meta, company }),
+    });
+    if (!response.ok) {
+      return { ok: false, error: await response.text() };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || String(error) };
   }
 }
 
