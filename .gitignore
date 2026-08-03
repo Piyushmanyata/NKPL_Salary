@@ -24,3 +24,5 @@ graphify-out/
 src/graphify-out/
 .playwright-cli/
 .scratch-*
+
+.tmp-att/
