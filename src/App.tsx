@@ -32,6 +32,7 @@ import {
   saveEmployeeRates,
   EmployeeRateMap
 } from "./db";
+import { AttendanceUpload } from "./AttendanceUpload";
 import {
   ESI_EMPLOYER_RATE,
   ESI_GROSS_LIMIT,
@@ -384,6 +385,9 @@ function App() {
   // landed in monthly_salary/APTUS/July 2026 and employee_rates/APTUS.
   const loadedForRef = useRef("");
   const scopeOf = (company: string, month: string) => `${company}::${normalizeMonthLabel(month)}`;
+  const lastMonthPayloadRef = useRef<string>("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveRetryToken, setSaveRetryToken] = useState(0);
 
   // Shared salary/day + bonus/day rates for the active company, kept in sync
   // with the cloud store (see api/rates.ts) independently of month records.
@@ -925,7 +929,7 @@ function App() {
     };
   }, [monthLabel, activeCompany]);
 
-  // Auto-save changes to the database (with 500ms debounce to optimize writes)
+  // Auto-save changes to the database (2000ms debounce; skip identical payloads).
   useEffect(() => {
     if (dbLoading || showNoDataModal) return;
     // Skip the save that would otherwise immediately follow a fresh load --
@@ -939,19 +943,36 @@ function App() {
     // Never write a roster into a scope it was not loaded for (company switch).
     if (loadedForRef.current !== scopeOf(activeCompany, normalized)) return;
 
+    const payload = JSON.stringify({
+      company: activeCompany,
+      monthLabel: normalized,
+      days: effectiveMonthDays,
+      employees,
+    });
+    if (payload === lastMonthPayloadRef.current) return;
+
     const delayDebounce = setTimeout(async () => {
       try {
-        await saveMonthData(activeCompany, normalized, effectiveMonthDays, employees);
-        // No month-list refetch here: every save targets a month that is already
-        // in `allMonths` (it is put there when the month is created/carried), and
-        // re-listing meant a full Redis SCAN after every debounced keystroke.
-      } catch (err) {
+        const result = await saveMonthData(
+          activeCompany,
+          normalized,
+          effectiveMonthDays,
+          employees
+        );
+        if (result.ok) {
+          lastMonthPayloadRef.current = payload;
+          setSaveError(null);
+        } else {
+          setSaveError(result.error || "Failed to save month data to the database.");
+        }
+      } catch (err: any) {
         console.error("Failed to save month data:", err);
+        setSaveError(err?.message || "Failed to save month data to the database.");
       }
-    }, 500);
+    }, 2000);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal]);
+  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal, saveRetryToken]);
 
   // Auto-save salary/day + bonus/day rates to the shared cloud store whenever
   // they change, so every month and every visitor picks up the new rate.
@@ -968,16 +989,22 @@ function App() {
 
     const delayDebounce = setTimeout(async () => {
       try {
-        ratesSignatureRef.current = signature;
-        setEmployeeRates(nextRates);
-        await saveEmployeeRates(activeCompany, nextRates);
-      } catch (err) {
+        const result = await saveEmployeeRates(activeCompany, nextRates);
+        if (result.ok) {
+          ratesSignatureRef.current = signature;
+          setEmployeeRates(nextRates);
+          setSaveError(null);
+        } else {
+          setSaveError(result.error || "Failed to save employee rates.");
+        }
+      } catch (err: any) {
         console.error("Failed to save employee rates:", err);
+        setSaveError(err?.message || "Failed to save employee rates.");
       }
-    }, 500);
+    }, 2000);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal]);
+  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal, saveRetryToken]);
 
   // A month that was just written exists; record it locally rather than paying
   // for another Redis SCAN to be told what we already know.
@@ -1230,6 +1257,43 @@ function App() {
 
   return (
     <>
+      {saveError && (
+        <div
+          role="alert"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 1000,
+            background: "#fef2f2",
+            borderBottom: "1px solid #fecaca",
+            color: "#991b1b",
+            padding: "10px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <span>
+            <AlertTriangle size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
+            Database save failed: {saveError}
+          </span>
+          <button
+            type="button"
+            className="primary-button"
+            style={{ minHeight: 32, height: 32, padding: "0 12px", fontSize: 12 }}
+            onClick={() => {
+              lastMonthPayloadRef.current = "";
+              ratesSignatureRef.current = "";
+              setSaveRetryToken((n) => n + 1);
+            }}
+          >
+            Retry save
+          </button>
+        </div>
+      )}
       <main className="app-shell">
         <section className="topbar">
           <div>
@@ -1977,8 +2041,13 @@ function App() {
                     ...emp,
                     isSecurity,
                     daysWorked: matched.presentDays,
-                    // Security / Special: engine also zeros this; keep stored value consistent.
-                    extraDays: isSecurity || isSpecialCategory(emp.category) ? 0 : matched.sundaysEligible,
+                    // SPEC-attendance §8: doubles pay as Extra Days (including Security).
+                    // Never add doubles to daysWorked (A6).
+                    extraDays: isSpecialCategory(emp.category)
+                      ? 0
+                      : isSecurity
+                        ? matched.doubleShiftDays
+                        : matched.sundaysEligible + matched.doubleShiftDays,
                   };
                 }
                 // Sync employees without matching attendance in the sheet to 0 days worked & 0 extra days
@@ -2005,7 +2074,9 @@ function App() {
                     salaryPerDay: 0,
                     bonusPerDay: 0,
                     daysWorked: d.presentDays,
-                    extraDays: d.isSecurity ? 0 : d.sundaysEligible,
+                    extraDays: d.isSecurity
+                      ? d.doubleShiftDays
+                      : d.sundaysEligible + d.doubleShiftDays,
                     basicPercent: 70,
                     pfOptIn: true,
                     esiOptIn: true,
@@ -2232,7 +2303,7 @@ function AttendanceCheckerModal({
     setSelectedId(data[0]?.id || null);
   }, [data, selectedId]);
   const [activeChartTab, setActiveChartTab] = useState<"days" | "hours">("days");
-  const [sortField, setSortField] = useState<"name" | "presentDays" | "avgHours" | "sundaysWorked" | "sundaysEligible" | "warnings">("name");
+  const [sortField, setSortField] = useState<"name" | "presentDays" | "extraDays">("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [modalTab, setModalTab] = useState<"audit" | "analytics">("audit");
   const [chartSort, setChartSort] = useState<"name" | "value-desc" | "value-asc">("value-desc");
@@ -2249,7 +2320,7 @@ function AttendanceCheckerModal({
   const handleToggleOverride = (
     employeeId: string,
     dateString: string,
-    type: "override" | "leaveType",
+    type: "override" | "leaveType" | "doubleShift",
     value: any
   ) => {
     const updatedData = data.map((emp) => {
@@ -2259,16 +2330,34 @@ function AttendanceCheckerModal({
         if (day.dateString !== dateString) return day;
 
         const newDay = { ...day };
+        let decisions = newDay.decisions || "";
         if (type === "override") {
           newDay.manualOverride = value; // "present" or undefined
           if (value === "present") {
             newDay.isPresent = true;
+            if (!decisions.includes("P")) decisions += "P";
           } else {
-            newDay.isPresent = newDay.punchTimes.length > 0 && !newDay.isShortStay;
+            decisions = decisions.replace(/P/g, "");
+            // Presence falls back to punches when override cleared (R4-ish for bio-only)
+            newDay.isPresent = newDay.punchTimes.length > 0;
           }
         } else if (type === "leaveType") {
           newDay.leaveType = value; // "approved" or "unapproved"
+          decisions = decisions.replace(/[au]/g, "");
+          if (value === "approved") decisions += "a";
+          else if (value === "unapproved") decisions += "u";
+        } else if (type === "doubleShift") {
+          decisions = decisions.replace(/[Dd]/g, "");
+          if (value === true) {
+            decisions += "D";
+            newDay.isDoubleShift = true;
+            newDay.isPresent = true;
+          } else {
+            decisions += "d";
+            newDay.isDoubleShift = false;
+          }
         }
+        newDay.decisions = decisions || undefined;
         return newDay;
       });
 
@@ -2299,9 +2388,9 @@ function AttendanceCheckerModal({
       let valA: any;
       let valB: any;
 
-      if (sortField === "warnings") {
-        valA = a.isSecurity ? 99 : a.sundayDetails.filter((d) => !d.isEligible).length;
-        valB = b.isSecurity ? 99 : b.sundayDetails.filter((d) => !d.isEligible).length;
+      if (sortField === "extraDays") {
+        valA = a.extraDaysTotal ?? a.sundaysEligible + (a.doubleShiftDays || 0);
+        valB = b.extraDaysTotal ?? b.sundaysEligible + (b.doubleShiftDays || 0);
       } else {
         valA = a[sortField];
         valB = b[sortField];
@@ -2371,7 +2460,23 @@ function AttendanceCheckerModal({
               Audit raw punch card logs, verify stay times, and inspect Sunday bonus eligibility for {month || "May 2026"}.
             </p>
           </div>
-          <div className="attendance-header-actions" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div className="attendance-header-actions" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <AttendanceUpload
+              monthLabel={month}
+              employees={employees}
+              loadXLSX={loadXLSX}
+              onParsed={({ employees: emps, monthLabel }) => {
+                onUploadNewFile(emps, monthLabel);
+                showToast("Attendance file loaded.");
+              }}
+              onError={(msg) => showToast(msg, "error")}
+              hasSavedAttendance={false}
+              onConfirmOverwrite={() =>
+                window.confirm(
+                  "This month already has saved attendance. Overwrite decisions and conflicts?"
+                )
+              }
+            />
             <button
               className="primary-button"
               type="button"
@@ -2453,18 +2558,15 @@ function AttendanceCheckerModal({
                       <th onClick={() => handleSort("presentDays")} className="sortable-th text-right">
                         Days {sortField === "presentDays" && (sortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
-                      <th onClick={() => handleSort("avgHours")} className="sortable-th text-right">
-                        Stay {sortField === "avgHours" && (sortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleSort("warnings")} className="sortable-th text-center">
-                        Status {sortField === "warnings" && (sortDirection === "asc" ? " ↑" : " ↓")}
+                      <th onClick={() => handleSort("extraDays")} className="sortable-th text-right">
+                        Extra Days {sortField === "extraDays" && (sortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedAndFilteredData.map((emp) => {
-                      const totalFlags = emp.sundayDetails.filter((d) => !d.isEligible).length;
                       const isSelected = emp.id === selectedId;
+                      const xd = emp.extraDaysTotal ?? emp.sundaysEligible + (emp.doubleShiftDays || 0);
                       return (
                         <tr
                           key={emp.id}
@@ -2473,24 +2575,13 @@ function AttendanceCheckerModal({
                         >
                           <td className="name-cell font-bold" style={{ fontSize: "11.5px" }}>{emp.name}</td>
                           <td className="text-right">{emp.presentDays} Days</td>
-                          <td className="text-right">{emp.avgHours.toFixed(1)} Hrs</td>
-                          <td>
-                            {emp.isSecurity ? (
-                              <span className="badge badge-rose" style={{ fontSize: "9px" }}>Security</span>
-                            ) : totalFlags > 0 ? (
-                              <span className="badge badge-amber" style={{ fontSize: "9px" }}>{totalFlags} Warning</span>
-                            ) : emp.sundaysWorked > 0 ? (
-                              <span className="badge badge-green" style={{ fontSize: "9px" }}>Eligible</span>
-                            ) : (
-                              <span className="badge badge-neutral" style={{ fontSize: "9px" }}>None</span>
-                            )}
-                          </td>
+                          <td className="text-right">{xd}</td>
                         </tr>
                       );
                     })}
                     {sortedAndFilteredData.length === 0 && (
                       <tr className="empty-row">
-                        <td colSpan={4}>No matching audited employees.</td>
+                        <td colSpan={3}>No matching audited employees.</td>
                       </tr>
                     )}
                   </tbody>
@@ -2707,6 +2798,39 @@ function AttendanceCheckerModal({
                                         Revert
                                       </button>
                                     )}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleToggleOverride(
+                                          selectedEmployee.id,
+                                          day.dateString,
+                                          "doubleShift",
+                                          !day.isDoubleShift
+                                        )
+                                      }
+                                      style={{
+                                        fontSize: "10px",
+                                        padding: "3px 8px",
+                                        borderRadius: "4px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                        border: "1px solid #c4b5fd",
+                                        background: day.isDoubleShift ? "#7c3aed" : "#f5f3ff",
+                                        color: day.isDoubleShift ? "#fff" : "#5b21b6",
+                                      }}
+                                    >
+                                      Double Shift
+                                    </button>
+                                    {day.ambiguousSpan && (
+                                      <span className="badge badge-amber" style={{ fontSize: "10px" }}>
+                                        Ambiguous span
+                                      </span>
+                                    )}
+                                    {day.isShortStay && (
+                                      <span className="badge badge-amber" style={{ fontSize: "10px" }}>
+                                        Short stay (highlight only)
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               ) : day.isShortStay ? (
@@ -2716,16 +2840,16 @@ function AttendanceCheckerModal({
                                       <Clock size={12} style={{ color: "#c53030" }} />
                                       <span>Punches: {day.punchTimes.join("  |  ")}</span>
                                     </div>
-                                    <span className="badge badge-rose" style={{ fontSize: "10.5px", textTransform: "none", padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    <span className="badge badge-amber" style={{ fontSize: "10.5px", textTransform: "none", padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                                       <AlertTriangle size={11} />
-                                      Short Stay ({day.duration.toFixed(1)} Hrs &lt; 5 Hrs) - Marked Absent
+                                      Short Stay ({day.duration.toFixed(1)} Hrs) — evidence only
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "override", "present")}
                                       style={{ background: "#dcfce7", border: "1px solid #bbf7d0", color: "#15803d", fontSize: "11px", fontWeight: 700, cursor: "pointer", padding: "4px 8px", borderRadius: "4px" }}
                                     >
-                                      Approve as Present
+                                      Mark Present
                                     </button>
                                   </div>
                                   
