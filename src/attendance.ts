@@ -5,19 +5,38 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const normalizeKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const normalizeKey = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 // Fuzzy name equality used to line roster names up with attendance-sheet
 // names: punctuation/spacing/case-insensitive, and tolerant of one side
 // carrying extra words (e.g. "Ajay Malik" vs "AJAY MALIK (SECURITY)").
+// Kept for suggestions only — joins use findUniqueMatch (A12).
 export function namesMatch(a: string, b: string): boolean {
   const keyA = normalizeKey(a);
   const keyB = normalizeKey(b);
   return keyA.includes(keyB) || keyB.includes(keyA);
 }
 
-function findMatchedEmployee(employees: EmployeeInput[], rawName: string) {
-  return employees.find((emp) => namesMatch(emp.name, rawName));
+/** Match only when exactly one roster candidate matches (A12). */
+export function findUniqueMatch(
+  employees: EmployeeInput[],
+  rawName: string
+): EmployeeInput | null {
+  const matches = employees.filter((emp) => namesMatch(emp.name, rawName));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/** True for "security" and common sheet misspellings (SEQURITY, SECQURITY). */
+function looksLikeSecurityLabel(s: string): boolean {
+  const k = s.toLowerCase().replace(/[^a-z]/g, "");
+  return (
+    k.includes("security") ||
+    k.includes("sequrity") ||
+    k.includes("secqurity") ||
+    k.includes("secuirity") ||
+    k.includes("guard")
+  );
 }
 
 function detectSecurity(rawName: string, department: string, matchedEmp?: EmployeeInput): boolean {
@@ -27,17 +46,84 @@ function detectSecurity(rawName: string, department: string, matchedEmp?: Employ
     return matchedEmp.isSecurity === true;
   }
   return (
-    rawName.toLowerCase().includes("security") ||
-    department.toLowerCase().includes("security") ||
-    (matchedEmp?.name.toLowerCase().includes("security") ?? false)
+    looksLikeSecurityLabel(rawName) ||
+    looksLikeSecurityLabel(department) ||
+    (matchedEmp ? looksLikeSecurityLabel(matchedEmp.name) : false)
   );
 }
 
-// Derive shift and true stay duration from a day's punch times. Night-shift
-// punch pairs straddle midnight (e.g. in 20:00, out 04:00 logged in the same
-// day cell), so the raw min-max span measures the off-duty gap and must be
-// wrapped around midnight. Stays under 5 hours are treated as absences.
-function analyzePunches(times: string[]) {
+export type AttendanceFormat =
+  | "standard"
+  | "aptus-daily"
+  | "double-shift"
+  | "repeating-logs";
+
+export function detectFormat(rows: any[][]): AttendanceFormat {
+  let format: AttendanceFormat = "standard";
+
+  if (rows.length > 4) {
+    const r0 = rows[0] || [];
+    const r4 = rows[4] || [];
+    if (String(r0[0] || "").trim() === "List of Logs" && String(r4[0] || "").trim() === "No :") {
+      return "repeating-logs";
+    }
+  }
+
+  if (rows.length > 2) {
+    const r2 = rows[2] || [];
+    const r0 = rows[0] || [];
+    const isFormatC = r2[3] === "A" && r2[4] === "B" && Number(r0[3]) === 1;
+    const isFormatB =
+      String(r2[0] || "").trim() === "S. NO." &&
+      String(r2[1] || "").trim() === "NAME OF EMPLOYEE" &&
+      Number(r2[4]) === 1;
+    if (isFormatC) return "double-shift";
+    if (isFormatB) return "aptus-daily";
+  }
+
+  return format;
+}
+
+export function formatKind(format: AttendanceFormat): "biometric" | "manual" {
+  if (format === "standard" || format === "repeating-logs") return "biometric";
+  return "manual";
+}
+
+/**
+ * Day resolution R1–R4 (SPEC-attendance §3). First rule that applies wins.
+ * doubleShift requires presence (A3).
+ */
+export function resolveDay(args: {
+  sheetMark: string;
+  punches: string[];
+  decisions?: string;
+  hasManualSheet: boolean;
+}): { present: boolean; doubleShift: boolean } {
+  const dec = args.decisions ?? "";
+  const mark = args.sheetMark;
+
+  let present = false;
+  if (dec.includes("P")) {
+    present = true; // R1
+  } else if (mark === "1" || mark === "2" || mark === "P") {
+    present = true; // R2
+  } else if (mark === "0" || mark === "A" || (mark === "-" && args.hasManualSheet)) {
+    present = false; // R3 — "-" is absent when a manual sheet is loaded
+  } else if (!args.hasManualSheet) {
+    present = args.punches.length > 0; // R4 biometric-only fallback
+  } else {
+    present = false;
+  }
+
+  // SPEC §3: doubleShift = (sheet === "2" || dec has "D") && !(dec has "d"); requires present (A3).
+  let doubleShift = (mark === "2" || dec.includes("D")) && !dec.includes("d");
+  if (!present) doubleShift = false;
+  return { present, doubleShift };
+}
+
+// Derive shift and duration from punch times. Presence is NOT derived here
+// (SPEC-attendance §4 / ADR-0005) — use resolveDay.
+export function analyzePunches(times: string[]) {
   const punchedIn = times.length > 0;
 
   let shift: "Day" | "Night" = "Day";
@@ -49,21 +135,23 @@ function analyzePunches(times: string[]) {
   }
 
   let duration = 0;
+  let ambiguousSpan = false;
   if (times.length >= 2) {
     const minutes = times.map((t) => {
       const [h, m] = t.split(":").map(Number);
       return h * 60 + m;
     });
-    duration = (Math.max(...minutes) - Math.min(...minutes)) / 60;
-    if (shift === "Night" && duration > 12) {
-      duration = 24 - duration;
+    const raw = (Math.max(...minutes) - Math.min(...minutes)) / 60;
+    if (shift === "Night" && raw > 12) {
+      duration = 24 - raw;
+      ambiguousSpan = duration < 5;
+    } else {
+      duration = raw;
     }
   }
-
   const isShortStay = punchedIn && duration < 5;
-  const isPresent = punchedIn && !isShortStay;
-
-  return { shift, duration, isShortStay, isPresent };
+  // Presence no longer depends on duration — SPEC-attendance §4 / ADR-0005.
+  return { shift, duration, isShortStay, ambiguousSpan, punchedIn };
 }
 
 function getMonthIndex(name: string) {
@@ -75,6 +163,19 @@ function getMonthIndex(name: string) {
     }
   }
   return 0;
+}
+
+/** Map a Manual Sheet cell to a single-character verdict. */
+function sheetMarkFromCell(val: unknown): string {
+  if (val === null || val === undefined || String(val).trim() === "") return "-";
+  const s = String(val).trim();
+  if (s === "2" || Number(val) === 2) return "2";
+  if (s === "0" || Number(val) === 0) return "0";
+  if (s.toUpperCase() === "A") return "A";
+  if (s.toUpperCase() === "P") return "P";
+  if (s === "1" || Number(val) === 1) return "1";
+  // Non-empty non-A/0 → present (legacy NKPL marks)
+  return "1";
 }
 
 export function calculateEmployeeAttendanceStats(
@@ -89,10 +190,15 @@ export function calculateEmployeeAttendanceStats(
 
   let rawPresentDays = 0;
   let totalHours = 0;
+  let hoursSampleDays = 0;
   daysDetail.forEach((day) => {
     if (isDayPresent(day)) {
       rawPresentDays++;
-      totalHours += day.duration;
+      // Exclude ambiguousSpan from avgHours (SPEC §4.1)
+      if (!day.ambiguousSpan) {
+        totalHours += day.duration;
+        hoursSampleDays++;
+      }
     }
   });
 
@@ -176,11 +282,11 @@ export function calculateEmployeeAttendanceStats(
     sundayBonusDays = 0;
   }
 
-  const avgHours = rawPresentDays > 0 ? totalHours / rawPresentDays : 0;
+  const avgHours = hoursSampleDays > 0 ? totalHours / hoursSampleDays : 0;
 
-  // doubleShiftDays / extraDaysTotal: full rules land in Phase 3 (resolveDay).
-  // Until then count isDoubleShift flags on daysDetail and use Sunday-only Xd.
-  const doubleShiftDays = daysDetail.filter((d) => d.isDoubleShift).length;
+  // SPEC §8: Special handled by caller (category). Security → doubles only.
+  // Non-security → sundaysEligible + doubleShiftDays. Never add doubles to Dw (A6).
+  const doubleShiftDays = daysDetail.filter((d) => d.isDoubleShift && isDayPresent(d)).length;
   const extraDaysTotal = isSecurity ? doubleShiftDays : sundayBonusDays + doubleShiftDays;
 
   return {
@@ -193,6 +299,16 @@ export function calculateEmployeeAttendanceStats(
     doubleShiftDays,
     extraDaysTotal,
   };
+}
+
+/** Category-aware Extra Days (SPEC §8). Special always 0. */
+export function extraDaysForEmployee(
+  stats: { doubleShiftDays: number; sundaysEligible: number },
+  opts: { isSecurity: boolean; isSpecial: boolean }
+): number {
+  if (opts.isSpecial) return 0;
+  if (opts.isSecurity) return stats.doubleShiftDays;
+  return stats.sundaysEligible + stats.doubleShiftDays;
 }
 
 // Month labels come back from storage in arbitrary (alphabetical) order;
@@ -260,10 +376,20 @@ export function calendarDaysForMonth(label: string): number {
   return new Date(p.year, p.monthIndex + 1, 0).getDate();
 }
 
-export function getBestWorksheet(workbook: any, targetMonthLabel: string) {
-  const sheetNames = workbook.SheetNames;
-  if (sheetNames.length <= 1) {
-    return workbook.Sheets[sheetNames[0]];
+/**
+ * Pick worksheet by month label, then Logs/Attendance by name.
+ * Never falls back to SheetNames[0] (SPEC §10.1).
+ */
+export function getBestWorksheet(
+  workbook: any,
+  targetMonthLabel: string
+): { sheet: any; sheetName: string } {
+  const sheetNames: string[] = workbook.SheetNames;
+  if (sheetNames.length === 0) {
+    throw new Error("Workbook has no sheets.");
+  }
+  if (sheetNames.length === 1) {
+    return { sheet: workbook.Sheets[sheetNames[0]], sheetName: sheetNames[0] };
   }
 
   const targetParsed = parseMonthYearString(targetMonthLabel);
@@ -275,50 +401,28 @@ export function getBestWorksheet(workbook: any, targetMonthLabel: string) {
         sheetParsed.monthIndex === targetParsed.monthIndex &&
         sheetParsed.year === targetParsed.year
       ) {
-        return workbook.Sheets[name];
+        return { sheet: workbook.Sheets[name], sheetName: name };
       }
     }
   }
 
-  // If no sheet matches the month label, check if there's a sheet named "Logs" or "Attendance"
   const logsSheet = sheetNames.find(
-    (name: string) => name.toLowerCase() === "logs" || name.toLowerCase() === "attendance"
+    (name: string) =>
+      name.toLowerCase() === "logs" ||
+      name.toLowerCase() === "attendance" ||
+      name.toLowerCase() === "attendancerecord"
   );
   if (logsSheet) {
-    return workbook.Sheets[logsSheet];
+    return { sheet: workbook.Sheets[logsSheet], sheetName: logsSheet };
   }
 
-  return workbook.Sheets[sheetNames[0]];
+  throw new Error(
+    `No matching worksheet for "${targetMonthLabel}". Available: ${sheetNames.join(", ")}`
+  );
 }
 
 export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) {
-  // 1. Detect format
-  let format: "standard" | "aptus-daily" | "double-shift" | "repeating-logs" = "standard";
-
-  if (rows.length > 4) {
-    const r0 = rows[0] || [];
-    const r4 = rows[4] || [];
-    if (String(r0[0] || "").trim() === "List of Logs" && String(r4[0] || "").trim() === "No :") {
-      format = "repeating-logs";
-    }
-  }
-
-  if (format === "standard" && rows.length > 2) {
-    const r2 = rows[2] || [];
-    const r0 = rows[0] || [];
-
-    const isFormatC = r2[3] === "A" && r2[4] === "B" && Number(r0[3]) === 1;
-    const isFormatB =
-      String(r2[0] || "").trim() === "S. NO." &&
-      String(r2[1] || "").trim() === "NAME OF EMPLOYEE" &&
-      Number(r2[4]) === 1;
-
-    if (isFormatC) {
-      format = "double-shift";
-    } else if (isFormatB) {
-      format = "aptus-daily";
-    }
-  }
+  const format = detectFormat(rows);
 
   if (format === "repeating-logs") {
     // Row 2: ["Period : ", null, "2026/06/01 ~ 06/31\t( APTUS )"]
@@ -348,7 +452,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
       const department = String(rEmployeeInfo[20] || "Company").trim();
       if (!rawName) continue;
 
-      const matchedEmp = findMatchedEmployee(employees, rawName);
+      const matchedEmp = findUniqueMatch(employees, rawName) ?? undefined;
 
       const id = matchedEmp ? matchedEmp.id : String(rEmployeeInfo[2] || `att-emp-${r}`);
 
@@ -363,7 +467,12 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
 
         const punchStr = String(rPunches[c] || "");
         const times = punchStr.match(/\d{2}:\d{2}/g) || [];
-        const { shift, duration, isShortStay, isPresent } = analyzePunches(times);
+        const { shift, duration, isShortStay, ambiguousSpan } = analyzePunches(times);
+        const { present, doubleShift } = resolveDay({
+          sheetMark: "-",
+          punches: times,
+          hasManualSheet: false,
+        });
 
         const dateString = `${yearNum}/${String(monthIdx + 1).padStart(2, '0')}/${String(dayNum).padStart(2, '0')}`;
         const dateObj = new Date(yearNum, monthIdx, dayNum);
@@ -371,10 +480,12 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
         daysDetail.push({
           dateString,
           dayOfWeek: dateObj.getDay(),
-          isPresent,
+          isPresent: present,
           duration,
           punchTimes: times,
           isShortStay,
+          ambiguousSpan,
+          isDoubleShift: doubleShift,
           shift,
         });
       }
@@ -385,6 +496,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
         name: rawName,
         department,
         isSecurity,
+        biometricId: String(rEmployeeInfo[2] || "").trim() || undefined,
         daysDetail,
         ...stats,
       });
@@ -436,48 +548,50 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
       const rawName = String(row[1]).trim();
       const department = String(row[2] || "Company").trim();
 
-      const matchedEmp = findMatchedEmployee(employees, rawName);
+      const matchedEmp = findUniqueMatch(employees, rawName) ?? undefined;
 
       const id = matchedEmp ? matchedEmp.id : String(row[0] || `att-emp-${r}`);
 
       const isSecurity = detectSecurity(rawName, department, matchedEmp);
 
       const daysDetail: AttendanceEmployee["daysDetail"] = [];
+      const markChars: string[] = [];
       dateCols.forEach((d) => {
         const valA = row[d.colIndexA];
         const valB = row[d.colIndexB];
 
-        const isPresentA =
-          valA !== null &&
-          valA !== undefined &&
-          valA !== "" &&
-          valA !== 0 &&
-          String(valA).trim() !== "0" &&
-          String(valA).trim().toUpperCase() !== "A";
-        const isPresentB =
-          valB !== null &&
-          valB !== undefined &&
-          valB !== "" &&
-          valB !== 0 &&
-          String(valB).trim() !== "0" &&
-          String(valB).trim().toUpperCase() !== "A";
+        const markA = sheetMarkFromCell(valA);
+        const markB = sheetMarkFromCell(valB);
+        // Prefer "2" if either slot is double; else present if either present; else absent
+        let mark = "-";
+        if (markA === "2" || markB === "2") mark = "2";
+        else if (markA === "1" || markB === "1") mark = "1";
+        else if (markA === "0" || markB === "0") mark = "0";
+        markChars.push(mark);
 
-        const isPresent = isPresentA || isPresentB;
+        const { present, doubleShift } = resolveDay({
+          sheetMark: mark,
+          punches: [],
+          hasManualSheet: true,
+        });
+        const isPresentA = markA === "1" || markA === "2";
+        const isPresentB = markB === "1" || markB === "2";
         const shift = isPresentB && !isPresentA ? "Night" : "Day";
-        const duration = isPresent ? 8 : 0;
+        const duration = present ? 8 : 0;
 
         daysDetail.push({
           dateString: d.dateString,
           dayOfWeek: d.dayOfWeek,
-          isPresent,
+          isPresent: present,
           duration,
-          punchTimes: isPresent
+          punchTimes: present
             ? isPresentA && isPresentB
               ? ["08:30", "17:30", "20:00", "04:00"]
               : isPresentB
                 ? ["20:00", "04:00"]
                 : ["08:30", "17:30"]
             : [],
+          isDoubleShift: doubleShift,
           shift,
         });
       });
@@ -488,6 +602,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
         name: rawName,
         department,
         isSecurity,
+        sheetMarks: markChars.join(""),
         daysDetail,
         ...stats,
       });
@@ -547,24 +662,40 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
       const rawName = String(row[1]).trim();
       const department = String(row[2] || "Company").trim();
 
-      const matchedEmp = findMatchedEmployee(employees, rawName);
+      const matchedEmp = findUniqueMatch(employees, rawName) ?? undefined;
 
       const id = matchedEmp ? matchedEmp.id : String(row[0] || `att-emp-${r}`);
 
       const isSecurity = detectSecurity(rawName, department, matchedEmp);
 
       const daysDetail: AttendanceEmployee["daysDetail"] = [];
+      const markChars: string[] = [];
       dateCols.forEach((d) => {
         const val = row[d.colIndex];
-        const isPresent = val !== null && val !== undefined && String(val).trim().toUpperCase() === "P";
-        const duration = isPresent ? 8 : 0;
+        let mark = "-";
+        if (val !== null && val !== undefined && String(val).trim() !== "") {
+          const s = String(val).trim().toUpperCase();
+          if (s === "2" || Number(val) === 2) mark = "2";
+          else if (s === "P") mark = "P";
+          else if (s === "A") mark = "A";
+          else mark = "0";
+        }
+        markChars.push(mark === "P" ? "1" : mark === "A" ? "0" : mark);
+
+        const { present, doubleShift } = resolveDay({
+          sheetMark: mark === "P" ? "P" : mark === "A" ? "A" : mark,
+          punches: [],
+          hasManualSheet: true,
+        });
+        const duration = present ? 8 : 0;
 
         daysDetail.push({
           dateString: d.dateString,
           dayOfWeek: d.dayOfWeek,
-          isPresent,
+          isPresent: present,
           duration,
-          punchTimes: isPresent ? ["08:30", "17:30"] : [],
+          punchTimes: present ? ["08:30", "17:30"] : [],
+          isDoubleShift: doubleShift,
           shift: "Day",
         });
       });
@@ -575,6 +706,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
         name: rawName,
         department,
         isSecurity,
+        sheetMarks: markChars.join(""),
         daysDetail,
         ...stats,
       });
@@ -630,7 +762,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
     const name = String(row[2]).trim();
     const department = String(row[3] || "Company").trim();
 
-    const matchedEmp = findMatchedEmployee(employees, name);
+    const matchedEmp = findUniqueMatch(employees, name) ?? undefined;
     const isSecurity = detectSecurity(name, department, matchedEmp);
 
     const daysDetail: AttendanceEmployee["daysDetail"] = [];
@@ -638,15 +770,22 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
     dateCols.forEach((d) => {
       const val = String(row[d.colIndex] || "");
       const times = val.match(/\d{2}:\d{2}/g) || [];
-      const { shift, duration, isShortStay, isPresent } = analyzePunches(times);
+      const { shift, duration, isShortStay, ambiguousSpan } = analyzePunches(times);
+      const { present, doubleShift } = resolveDay({
+        sheetMark: "-",
+        punches: times,
+        hasManualSheet: false,
+      });
 
       daysDetail.push({
         dateString: d.dateString,
         dayOfWeek: d.dayOfWeek,
-        isPresent,
+        isPresent: present,
         duration,
         punchTimes: times,
         isShortStay,
+        ambiguousSpan,
+        isDoubleShift: doubleShift,
         shift,
       });
     });
@@ -658,6 +797,7 @@ export function parseAttendanceExcel(rows: any[][], employees: EmployeeInput[]) 
       name,
       department,
       isSecurity,
+      biometricId: id,
       daysDetail,
       ...stats,
     });

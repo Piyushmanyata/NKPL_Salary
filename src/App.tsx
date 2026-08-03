@@ -1213,7 +1213,7 @@ function App() {
       const buffer = await file.arrayBuffer();
       const XLSX = await loadXLSX();
       const workbook = XLSX.read(buffer, { type: "array" });
-      const worksheet = getBestWorksheet(workbook, monthLabel);
+      const { sheet: worksheet } = getBestWorksheet(workbook, monthLabel);
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       const parsed = parseAttendanceExcel(rows, employees);
       setAttendanceData(parsed.employees);
@@ -2206,7 +2206,7 @@ function AttendanceCheckerModal({
       const buffer = await file.arrayBuffer();
       const XLSX = await loadXLSX();
       const workbook = XLSX.read(buffer, { type: "array" });
-      const worksheet = getBestWorksheet(workbook, month);
+      const { sheet: worksheet } = getBestWorksheet(workbook, month);
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       const parsed = parseAttendanceExcel(rows, employees);
       onUploadNewFile(parsed.employees, parsed.monthLabel);

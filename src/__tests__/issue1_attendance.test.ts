@@ -35,28 +35,28 @@ function createMonthDays(
 }
 
 describe("Issue #1: Attendance & Sunday Package", () => {
-  it("treats single punch alone as absent unless manual present override exists", () => {
-    // Single punch has 0 duration in analyzePunches, so isPresent=false
-    const dayWithoutOverride: DayDetail = {
+  it("does not let short stay change presence (SPEC-attendance §4 / A1)", () => {
+    // Changed 2026-08-03: short stay is presentational only. Presence comes from
+    // resolveDay / isPresent flag — a short-stay day marked present still counts.
+    // Old rule: single punch → absent unless manualOverride. That rule is withdrawn.
+    const shortStayPresent: DayDetail = {
       dateString: "2026/06/01",
       dayOfWeek: 1,
-      isPresent: false,
+      isPresent: true, // presence from Manual Sheet / R4, independent of duration
       duration: 0,
       punchTimes: ["08:30"],
       isShortStay: true,
     };
-    const dayWithOverride: DayDetail = {
+    const shortStayAbsent: DayDetail = {
       dateString: "2026/06/02",
       dayOfWeek: 2,
       isPresent: false,
       duration: 0,
       punchTimes: ["08:30"],
       isShortStay: true,
-      manualOverride: "present",
     };
 
-    const stats = calculateEmployeeAttendanceStats([dayWithoutOverride, dayWithOverride], false);
-    // Only dayWithOverride should count as present
+    const stats = calculateEmployeeAttendanceStats([shortStayPresent, shortStayAbsent], false);
     expect(stats.presentDays).toBe(1);
   });
 
