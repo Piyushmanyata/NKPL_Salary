@@ -60,8 +60,8 @@ A **Category**, not a role flag and not a name list. Mutually exclusive with Uns
 _Avoid_: Director-only, name-list specials, `isSpecial` boolean overlay on another category
 
 **Security Employee**:
-Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no **automatic** Sunday package — no auto-paid Sunday and no auto-granted Extra Day. A worked Sunday still counts as a normal Present Day only. **Extra Days remain manually editable** and are paid when typed. Previously inferred from the name string and discarded; the field is now stored.
-_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone; treating a typed Extra Day on a guard as invalid
+Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no **automatic** Sunday package — no auto-paid Sunday and no auto-granted Extra Day for Sundays (both companies; ADR-0008). A worked Sunday still counts as a normal Present Day only. **Double Shift days still grant Extra Days** at sync (SPEC-attendance §8). Other Extra Days remain manually editable. Sheet labels may misspell security (`SEQURITY`, `SECQURITY`); detection accepts those.
+_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone; wiping double-shift Extra Days for guards; reproducing APTUS sheet TOT=36 for a full-month guard
 
 ### Time and attendance
 
@@ -74,20 +74,44 @@ Attendance figure on the Official Sheet. Derived as `clamp(26 − calendar absen
 _Avoid_: Days worked (Reference), present days raw, using Reference `Dw` uncapped when PF is off
 
 **Days Worked**:
-Reference attendance input: effective present days after short-stay rules, unapproved penalties, and eligible auto-paid Sundays.
-_Avoid_: Official attendance, raw punch count
+Reference attendance input: effective present days after unapproved penalties and eligible auto-paid Sundays. **Double shifts never increment Days Worked** (clamped to calendar days). Presence authority is the Manual Sheet (SPEC-attendance §3), not duration.
+_Avoid_: Official attendance, raw punch count, adding doubles into Dw
 
 **Extra Days**:
-Count of Sunday double-pay units (and any other approved extra-day units). Each unit pays one full day rate of (wage per day + bonus per day) on Reference. **Forced to 0 for Special only.** Security is never *auto-granted* an Extra Day by the attendance layer, but an operator may type one in — approved extra work is a manual decision.
-_Avoid_: Overtime hours, present days
+Count of paid extra-day units flowing into `performanceBonus`: eligible worked Sundays **plus Double Shift days**. Each unit pays one full day rate of (wage per day + bonus per day) on Reference. **Forced to 0 for Special.** Security: no auto Sunday Extra Days, but **double shifts do grant Extra Days**. Non-security: `sundaysEligible + doubleShiftDays`.
+_Avoid_: Overtime hours, present days, putting doubles only into Dw
 
 **Present Day**:
-A calendar day counted as worked: stay of at least five hours between first and last punch, or a manual present override. A single punch alone is not present.
-_Avoid_: Short stay, punched-in
+A calendar day counted as worked per Manual Sheet verdict or manual override (R1–R3), or any punch when no Manual Sheet is loaded (R4). Duration and short stay do **not** decide presence (ADR-0005).
+_Avoid_: Requiring five hours; treating a single punch as always absent
 
 **Short Stay**:
-Punched day under five hours (or single punch); treated as absent unless overridden.
-_Avoid_: Half day (not modeled unless added later)
+Punched day under five hours (or single punch). **Presentational only** — a highlight on the attendance grid. Never inputs to presence, Days Worked, Month Threshold, or money (ADR-0005 / A1).
+_Avoid_: Half day; treating short stay as automatic absence
+
+**Double Shift**:
+A day marked `2` on the Manual Sheet (or set by hand with decision `D`). Requires presence (A3). Pays exactly one Extra Day; never increments Days Worked. Cleared by hand with decision `d`.
+_Avoid_: Counting A+B roster columns as a double; adding a double into Dw
+
+**Manual Sheet**:
+Typed attendance workbook — the **presence authority** (ADR-0006). Formats: NKPL `double-shift`, APTUS `aptus-daily`. Cell `2` means double shift.
+_Avoid_: Treating the biometric export as the presence authority
+
+**Biometric Export**:
+Device punch log — **evidence only**, never presence authority (ADR-0006). Formats: `standard`, `repeating-logs`. Supplies punches, shift, duration, short-stay / ambiguous-span highlights.
+_Avoid_: Paying from punches alone when a Manual Sheet exists
+
+**Attendance Conflict**:
+Classified disagreement between Manual Sheet and Biometric Export (or mapping gaps): `sheet-present-no-punch`, `sheet-present-short-stay`, `punched-sheet-absent`, `double-no-corroboration`, `missing-biometric`, `unmapped-biometric`. Surfaced for review; nothing auto-applied to pay.
+_Avoid_: Silently resolving conflicts into money
+
+**Biometric ID**:
+Device employee id stored once and mapped to roster id in `attendance_meta` (ADR-0009). The only join key for biometric rows; name matching is suggestion-only.
+_Avoid_: Silent name-only joins for biometric → roster
+
+**Excluded Employee**:
+Per-company soft exclusion from the attendance checker (cash workers etc.). Persisted in `attendance_meta.excluded`; omitted from stats, conflicts, and sync. **Never deletes the payroll roster row.**
+_Avoid_: Roster delete from the attendance screen
 
 **Unapproved Absence**:
 Uninformed leave day. Costs two days of pay: the day is already unpaid as absent, and one additional present day is removed.
