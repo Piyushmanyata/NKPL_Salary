@@ -228,10 +228,10 @@ import { calendarDaysForMonth } from "../months";
        30,
      );
      const off = buildOfficialRow(ref, 30);
-     expect(off.monthlyBasic).toBe(12584);
-     expect(off.pf).toBe(1510.08);
-     // Re-pinned by issue #24. Prior: gross 23,866.92 · net 22,226.84.
-     expect(off.grossPayable).toBeCloseTo(23867.08, 2);
+     expect(off.monthlyBasic).toBe(8228);
+     expect(off.pf).toBe(987.36);
+     // Re-pinned for the Reference Daily Bonus Amount floor.
+     expect(off.grossPayable).toBeCloseTo(23344.36, 2);
      expect(off.netPayable).toBeCloseTo(22227, 2);
    });
 

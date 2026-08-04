@@ -317,10 +317,15 @@ targetGross(A) = referenceNetBeforeEsi
                + officialPf(A) + professionalTax
                + advance + otherDeduction
 
+officialBonus(A) = targetGross(A) − (officialBasic(A) + officialHra(A) + officialTa(A))
+
 packable(A)    = targetGross(A) ≥ officialBasic(A)
+                 AND officialBonus(A) ≥ Reference Daily Bonus Amount
 ```
 
 Walk `A` from `A_max` down to `A_min` and take the **first** `A` where `packable(A)` is true.
+The Reference Daily Bonus Amount is the Main-sheet Bonus floor; Reference Performance Bonus
+continues to be calculated separately from Extra Days.
 
 - If some `A` packs → build the row with that `A`.
 - If **no** `A` packs → set `A = A_min`, mark the row `unpackable: true`, and assemble it
@@ -353,7 +358,7 @@ officialNet     = officialGross − officialPf − officialEsi
                               − professionalTax − advance − otherDeduction
 ```
 
-For a packable row, `officialBonus ≥ 0` is guaranteed: `packable(A)` gives `targetGross ≥ officialBasic`, and
+For a packable row, `officialBonus ≥ Reference Daily Bonus Amount ≥ 0` is guaranteed: `packable(A)` gives `targetGross ≥ officialBasic`, and
 `base ≤ targetGross` gives `remainder ≤ targetGross − officialBasic`.
 
 `officialNet` is **computed**, never copied.

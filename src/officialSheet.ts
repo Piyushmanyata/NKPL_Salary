@@ -24,6 +24,7 @@ export type OfficialRow = {
   monthlyHra: number;
   monthlyTravelAllowance: number;
   attendance: number;
+  extraDays: number;
   bonus: number;
   grossPayable: number;
   pf: number;
@@ -180,8 +181,32 @@ function targetGrossFor(row: SalaryRow, pf: number): number {
   );
 }
 
+/** Main Bonus must not fall below the Reference Daily Bonus Amount. */
+function officialBonusFloor(row: SalaryRow): number {
+  return row.category === "Special" ? 0 : Math.max(0, roundMoney(row.dailyBonus));
+}
+
+function officialComponentsForAttendance(
+  row: SalaryRow,
+  wageCategory: WageCategory,
+  attendance: number,
+) {
+  const monthlyBasic = officialBasic(row, wageCategory, attendance);
+  const pf = officialPf(row, monthlyBasic);
+  const targetGross = targetGrossFor(row, pf);
+  const proratedTotal26 = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
+  const base = Math.min(proratedTotal26, targetGross);
+  const remainder = Math.max(0, base - monthlyBasic);
+  const monthlyHra = roundMoney(remainder * HRA_SHARE_OF_BALANCE);
+  const monthlyTravelAllowance = roundMoney(remainder - monthlyHra);
+  const bonus = roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance));
+
+  return { monthlyBasic, pf, targetGross, monthlyHra, monthlyTravelAllowance, bonus };
+}
+
 /**
- * Walk A from aMax down to aMin; first A with targetGross ≥ officialBasic packs.
+ * Walk A from aMax down to aMin; first A with targetGross ≥ officialBasic and
+ * Main Bonus ≥ the Reference Daily Bonus Amount packs.
  * If none pack, return aMin with unpackable=true. SPEC §6.5 / TICKET-09.
  */
 export function pickPackableAttendance(
@@ -190,11 +215,13 @@ export function pickPackableAttendance(
   aMax: number,
   aMin: number,
 ): { attendance: number; unpackable: boolean } {
+  const bonusFloor = officialBonusFloor(row);
   for (let A = aMax; A >= aMin; A -= 1) {
-    const basic = officialBasic(row, wageCategory, A);
-    const pf = officialPf(row, basic);
-    const target = targetGrossFor(row, pf);
-    if (target >= basic) {
+    const components = officialComponentsForAttendance(row, wageCategory, A);
+    if (
+      components.targetGross >= components.monthlyBasic &&
+      components.bonus >= bonusFloor
+    ) {
       return { attendance: A, unpackable: false };
     }
   }
@@ -212,21 +239,14 @@ export function assembleOfficialRow(
   unpackable: boolean,
 ): OfficialRow {
   const display = displayFor(row.category);
-  const monthlyBasic = officialBasic(row, wageCategory, attendance);
-  const pf = officialPf(row, monthlyBasic);
+  const components = officialComponentsForAttendance(row, wageCategory, attendance);
+  const { monthlyBasic, pf, monthlyHra, monthlyTravelAllowance } = components;
   const esiValue = officialEsi(row, monthlyBasic);
   const employerEsi = officialEmployerEsi(row, monthlyBasic);
   const adv = advanceAmount(row);
-  const targetGross = targetGrossFor(row, pf);
-  const proratedTotal26 = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
-  const base = Math.min(proratedTotal26, targetGross);
-
-  const remainder = Math.max(0, base - monthlyBasic);
-  const monthlyHra = roundMoney(remainder * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainder - monthlyHra);
   const bonus = unpackable
     ? 0
-    : roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance));
+    : components.bonus;
   const grossPayable = roundMoney(monthlyBasic + monthlyHra + monthlyTravelAllowance + bonus);
   const netPayable = roundMoney(
     grossPayable - pf - esiValue - row.professionalTax - adv - row.otherDeduction,
@@ -243,6 +263,7 @@ export function assembleOfficialRow(
     monthlyHra,
     monthlyTravelAllowance,
     attendance,
+    extraDays: row.extraDays,
     bonus,
     grossPayable,
     pf,

@@ -72,7 +72,7 @@ import { alignReferenceEsi, calculateSalary, clampBasicPercent, repairRates, rou
      }
    });
 
-   it("packable rows keep net equality; components stay non-negative", () => {
+  it("packable rows keep net equality; components stay non-negative", () => {
      const fixtures: EmployeeInput[] = [
        {
          id: "p1",
@@ -123,10 +123,34 @@ import { alignReferenceEsi, calculateSalary, clampBasicPercent, repairRates, rou
        for (const v of [off.monthlyBasic, off.monthlyHra, off.monthlyTravelAllowance, off.bonus, off.grossPayable]) {
          expect(v).toBeGreaterThanOrEqual(0);
        }
-     }
-   });
+    }
+  });
 
-   it("when no A packs, unpackable is true, bonus is 0, net still from components", () => {
+  it("uses the Reference Daily Bonus Amount as the Main bonus floor", () => {
+    const ref = refFrom({
+      id: "somnath",
+      name: "Somnath Parui",
+      category: "Unskilled",
+      monthlySalary: 6600,
+      salaryPerDay: 220,
+      bonusPerDay: 10,
+      daysWorked: 29,
+      extraDays: 0,
+      basicPercent: 70,
+      pfOptIn: true,
+      esiOptIn: true,
+      otherDeduction: 0,
+    });
+    const off = buildOfficialRow(ref, 30);
+
+    expect(off.unpackable).toBe(false);
+    expect(off.attendance).toBe(16);
+    expect(off.bonus).toBeGreaterThanOrEqual(ref.dailyBonus);
+    expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
+    expect(off.extraDays).toBe(0);
+  });
+
+  it("when no A packs, unpackable is true, bonus is 0, net still from components", () => {
      // Low package + ₹21,100 ESI-off floor → targetGross < basic at every A.
      const ref = refFrom({
        id: "unp",

@@ -90,7 +90,7 @@ describe("TICKET-07: single Official path + 26-day frame", () => {
     });
     expect(row.daysWorked).toBe(30);
     const off = buildOfficialRow(row, 30);
-    expect(off.attendance).toBe(26);
+    expect(off.attendance).toBe(23);
     expect(off.attendance).toBeLessThanOrEqual(OFFICIAL_WAGE_DAYS);
     expect(off.attendance).not.toBe(row.daysWorked);
   });

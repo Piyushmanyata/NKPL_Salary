@@ -1179,6 +1179,7 @@ function App() {
           HRA: roundMoney(row.monthlyHra),
           "Travel Allowance": roundMoney(row.monthlyTravelAllowance),
           Attendance: row.attendance,
+          "Extra Days": row.extraDays,
           Bonus: roundMoney(row.bonus),
           PF: roundMoney(row.pf),
           ESI: roundMoney(row.esi),
@@ -1929,6 +1930,9 @@ function App() {
                       <th onClick={() => handleOfficialSort("attendance")} className="sortable-th">
                         Attendance {officialSortField === "attendance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
+                      <th onClick={() => handleOfficialSort("extraDays")} className="sortable-th">
+                        Extra Days {officialSortField === "extraDays" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
+                      </th>
                       <th onClick={() => handleOfficialSort("monthlyBasic")} className="sortable-th">
                         Official Basic {officialSortField === "monthlyBasic" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
                       </th>
@@ -1998,6 +2002,7 @@ function App() {
                             )}
                           </td>
                           <td>{row.attendance}</td>
+                          <td>{row.extraDays}</td>
                           <td>{num(row.monthlyBasic)}</td>
                           <td>{num(row.monthlyHra)}</td>
                           <td>{num(row.monthlyTravelAllowance)}</td>
@@ -2015,7 +2020,7 @@ function App() {
                     })}
                     {!filteredOfficialRows.length ? (
                       <tr className="empty-row">
-                        <td colSpan={13}>
+                        <td colSpan={14}>
                           <div>
                             {query ? <Search size={18} /> : <Users size={18} />}
                             <strong>
@@ -2038,6 +2043,7 @@ function App() {
                           Total — {filteredOfficialRows.length} of {officialRows.length} shown
                         </th>
                         <td />
+                        <td>{num(officialSum("extraDays"))}</td>
                         <td>{num(officialSum("monthlyBasic"))}</td>
                         <td>{num(officialSum("monthlyHra"))}</td>
                         <td>{num(officialSum("monthlyTravelAllowance"))}</td>
@@ -2114,7 +2120,7 @@ function App() {
               <Rule label="Official Basic" value="Attendance x category daily wage" />
               <Rule label="Zone A Day Rate" value="Unskilled 400, Semi-skilled 440, Skilled 484" />
               <Rule label="Days Worked" value="Entered manually per employee for the selected month" />
-              <Rule label="Extra Days" value="Entered manually; used for the performance bonus" />
+              <Rule label="Extra Days" value="Entered manually; shown on both sheets and used for the Reference performance bonus" />
               <Rule
                 label="HRA"
                 value={`${HRA_SHARE_OF_BALANCE * 100}% of prorated Total Salary minus Basic`}
@@ -2137,7 +2143,7 @@ function App() {
               />
               <Rule
                 label="Main Sheet"
-                value={`For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - Days Worked), then reduces when needed so Basic always equals attendance x category daily wage. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
+                value={`For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - Days Worked), then reduces when needed so Basic always equals attendance x category daily wage and Main Bonus is at least the Reference Daily Bonus Amount. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
               />
             </div>
           </div>
