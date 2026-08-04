@@ -181,9 +181,9 @@ function targetGrossFor(row: SalaryRow, pf: number): number {
   );
 }
 
-/** Main Bonus must not fall below the Reference Daily Bonus Amount. */
+/** Main Bonus must not fall below the Reference Performance Bonus. */
 function officialBonusFloor(row: SalaryRow): number {
-  return row.category === "Special" ? 0 : Math.max(0, roundMoney(row.dailyBonus));
+  return Math.max(0, roundMoney(row.performanceBonus));
 }
 
 function officialComponentsForAttendance(
@@ -197,8 +197,12 @@ function officialComponentsForAttendance(
   const proratedTotal26 = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
   const base = Math.min(proratedTotal26, targetGross);
   const remainder = Math.max(0, base - monthlyBasic);
-  const monthlyHra = roundMoney(remainder * HRA_SHARE_OF_BALANCE);
-  const monthlyTravelAllowance = roundMoney(remainder - monthlyHra);
+  // When the Reference Performance Bonus is higher than the old residual,
+  // consume allowance room first so the floor can fit at this attendance.
+  const allowanceRoom = Math.max(0, targetGross - monthlyBasic - officialBonusFloor(row));
+  const allowancePool = Math.min(remainder, allowanceRoom);
+  const monthlyHra = roundMoney(allowancePool * HRA_SHARE_OF_BALANCE);
+  const monthlyTravelAllowance = roundMoney(allowancePool - monthlyHra);
   const bonus = roundMoney(targetGross - (monthlyBasic + monthlyHra + monthlyTravelAllowance));
 
   return { monthlyBasic, pf, targetGross, monthlyHra, monthlyTravelAllowance, bonus };
@@ -206,7 +210,7 @@ function officialComponentsForAttendance(
 
 /**
  * Walk A from aMax down to aMin; first A with targetGross ≥ officialBasic and
- * Main Bonus ≥ the Reference Daily Bonus Amount packs.
+ * Main Bonus ≥ the employee's Reference Performance Bonus packs.
  * If none pack, return aMin with unpackable=true. SPEC §6.5 / TICKET-09.
  */
 export function pickPackableAttendance(

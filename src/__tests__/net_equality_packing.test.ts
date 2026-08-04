@@ -126,7 +126,32 @@ import { alignReferenceEsi, calculateSalary, clampBasicPercent, repairRates, rou
     }
   });
 
-  it("uses the Reference Daily Bonus Amount as the Main bonus floor", () => {
+  it("uses the Reference Performance Bonus as the Main floor without repacking attendance", () => {
+    const ref = refFrom({
+      id: "goutam",
+      name: "Goutam Patra",
+      category: "Skilled",
+      monthlySalary: 35000,
+      totalSalary: 48000,
+      salaryPerDay: 1167,
+      bonusPerDay: 433,
+      daysWorked: 31,
+      extraDays: 4,
+      basicPercent: 70,
+      pfOptIn: false,
+      esiOptIn: false,
+      otherDeduction: 0,
+    }, 31);
+    const off = buildOfficialRow(ref, 31);
+
+    expect(off.unpackable).toBe(false);
+    expect(off.attendance).toBe(26);
+    expect(off.bonus).toBeGreaterThanOrEqual(ref.performanceBonus);
+    expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
+    expect(off.extraDays).toBe(4);
+  });
+
+  it("sets the Main bonus floor to zero when Extra Days is zero", () => {
     const ref = refFrom({
       id: "somnath",
       name: "Somnath Parui",
@@ -143,11 +168,10 @@ import { alignReferenceEsi, calculateSalary, clampBasicPercent, repairRates, rou
     });
     const off = buildOfficialRow(ref, 30);
 
-    expect(off.unpackable).toBe(false);
-    expect(off.attendance).toBe(16);
-    expect(off.bonus).toBeGreaterThanOrEqual(ref.dailyBonus);
-    expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
+    expect(ref.performanceBonus).toBe(0);
     expect(off.extraDays).toBe(0);
+    expect(off.attendance).toBe(17);
+    expect(off.bonus).toBeGreaterThanOrEqual(0);
   });
 
   it("when no A packs, unpackable is true, bonus is 0, net still from components", () => {

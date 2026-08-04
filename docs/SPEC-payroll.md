@@ -320,12 +320,15 @@ targetGross(A) = referenceNetBeforeEsi
 officialBonus(A) = targetGross(A) − (officialBasic(A) + officialHra(A) + officialTa(A))
 
 packable(A)    = targetGross(A) ≥ officialBasic(A)
-                 AND officialBonus(A) ≥ Reference Daily Bonus Amount
+                 AND officialBonus(A) ≥ Reference Performance Bonus
 ```
 
 Walk `A` from `A_max` down to `A_min` and take the **first** `A` where `packable(A)` is true.
-The Reference Daily Bonus Amount is the Main-sheet Bonus floor; Reference Performance Bonus
-continues to be calculated separately from Extra Days.
+Reference Performance Bonus is the per-employee Main-sheet Bonus floor; it is calculated from Extra
+Days, so Extra Days = 0 means the floor is 0.
+If the old residual Bonus is below that floor, HRA/TA allowance room is reduced to fund the
+floor while preserving the target gross. If there is not enough target-gross room, the next lower
+attendance is tried; if none packs, the row remains unpackable and export is blocked.
 
 - If some `A` packs → build the row with that `A`.
 - If **no** `A` packs → set `A = A_min`, mark the row `unpackable: true`, and assemble it
@@ -348,8 +351,10 @@ proratedTotal₂₆ = (totalSalary / 26) × A
 base            = min(proratedTotal₂₆, targetGross)
 
 remainder       = max(0, base − officialBasic)
-officialHra     = remainder × 0.70
-officialTa      = remainder − officialHra
+allowancePool   = min(remainder,
+                      max(0, targetGross − officialBasic − Reference Performance Bonus))
+officialHra     = allowancePool × 0.70
+officialTa      = allowancePool − officialHra
 officialBonus   = unpackable ? 0
                 : targetGross − (officialBasic + officialHra + officialTa)
 
@@ -358,7 +363,7 @@ officialNet     = officialGross − officialPf − officialEsi
                               − professionalTax − advance − otherDeduction
 ```
 
-For a packable row, `officialBonus ≥ Reference Daily Bonus Amount ≥ 0` is guaranteed: `packable(A)` gives `targetGross ≥ officialBasic`, and
+For a packable row, `officialBonus ≥ Reference Performance Bonus ≥ 0`; the allowance pool is clipped to make that true, and
 `base ≤ targetGross` gives `remainder ≤ targetGross − officialBasic`.
 
 `officialNet` is **computed**, never copied.
