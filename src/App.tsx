@@ -653,9 +653,13 @@ function App() {
           }
           if (field === "esiOverLimitOptIn") {
             // Only ever stored as an explicit true; off is the absence of consent.
+            // esiOptIn moves with it so the two can never contradict each other
+            // if the package later drops back under the limit.
+            const on = booleanValue(value);
             return {
               ...employee,
-              esiOverLimitOptIn: booleanValue(value) ? true : undefined,
+              esiOverLimitOptIn: on ? true : undefined,
+              esiOptIn: on,
             };
           }
           return {

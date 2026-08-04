@@ -60,9 +60,49 @@ describe("ADR-0011: ESI above the package limit is opt-in", () => {
     }
   });
 
-  it("lets an explicit opt-out win over the manual enable", () => {
+  it("enables through a stale esiOptIn: false (Biswasundar Bhoi, July 2026)", () => {
+    // The shape that made the button look dead: the click recorded the consent,
+    // but a leftover opt-out from the forced-off era vetoed it. Over the limit,
+    // esiOverLimitOptIn is the only answer that counts.
     const row = compute(
-      employee({ monthlySalary: 40000, esiOverLimitOptIn: true, esiOptIn: false }),
+      employee({
+        monthlySalary: 23200,
+        totalSalary: 25200,
+        basicPercent: 54,
+        pfOptIn: true,
+        esiOptIn: false,
+        esiOverLimitOptIn: true,
+      }),
+    );
+    expect(row.esiOptIn).toBe(true);
+    expect(row.esi).toBeGreaterThan(0);
+  });
+
+  it("enables a PF-on row just over the limit (Piku Mondal, July 2026)", () => {
+    // No stored totalSalary, so the package is the monthly salary itself:
+    // ₹21,100, ₹100 over the line. PF stays on (basic 10,550 ≤ 15,000), so the
+    // Official basic comes from the wage board and is well under the ESI ceiling.
+    const row = compute(
+      employee({
+        category: "Semi-skilled",
+        monthlySalary: 21100,
+        totalSalary: undefined,
+        basicPercent: 50,
+        pfOptIn: true,
+        esiOptIn: false,
+        esiOverLimitOptIn: true,
+      }),
+    );
+    expect(row.totalSalary).toBeGreaterThan(ESI_GROSS_LIMIT);
+    expect(row.pfOptIn).toBe(true);
+    expect(row.esiOptIn).toBe(true);
+    expect(row.esi).toBeGreaterThan(0);
+    expect(buildOfficialRow(row, 30).esi).toBeGreaterThan(0);
+  });
+
+  it("turns back off when the consent is withdrawn", () => {
+    const row = compute(
+      employee({ monthlySalary: 40000, esiOverLimitOptIn: undefined, esiOptIn: true }),
     );
     expect(row.esiOptIn).toBe(false);
     expect(row.esi).toBe(0);

@@ -237,12 +237,18 @@ export function calculateSalary(
   // Official sheet then holds the basic inside (15,000, 21,000] so the charge
   // actually lands (officialBasic). A separate field carries that consent
   // because `esiOptIn` cannot: it reads true on every row nobody ever touched,
-  // which would switch these on by surprise. An explicit opt-out still wins.
+  // which would switch these on by surprise.
+  //
+  // Over the limit, esiOverLimitOptIn is the ONLY answer that counts. esiOptIn
+  // must not veto it: while a row is over the limit the toggle never writes
+  // that flag, so a false there is a leftover from the world where these rows
+  // were forced off — letting it win made the button look dead on exactly the
+  // employees this feature exists for.
   const packageAboveEsiLimit = totalSalary > ESI_GROSS_LIMIT;
   const requestedEsiOptIn = isSpecial
     ? false
     : packageAboveEsiLimit
-      ? input.esiOptIn !== false && input.esiOverLimitOptIn === true
+      ? input.esiOverLimitOptIn === true
       : input.esiOptIn !== false;
   const perDayWage = salaryPerDay;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;

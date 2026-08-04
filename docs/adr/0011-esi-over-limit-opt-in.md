@@ -34,7 +34,14 @@ The consent lives in its own field, `esiOverLimitOptIn`, because `esiOptIn` cann
 `sanitizeEmployee` writes `esiOptIn: true` on every row that nobody ever touched, so reading that
 flag as consent would switch these employees on by surprise the moment this ADR shipped. Absent
 means "no consent"; the UI keeps a single ESI toggle, which writes this field for over-limit rows.
-An explicit `esiOptIn: false` still wins.
+
+**Over the limit, `esiOverLimitOptIn` is the only answer that counts.** `esiOptIn` does not get a
+veto there. A first cut let an explicit `esiOptIn: false` override the opt-in, which made the
+button appear dead on precisely the employees the feature exists for (Biswasundar Bhoi and Piku
+Mondal, APTUS July 2026): both carried `esiOptIn: false` from the era when over-limit rows were
+forced off, and while a row is over the limit the toggle never rewrites that flag, so it can only
+ever be stale. The toggle now writes both fields together so they cannot drift apart if the
+package later falls back under ₹21,000, where `esiOptIn` governs again.
 
 **2. When ESI is on and PF is off, the Official basic is held inside (15,000, 21,000].**
 
