@@ -39,6 +39,7 @@ import {
   PF_RATE,
   TA_SHARE_OF_BALANCE,
   alignReferenceEsi,
+  allowanceTerms,
   calculateSalary,
   clampBasicPercent,
   clampDays,
@@ -46,7 +47,9 @@ import {
   currency,
   isSpecialCategory,
   monthlyFromDaily,
+  normalizeAllowanceExpression,
   numberValue,
+  parseAllowanceExpression,
   repairRates,
   roundMoney,
   uid,
@@ -294,6 +297,8 @@ const applyEmployeeRates = (list: EmployeeInput[], rates: EmployeeRateMap): Empl
       // neither field, and a 0 there must never wipe a good monthly salary.
       ...(monthlySalary > 0 ? { monthlySalary } : {}),
       ...(totalSalary > monthlySalary ? { totalSalary } : {}),
+      // The raise breakdown travels with the package it explains.
+      ...(rate.allowanceExpr ? { allowanceExpr: rate.allowanceExpr } : {}),
     };
   });
 
@@ -310,6 +315,7 @@ const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
       bonusPerDay: Math.max(0, numberValue(employee.bonusPerDay)),
       monthlySalary: Math.max(0, numberValue(employee.monthlySalary)),
       totalSalary: Math.max(0, numberValue(employee.totalSalary)),
+      ...(employee.allowanceExpr ? { allowanceExpr: employee.allowanceExpr } : {}),
     };
   });
   return map;
@@ -649,12 +655,30 @@ function App() {
         // categories; T = M + allowance is the stored anchor and b is derived from it.
         // Editing M holds the allowance and carries T along; editing the allowance
         // leaves M alone. T at or below M means "no allowance".
-        if (field === "monthlySalary" || field === "totalSalary" || field === "allowance") {
+        if (
+          field === "monthlySalary" ||
+          field === "totalSalary" ||
+          field === "allowance" ||
+          field === "allowanceExpr"
+        ) {
           const D = effectiveMonthDays;
           const oldM = Math.max(0, numberValue(employee.monthlySalary));
           const oldT = Math.max(0, numberValue(employee.totalSalary));
           const bonus = oldT > oldM ? (oldT - oldM) / D : Math.max(0, numberValue(employee.bonusPerDay));
-          const typed = Math.max(0, numberValue(value));
+          // The allowance may arrive as a sum of raises ("400+500+600"); its
+          // value is the total, and the expression is kept so the row still
+          // shows by how much it was raised. A plain number clears the history.
+          const isAllowance = field === "allowance" || field === "allowanceExpr";
+          const typed =
+            field === "allowanceExpr"
+              ? parseAllowanceExpression(value)
+              : Math.max(0, numberValue(value));
+          const exprPatch =
+            field === "allowanceExpr"
+              ? { allowanceExpr: normalizeAllowanceExpression(value) || undefined }
+              : field === "allowance"
+                ? { allowanceExpr: undefined }
+                : {};
           const monthlySalary = field === "monthlySalary" ? typed : oldM;
           // Unskilled stays anchored on the day rate (SPEC §2.2): a monthly figure
           // typed through the Per Month toggle is stored as M / D, and its monthly
@@ -665,21 +689,33 @@ function App() {
             // the number entered. M = D × r now round-trips exactly.
             return {
               ...employee,
+              ...exprPatch,
               monthlySalary,
               salaryPerDay: monthlySalary / D,
-              bonusPerDay: field === "allowance" ? typed / D : employee.bonusPerDay,
+              bonusPerDay: isAllowance ? typed / D : employee.bonusPerDay,
             };
           }
           const total =
             field === "totalSalary"
               ? typed
-              : field === "allowance"
+              : isAllowance
                 ? monthlySalary + typed
                 : monthlySalary + D * bonus;
           return {
             ...employee,
+            ...exprPatch,
             monthlySalary,
             totalSalary: total > monthlySalary ? roundMoney(total) : undefined,
+          };
+        }
+
+        // Editing the bonus/day sets the allowance straight from the day rate,
+        // so any raise breakdown that used to explain it no longer does.
+        if (field === "bonusPerDay") {
+          return {
+            ...employee,
+            allowanceExpr: undefined,
+            bonusPerDay: Math.max(0, numberValue(value)),
           };
         }
 
@@ -1607,11 +1643,23 @@ function App() {
                                       </div>
                                       <div className="settings-column">
                                         <span>Allowance / Month</span>
-                                        <NumberInput
+                                        <SumInput
                                           value={Math.max(0, roundMoney(row.totalSalary - row.monthlySalary))}
-                                          min={0}
-                                          onChange={(value) => updateEmployee(row.id, "allowance", value)}
+                                          expression={row.allowanceExpr}
+                                          onChange={(expression) =>
+                                            updateEmployee(row.id, "allowanceExpr", expression)
+                                          }
                                         />
+                                        <small>
+                                          Type raises as a sum — <code>400+500+600</code> — to keep the increments visible.
+                                          {allowanceTerms(row.allowanceExpr).length > 1
+                                            ? ` ${allowanceTerms(row.allowanceExpr).join(" + ")} = ${currency(
+                                                Math.max(0, roundMoney(row.totalSalary - row.monthlySalary)),
+                                              )}, last raise ${currency(
+                                                allowanceTerms(row.allowanceExpr).slice(-1)[0],
+                                              )}.`
+                                            : ""}
+                                        </small>
                                         <small>
                                           Total Salary <strong>{currency(row.totalSalary)}</strong> = monthly + allowance
                                           {row.totalSalary > row.monthlySalary
@@ -2115,6 +2163,50 @@ function NumberInput({
         } else {
           onChange(numberValue(val));
         }
+      }}
+    />
+  );
+}
+
+/**
+ * A number box that also accepts a sum — "400+500+600" — so the allowance
+ * shows the raises that built it instead of a single opaque total. The typed
+ * expression is what is stored; the value is its sum.
+ */
+function SumInput({
+  value,
+  expression,
+  onChange,
+  className = "number-input",
+  disabled = false,
+}: {
+  value: number;
+  expression?: string;
+  onChange: (expression: string) => void;
+  className?: string;
+  disabled?: boolean;
+}) {
+  // Fall back to the plain number whenever the stored expression no longer
+  // explains the value (a rate change elsewhere, a legacy row with no history).
+  const canonical =
+    expression && roundMoney(parseAllowanceExpression(expression)) === roundMoney(value)
+      ? expression
+      : String(Number.isFinite(value) ? roundMoney(value) : 0);
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      className={className}
+      type="text"
+      inputMode="decimal"
+      value={draft ?? canonical}
+      disabled={disabled}
+      onFocus={(event) => setDraft(event.target.value)}
+      onBlur={() => setDraft(null)}
+      onChange={(event) => {
+        // Digits, decimal points and "+" only — anything else is not a raise.
+        const next = event.target.value.replace(/[^0-9.+]/g, "");
+        setDraft(next);
+        onChange(next);
       }}
     />
   );

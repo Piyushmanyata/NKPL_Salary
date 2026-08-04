@@ -82,6 +82,35 @@ export function dailyFromMonthly(monthlySalary: unknown, monthDays: unknown) {
 }
 
 /**
+ * The monthly allowance is typed as the running sum of the raises that built
+ * it — "400+500+600" — so the row keeps showing by how much it was raised
+ * instead of collapsing to a single 1500. Only digits, "." and "+" carry
+ * meaning; a trailing "+" is tolerated while the user is mid-type.
+ */
+export function parseAllowanceExpression(expression: unknown): number {
+  return String(expression ?? "")
+    .split("+")
+    .reduce((sum, part) => (part.trim() === "" ? sum : sum + Math.max(0, numberValue(part))), 0);
+}
+
+/** Storage form: no whitespace, no empty or trailing terms. */
+export function normalizeAllowanceExpression(expression: unknown): string {
+  return String(expression ?? "")
+    .split("+")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join("+");
+}
+
+/** The individual raises, for display. A single term is not a breakdown. */
+export function allowanceTerms(expression: unknown): number[] {
+  return normalizeAllowanceExpression(expression)
+    .split("+")
+    .filter((part) => part !== "")
+    .map((part) => Math.max(0, numberValue(part)));
+}
+
+/**
  * SPEC §2.2.1 — one-time rate repair at load/migration.
  *
  * Must NOT run inside `calculateSalary`. Per-calculation Unskilled back-fill

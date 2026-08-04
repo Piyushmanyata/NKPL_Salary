@@ -14,6 +14,12 @@ export type EmployeeInput = {
   totalSalary?: number;
   salaryPerDay?: number;
   bonusPerDay?: number;
+  /**
+   * How the monthly allowance was typed — "400+500+600" — kept verbatim so the
+   * row shows the raises that built it. Its sum is the allowance; T = M + sum.
+   * Absent means the allowance was entered as a plain number.
+   */
+  allowanceExpr?: string;
   daysWorked: number;
   extraDays: number;
   basicPercent?: number;

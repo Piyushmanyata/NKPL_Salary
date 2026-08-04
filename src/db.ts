@@ -149,6 +149,8 @@ export interface EmployeeRate {
    */
   monthlySalary?: number;
   totalSalary?: number;
+  /** Raise breakdown behind the allowance, e.g. "400+500+600". See EmployeeInput. */
+  allowanceExpr?: string;
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;
