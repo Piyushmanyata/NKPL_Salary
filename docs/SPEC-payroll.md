@@ -211,7 +211,7 @@ matches the June sheets.
 
 18  esiEligible = Category !== "Special"
                   && esiOptIn !== false
-                  && totalSalary ≤ 21000               // package, not this month — ADR-0004
+                  && fullMonthBasic ≤ 21000            // Basic, standing not prorated — ADR-0011
 
 19  rawReferenceEsi = esiEligible ? ceil(0.0075 × earnedSalary) : 0       // pre-alignment baseline
 20  referenceEsi    = officialEsi(A*)                                      // final Reference amount

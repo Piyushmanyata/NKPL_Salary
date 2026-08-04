@@ -15,11 +15,11 @@ export type EmployeeInput = {
   salaryPerDay?: number;
   bonusPerDay?: number;
   /**
-   * How the monthly allowance was typed — "400+500+600" — kept verbatim so the
-   * row shows the raises that built it. Its sum is the allowance; T = M + sum.
-   * Absent means the allowance was entered as a plain number.
+   * Free-text log kept per employee, not per month — increments ("Apr-26 +500"),
+   * ID numbers, anything worth remembering about this person. Never read by any
+   * calculation; it travels with the shared rate record so every month shows it.
    */
-  allowanceExpr?: string;
+  notes?: string;
   daysWorked: number;
   extraDays: number;
   basicPercent?: number;

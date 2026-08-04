@@ -149,8 +149,8 @@ export interface EmployeeRate {
    */
   monthlySalary?: number;
   totalSalary?: number;
-  /** Raise breakdown behind the allowance, e.g. "400+500+600". See EmployeeInput. */
-  allowanceExpr?: string;
+  /** Free-text log for this employee (increments, remarks). See EmployeeInput. */
+  notes?: string;
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;

@@ -6,6 +6,8 @@ Accepted (issue #24, 2026-07-29). **Supersedes the Reference clause of [ADR-0002
 ADR-0002's *Official* clause — Official ESI is 0.75% of Official Monthly Basic — is untouched and
 remains correct. ADR-0005 later aligned the final Reference ESI amount to that Official result;
 this ADR remains the source-arithmetic record for the raw pre-alignment Reference calculation.
+[ADR-0011](0011-esi-eligibility-on-basic.md) later moved the ESI **eligibility** test off Total
+Salary and onto Basic; the ESI base and the PF clauses here are untouched.
 
 ## Context
 
@@ -40,6 +42,8 @@ second time the base has moved, which is why it is being recorded rather than me
 
 ```
 esiEligible = Category !== "Special" && esiOptIn !== false && totalSalary <= 21000
+// SUPERSEDED by ADR-0011: eligibility now tests the standing Basic <= 21000,
+// matching the Official sheet. The base below is unchanged.
 esi         = esiEligible ? ceil(earnedSalary × 0.0075) : 0
 employerEsi = esiEligible ? ceil(earnedSalary × 0.0325) : 0
 ```

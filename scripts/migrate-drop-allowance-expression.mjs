@@ -1,19 +1,15 @@
 /**
- * Seed `allowanceExpr` on the stored employee rate records.
+ * Remove the retired `allowanceExpr` field from the stored employee rate
+ * records.
  *
- * The monthly allowance is now typed as the running sum of the raises that
- * built it ("400+500+600"). Existing records only know the total, so this
- * migration writes that total as the first (and so far only) term — every
- * later raise is appended in the UI and stays visible from then on.
- *
- * Only employee_rates/* keys are touched, and only by ADDING the new field:
- * salaryPerDay, bonusPerDay, monthlySalary and totalSalary are left byte-wise
- * alone. Rows with no allowance (totalSalary <= monthlySalary) are skipped —
- * there is no raise history to record.
+ * The allowance-as-a-sum experiment ("400+500+600") was replaced by a free-text
+ * `notes` field per employee, which is where increments are recorded now. This
+ * migration only DELETES allowanceExpr — salaryPerDay, bonusPerDay,
+ * monthlySalary and totalSalary are left untouched, so no pay figure moves.
  *
  * Usage:
- *   node scripts/migrate-allowance-expression.mjs          # dry-run
- *   node scripts/migrate-allowance-expression.mjs --apply  # write changes
+ *   node scripts/migrate-drop-allowance-expression.mjs          # dry-run
+ *   node scripts/migrate-drop-allowance-expression.mjs --apply  # write changes
  *
  * Requires REDIS_URL in the environment or .env.local.
  */
@@ -23,6 +19,7 @@ import { resolve } from "node:path";
 import Redis from "ioredis";
 
 const APPLY = process.argv.includes("--apply");
+const RETIRED_FIELD = "allowanceExpr";
 
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
@@ -77,8 +74,6 @@ function parseRecord(raw) {
   }
 }
 
-const money = (value) => Math.round(Math.max(0, Number(value) || 0) * 100) / 100;
-
 async function main() {
   console.log(APPLY ? "MODE: APPLY (writes enabled)" : "MODE: dry-run (no writes)");
   console.log(`target: ${REDIS_URL.replace(/:[^:@/]+@/, ":***@")}`);
@@ -93,27 +88,26 @@ async function main() {
     if (!rates || typeof rates !== "object" || Array.isArray(rates)) continue;
 
     let changed = false;
-    const seeded = [];
+    const cleared = [];
     const next = {};
     for (const [id, rate] of Object.entries(rates)) {
-      if (!rate || typeof rate !== "object") {
+      if (
+        !rate ||
+        typeof rate !== "object" ||
+        !Object.prototype.hasOwnProperty.call(rate, RETIRED_FIELD)
+      ) {
         next[id] = rate;
         continue;
       }
-      const allowance = money(rate.totalSalary) - money(rate.monthlySalary);
-      if (rate.allowanceExpr || allowance <= 0) {
-        next[id] = rate;
-        continue;
-      }
-      const allowanceExpr = String(money(allowance));
-      next[id] = { ...rate, allowanceExpr };
-      seeded.push({ id, name: rate.name ?? "(unnamed)", allowanceExpr });
+      const { [RETIRED_FIELD]: dropped, ...rest } = rate;
+      next[id] = rest;
+      cleared.push({ id, name: rate.name ?? "(unnamed)", dropped });
       changed = true;
     }
 
     if (!changed) continue;
 
-    changes.push({ key, employees: Object.keys(rates).length, seeded });
+    changes.push({ key, employees: Object.keys(rates).length, cleared });
     if (APPLY) {
       backups.push({ key, value: rates });
       writes.push({ key, value: next });
@@ -124,7 +118,7 @@ async function main() {
   if (APPLY && backups.length > 0) {
     const backupPath = resolve(
       process.cwd(),
-      `scripts/logs/allowance-expression-migration-backup-${stamp}.json`,
+      `scripts/logs/drop-allowance-expression-backup-${stamp}.json`,
     );
     writeFileSync(
       backupPath,
@@ -138,7 +132,7 @@ async function main() {
 
   const logPath = resolve(
     process.cwd(),
-    `scripts/logs/allowance-expression-migration-${APPLY ? "apply" : "dry-run"}-${stamp}.json`,
+    `scripts/logs/drop-allowance-expression-${APPLY ? "apply" : "dry-run"}-${stamp}.json`,
   );
   writeFileSync(
     logPath,
@@ -148,7 +142,7 @@ async function main() {
         ranAt: new Date().toISOString(),
         keysScanned: keys.length,
         keysChanged: changes.length,
-        rowsSeeded: changes.reduce((sum, change) => sum + change.seeded.length, 0),
+        rowsCleared: changes.reduce((sum, change) => sum + change.cleared.length, 0),
         changes,
         ...(APPLY ? { backups } : {}),
       },
@@ -160,7 +154,7 @@ async function main() {
   console.log(`scanned ${keys.length} employee_rates/* keys`);
   console.log(`keys ${APPLY ? "updated" : "that would change"}: ${changes.length}`);
   console.log(
-    `rows seeded with allowanceExpr: ${changes.reduce((sum, c) => sum + c.seeded.length, 0)}`,
+    `rows cleared of ${RETIRED_FIELD}: ${changes.reduce((sum, c) => sum + c.cleared.length, 0)}`,
   );
   console.log(`log written: ${logPath}`);
   await redis.quit();

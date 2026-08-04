@@ -899,6 +899,39 @@ td input {
   grid-column: span 2;
 }
 
+/* A row carrying notes is worth spotting without opening every settings panel. */
+.icon-button.has-notes {
+  position: relative;
+}
+
+.icon-button.has-notes::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber, #f79009);
+}
+
+.settings-column--full {
+  grid-column: 1 / -1;
+}
+
+.notes-input {
+  width: 100%;
+  min-height: 68px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised, #fff);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .settings-column {
   display: grid;
   gap: var(--space-2);

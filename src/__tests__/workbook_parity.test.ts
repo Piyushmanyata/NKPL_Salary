@@ -8,8 +8,12 @@ import aptusInputs from "./fixtures/aptus-june-inputs.json";
  * Issue #24 — the Reference Sheet reproduces the statutory arithmetic of the
  * Source Workbooks under `Excel/`. See ADR-0004.
  *
- *   ESI  =IF(J<=21000, ROUNDUP(O*0.75%, 0), 0)   J = Total Salary, O = Earned Salary
- *   PF   =ROUND(IF(V<=15000, V*12%, 0), 0)       V = earned basic
+ *   ESI  =ROUNDUP(O*0.75%, 0) when eligible            O = Earned Salary
+ *   PF   =ROUND(IF(V<=15000, V*12%, 0), 0)              V = earned basic
+ *
+ * ESI eligibility is tested on BASIC (standing basic > 21,000 pays no ESI),
+ * the same quantity the Official sheet tests, so both sheets agree. This
+ * replaces the workbook's package test IF(J<=21000, ...) on Total Salary.
  */
 
 /** Workbook row → EmployeeInput. `K` = Salary P.M, `N` = Increase in Salary Amount. */
@@ -51,19 +55,34 @@ describe("Issue #24: Source Workbook parity", () => {
     expect(ref.netPayable).toBeCloseTo(9000 - 68 - 756, 2);
   });
 
-  it("above the ESI threshold — Total Salary > 21,000 pays no ESI", () => {
-    const ref = compute(fromWorkbook({ K: 21000, N: 500, F: 30, basicPercent: 70 }));
-    expect(ref.totalSalary).toBeGreaterThan(21000);
+  it("above the ESI threshold — Basic > 21,000 pays no ESI", () => {
+    // M 32,000 x 70% = 22,400 standing basic.
+    const ref = compute(fromWorkbook({ K: 32000, N: 0, F: 30, basicPercent: 70 }));
+    expect(ref.basicSalary).toBeGreaterThan(21000);
     expect(ref.esiOptIn).toBe(false);
     expect(ref.esi).toBe(0);
     expect(ref.employerEsi).toBe(0);
   });
 
-  it("eligibility is a property of the package, not the month: short month below 21k still pays no ESI", () => {
-    const ref = compute(fromWorkbook({ K: 22000, N: 0, F: 15, basicPercent: 70 }));
-    expect(ref.grossPayable).toBeLessThan(21000);
+  it("a package over 21,000 whose Basic is under it now pays ESI", () => {
+    // The rule that changed: T = 21,500 used to fail the package test; its
+    // basic is 14,700, so it is ESI-eligible now — as it already was on the
+    // Official sheet, which has always tested Basic.
+    const ref = compute(fromWorkbook({ K: 21000, N: 500, F: 30, basicPercent: 70 }));
     expect(ref.totalSalary).toBeGreaterThan(21000);
-    expect(ref.esi).toBe(0);
+    expect(ref.basicSalary).toBeLessThan(21000);
+    expect(ref.esiOptIn).toBe(true);
+    expect(ref.esi).toBeGreaterThan(0);
+  });
+
+  it("eligibility is a property of the standing basic, not the month worked", () => {
+    // Half a month worked: earned basic falls under 21,000 but the standing
+    // basic (M x 70% = 22,400) does not, so ESI stays off. Eligibility must
+    // never flip on attendance.
+    const short = compute(fromWorkbook({ K: 32000, N: 0, F: 15, basicPercent: 70 }));
+    expect(short.basicSalary).toBeLessThan(21000);
+    expect(short.esiOptIn).toBe(false);
+    expect(short.esi).toBe(0);
   });
 
   it("ESI and PF are whole rupees on every row of both June rosters", () => {
