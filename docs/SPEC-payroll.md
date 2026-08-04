@@ -16,8 +16,8 @@ resolution and the file/line it replaces are noted inline.
 | Symbol | Meaning |
 |---|---|
 | `D` | Calendar days in the pay month (28, 29, 30 or 31) |
-| `Dw` | Days Worked — Reference attendance, `0 ≤ Dw ≤ D` |
-| `Xd` | Extra Days — Sunday double-pay units |
+| `Dw` | Days Worked — manual Reference input, `0 ≤ Dw ≤ D` |
+| `Xd` | Extra Days — manual extra-work units |
 | `r` | Salary per day (Reference rate) |
 | `b` | Bonus per day |
 | `M` | Monthly salary (base, **excluding** daily bonus) |
@@ -131,11 +131,10 @@ which produced `M = 0` and a ₹0 salary whenever `r` was absent.)*
 - Professional Tax **does** apply (confirmed against the June sheet: Sonal Goenka, ₹200).
 - `specialBonus` is permitted.
 
-### 2.3 Flags
+### 2.3 Payroll input flags
 
 | Field | Type | Rule |
 |---|---|---|
-| `isSecurity` | `boolean`, **persisted** | When `true`, no **automatic** Sunday package: no auto-paid Sunday and no auto-granted `Xd`. A **manually typed `Xd` is honoured** — approved extra work is an operator decision, and the engine no longer zeroes it (changed 2026-07-29; was forced to `0`). Independent of Category. |
 | `pfOptIn` | `boolean` | Employee-level opt-in. Forced `false` for Special and when full-month basic > ₹15,000. |
 | `esiOptIn` | `boolean` | Employee-level opt-in. Forced `false` for Special. Independent of `pfOptIn`. |
 
@@ -156,40 +155,15 @@ with a leading minus; the sign is presentation only and never reaches the engine
 
 ---
 
-## 4. Attendance → pay inputs
+## 4. Manual day inputs
 
-Computed by `calculateEmployeeAttendanceStats`. Unchanged except where noted.
+`Dw` and `Xd` are entered directly for each employee-month. `Dw` is clamped to `[0, D]`;
+`Xd` is a non-negative count of approved extra-work units and is forced to `0` for Special.
+There is no punch import, attendance workbook, biometric mapping, Sunday package, double-shift
+inference, reconciliation pass, or automatic attendance synchronization.
 
-```
-monthThreshold = D === 31 ? 21
-               : D === 30 ? 20
-               : round(D × 20 / 30)
-
-rawPresentDays       = count of days where isPresent || manualOverride === "present"
-unapprovedAbsences   = count of non-present days where leaveType === "unapproved"
-effectivePresentDays = max(0, rawPresentDays − unapprovedAbsences)
-meetsMonthThreshold  = effectivePresentDays ≥ monthThreshold
-```
-
-**Present Day.** A day with a stay of ≥ 5 hours between first and last punch, or a manual
-`present` override. A single punch alone is not present.
-
-**Sunday Package.** Available for a given Sunday only when *all three* hold:
-1. `meetsMonthThreshold`
-2. Not sandwiched — i.e. **not** (absent on the preceding Saturday **and** absent on the following Monday)
-3. `isSecurity === false` **and** `Category !== "Special"`
-
-When available:
-- Did **not** work that Sunday → the Sunday counts as an auto-paid present day (`Dw += 1`)
-- **Did** work that Sunday → `Xd += 1` (double pay), and the day already counts as present
-
-A worked Sunday always counts as one present day even when the package is denied.
-
-**Output.**
-```
-Dw = effectivePresentDays + autoPaidSundays
-Xd = eligibleWorkedSundays          // forced to 0 if isSecurity or Special
-```
+When a new month is opened, the existing roster is carried forward while `Dw` resets to `D`
+and `Xd` resets to `0`. Previously saved month records remain unchanged.
 
 ---
 
@@ -395,7 +369,7 @@ These are hard assertions. A build that violates any of them is broken.
 | **I3** | `0 ≤ A ≤ 26` for every employee, PF on or off | exact |
 | **I4** | Every component (`basic`, `hra`, `ta`, `bonus`, `gross`) is `≥ 0` on both sheets | exact |
 | **I5** | `Category === "Special"` ⟹ `Dw === D`, `absentDays === 0`, `Xd === 0`, `pf === 0`, `esi === 0` on both sheets | exact |
-| **I6** | `isSecurity === true` ⟹ `Xd === 0` and `performanceBonus === 0` | exact |
+| **I6** | `Category === "Special"` ⟹ `Xd === 0` and `performanceBonus === 0` | exact |
 | **I7** | An employee whose Category anchor is present never produces `grossPayable === 0` when `Dw > 0`. An employee whose anchor is absent is flagged `missingRate` and never computed | exact |
 | **I8** | `pfEligible` and `esiEligible` are independent — neither implies the other | exact |
 | **I9** | `Category` is preserved end-to-end; it is never re-derived from a salary band | exact |
@@ -470,7 +444,7 @@ This spec was implemented as a reference port and executed before any ticket was
 
 Input space: `D ∈ {28,29,30,31}`, all four Categories, `r ∈ {0, 150…3000}`,
 `M ∈ {0, 4000…120000}`, `b ∈ {0, 1…500}`, `Dw ∈ [0, D]`, `Xd ∈ {0,1,2,4,8}`,
-`p ∈ {50,54,60,70,76,100}`, `pfOptIn`, `esiOptIn`, `isSecurity`,
+`p ∈ {50,54,60,70,76,100}`, `pfOptIn`, `esiOptIn`,
 `advance ∈ {0, 500, 1500, −1500, 20000}`, `otherDeduction ∈ {0, 100, 15000}`,
 `specialBonus ∈ {0, 5000}`.
 
@@ -510,8 +484,6 @@ Largest movers, with attribution:
 
 | Employee | Old net | New net | Δ | Cause |
 |---|---|---|---|---|
-| Monaj Chatterjee (Security) | 7,236.23 | 6,084.06 | −1,152.17 | Security Sunday double pay removed (T-02) |
-| Parimal Ghosh (Security) | 6,356.49 | 5,664.46 | −692.03 | Security Sunday double pay removed (T-02) |
 | PUNIT SODHANI | 45,000.00 | 44,800.00 | −200.00 | P-Tax now charged (T-15 — confirm exemption) |
 | Nawneet Sodhani (APTUS) | 79,990.00 | 79,790.00 | −200.00 | P-Tax now charged (T-15 — confirm exemption) |
 | S K SAJAMAL | 20,194.18 | 20,155.71 | −38.47 | ESI base moved from Earned Salary to Gross (ADR-0002) |
@@ -548,6 +520,6 @@ every row. The 200k-case fuzz (§10.1) and the net-equality packing fuzz pass un
 
 ### 10.3 What is not yet verified
 
-- Attendance parsing (`attendance.ts`) against the raw punch files — out of scope for this pass.
-- The P-Tax exemption question for the two ₹0 rows (TICKET-15).
+- The retired attendance checker is intentionally absent; payroll day inputs are covered by the
+  manual-input and salary regression tests.
 - Whether the deployed build matches `src/HEAD` (TICKET-15).

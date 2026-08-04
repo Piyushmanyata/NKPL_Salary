@@ -1,4 +1,4 @@
-import { calendarDaysForMonth } from "../src/attendance.ts";
+import { calendarDaysForMonth } from "../src/months.ts";
 import { calculateSalary } from "../src/salary.ts";
 
 function assert(cond, msg) {
@@ -36,7 +36,7 @@ const jul = calculateSalary(
   { workingDays: 31 },
 );
 
-// For unskilled full attendance, monthly = D * r when engine derives from day rate
+// For unskilled full days, monthly = D * r when engine derives from day rate
 const febFromDay = calculateSalary(
   {
     ...labour,

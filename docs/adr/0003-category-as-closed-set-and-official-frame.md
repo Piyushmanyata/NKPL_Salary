@@ -13,14 +13,15 @@ line, and a copied `netPayable` that misreported net in 13.1% of fuzzed inputs.
 - `Category = Unskilled | Semi-skilled | Skilled | Special`, mutually exclusive and closed.
   Category is never inferred from salary bands.
 - Unskilled anchors on day rate; Semi-skilled and Skilled anchor on monthly salary;
-  Special is fixed monthly, attendance-exempt, with no day rate.
+  Special is fixed monthly, uses full Calendar Days for payroll, and has no day rate.
 - Calendar days are derived from the month label.
-- `isSecurity` is a persisted boolean, orthogonal to Category.
+- Days Worked and Extra Days are manual employee-month inputs; no punch-based attendance layer
+  participates in payroll.
 - The Official sheet has one code path. Attendance is `clamp(26 − calendar absences, 0, 26)`
   for everyone. PF status affects only the basic formula and the PF amount.
 - Official basic uses the wage board when PF is on; the opt-out elevation applies only when
   PF is off. The ₹15,000 EPF ceiling applies to the PF base, never to the displayed basic.
-- Official net is always computed. If no attendance packs, the row is flagged `unpackable`
+- Official net is always computed. If no Official frame packs, the row is flagged `unpackable`
   and export is blocked. ADR-0001's net equality holds for every non-flagged row.
 
 ## Consequences

@@ -14,7 +14,6 @@ blockers are open.
 | # | Title | Type | Pri | Blocked by |
 |---|---|---|---|---|
 | 01 | Make `Special` a fourth Category and delete the `isSpecial` flag | schema | P0 | — |
-| 02 | Persist `isSecurity` and enforce the no-Sunday-package rule | schema | P0 | — |
 | 03 | Derive calendar days from the month label; delete `WORKING_DAYS = 31` | bug | P1 | — |
 | 04 | Unskilled with a monthly salary but no day rate earns ₹0 | bug | P0 | 01 |
 | 05 | Bundled June roster stores *total* salary in `monthlySalary` | data | P1 | 01 |
@@ -42,7 +41,6 @@ Wave 0  ── independent, start immediately, no shared files
 Wave 1  ── schema foundation, land 01 and 11 in the SAME commit
    01 ── Category as a closed 4-value set
    11 ── stop salary-band guessing        ← without this, 01 is undone at App.tsx:443
-   02 ── persist isSecurity
 
 Wave 2  ── depends on the new schema
    04 ── Unskilled day-rate back-fill
@@ -79,7 +77,6 @@ leaves stored negative advances; the migration without the code fix double-corre
 | Official attendance above the 26-day cap | 12 of 49 NKPL rows | T-07 |
 | Unskilled silently zeroed | any Unskilled row missing a day rate | T-04 |
 | Bundled roster salary conflation | 10 of 51 rows | T-05 |
-| Security drawing Sunday double pay | 2 employees, ₹1,840 | T-02 |
 | Basic capped below the ESI threshold it claims to clear | 1 employee (BIDYUT RAY) | T-08 |
 | `npm test` does not run | entire suite, zero signal | T-14 |
 
@@ -87,7 +84,7 @@ leaves stored negative advances; the migration without the code fix double-corre
 
 ## Definition of done for the batch
 
-- [ ] All 15 tickets closed.
+- [ ] All 14 remaining tickets closed.
 - [ ] `npm test` green from a clean clone.
 - [ ] Invariants **I1–I10** hold across 200,000 fuzzed cases with 0 violations.
 - [ ] Both June rosters re-exported and diffed; every changed rupee attributed to a ticket.

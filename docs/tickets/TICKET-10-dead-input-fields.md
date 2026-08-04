@@ -10,7 +10,7 @@ any number on either sheet. A user who edits them sees no change and no error.
 
 **1. `performanceBonus` (`types.ts:49`)**
 
-`sanitizeEmployee` reads and stores it (`App.tsx:259`). `calculateSalary` **overwrites** it
+`sanitizeEmployee` used to read and store it (`App.tsx:259`). `calculateSalary` **overwrites** it
 unconditionally at `salary.ts:121`:
 
 ```ts
@@ -18,8 +18,8 @@ const performanceBonus = (perDayWage + bonusPerDay) * extraDays;
 ```
 
 The stored value never reaches the output. `App.tsx:1760` even conditionally preserves it
-during attendance import (`matched.sundaysEligible > 0 ? undefined : emp.performanceBonus`),
-implying an intended manual-override semantic that was never implemented.
+ during the retired attendance-import merge, implying an intended manual-override semantic that
+ was never implemented.
 
 **2. `officialAttendance` (`types.ts:52`)** and **3. `officialBonus` (`types.ts:53`)**
 
@@ -46,7 +46,7 @@ derived quantities that must not be overridable, or net equality becomes unenfor
 `EmployeeInput`. `performanceBonus` **stays** on `SalaryRow` (it is a computed output).
 
 **`src/App.tsx`** — remove from `sanitizeEmployee` (`:257-260`), `blankEmployee` (`:77-90`),
-the attendance-import merge (`:1760`), and any roster editor control bound to them.
+the retired attendance-import merge, and any roster editor control bound to them.
 
 **`src/officialSheet.ts`** — remove `officialAttendance` / `officialBonus` from `OfficialRow`
 (`:36-37`) and from both return sites.

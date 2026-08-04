@@ -16,7 +16,7 @@ The product shows both an internal Reference salary view and a formal Official (
 - NKPL and APTUS share the same rules; only data differs.
 
 ## Consequences
-- One money pipeline: attendance → Reference economics → Official presentation with net lock.
+- One money pipeline: manual day inputs → Reference economics → Official presentation with net lock.
 - Official cannot independently invent a different take-home.
 - Tests must assert net equality even when PF/ESI diverge.
 - Reverse-engineering loops that recompute net without a lock are bugs.

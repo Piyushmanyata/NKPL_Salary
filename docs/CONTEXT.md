@@ -1,6 +1,6 @@
 # NKPL Salary
 
-Payroll domain for NKPL and APTUS: attendance-derived pay inputs, an internal Reference view, and a formal Official (Main) wage sheet that must match take-home.
+Payroll domain for NKPL and APTUS: manually entered day inputs, an internal Reference view, and a formal Official (Main) wage sheet that must match take-home.
 
 **Formulas and calculation order are defined in `docs/SPEC-payroll.md`, which is authoritative where this glossary is ambiguous or conflicts.**
 
@@ -31,7 +31,7 @@ _Avoid_: Net payable
 ### People and classification
 
 **Employee**:
-A person on a company roster for a pay month, with rates, attendance inputs, and statutory opt-ins.
+A person on a company roster for a pay month, with rates, manual day inputs, and statutory opt-ins.
 _Avoid_: User, staff (as a type name)
 
 **Wage Category** (also **Category**):
@@ -53,85 +53,29 @@ _Avoid_: Confusing input mode with rate anchoring; treating the toggle as a way 
 **Special Employee** (Category = `"Special"`):
 A **Category**, not a role flag and not a name list. Mutually exclusive with Unskilled, Semi-skilled, and Skilled. Constraints (SPEC §2.2):
 - Anchor is fixed monthly salary `M`; no day rate is stored or used after migration (`r` ignored / discarded).
-- Full-month pay invariant to calendar days and attendance; Days Worked forced to `D`; Extra Days forced to 0; absent deduction 0.
+- Full-month pay invariant to calendar days and manual day inputs; Days Worked forced to `D`; Extra Days forced to 0; absent deduction 0.
 - Daily bonus `b` ignored (treated as 0); `specialBonus` is permitted.
 - PF and ESI forced off; Professional Tax still applies.
 - On the Official sheet, display borrows the Skilled wage-board row; money basic comes from the opt-out formula (PF is always off for Special).
 _Avoid_: Director-only, name-list specials, `isSpecial` boolean overlay on another category
 
-**Security Employee**:
-Guard/security role controlled by a **persisted** `isSecurity` boolean, **orthogonal to Category**. When true: no **automatic** Sunday package — no auto-paid Sunday and no auto-granted Extra Day for Sundays (both companies; ADR-0008). A worked Sunday still counts as a normal Present Day only. **Double Shift days still grant Extra Days** at sync (SPEC-attendance §8). Other Extra Days remain manually editable. Sheet labels may misspell security (`SEQURITY`, `SECQURITY`); detection accepts those.
-_Avoid_: Semi-skilled-as-proxy for security rules; deriving security from name alone; wiping double-shift Extra Days for guards; reproducing APTUS sheet TOT=36 for a full-month guard
-
-### Time and attendance
+### Month and day inputs
 
 **Calendar Days**:
-Number of days in the pay month (28–31). **Derived from the selected month label** (e.g. `"June 2026" → 30`); never independently editable and never a hard-coded constant. Reference full attendance and rate derivation for monthly-paid staff use this.
+Number of days in the pay month (28–31). **Derived from the selected month label** (e.g. `"June 2026" → 30`); never independently editable and never a hard-coded constant. Reference salary proration uses this calendar frame.
 _Avoid_: Official attendance, working days (ambiguous), editable days-in-month field
 
 **Official Attendance**:
-Attendance figure on the Official Sheet. Derived as `clamp(26 − calendar absences, 0, 26)` for **every** employee regardless of PF status (and may be reduced further only to keep net equality packable, down to a minimum of 1 if Days Worked > 0, else 0).
+Computed wage-sheet field on the Official Sheet. Derived as `clamp(26 − calendar absences, 0, 26)` for **every** employee regardless of PF status (and may be reduced further only to keep net equality packable, down to a minimum of 1 if Days Worked > 0, else 0).
 _Avoid_: Days worked (Reference), present days raw, using Reference `Dw` uncapped when PF is off
 
 **Days Worked**:
-Reference attendance input: effective present days after unapproved penalties and eligible auto-paid Sundays. **Double shifts never increment Days Worked** (clamped to calendar days). Presence authority is the Manual Sheet (SPEC-attendance §3), not duration.
-_Avoid_: Official attendance, raw punch count, adding doubles into Dw
+Manual payroll input for the selected employee-month. The user types a value from `0` through Calendar Days; no punch file, duration rule, Sunday rule, or automatic synchronization changes it.
+_Avoid_: Official Attendance, raw punch count, carrying an old month's value into a new month automatically
 
 **Extra Days**:
-Count of paid extra-day units flowing into `performanceBonus`: eligible worked Sundays **plus Double Shift days**. Each unit pays one full day rate of (wage per day + bonus per day) on Reference. **Forced to 0 for Special.** Security: no auto Sunday Extra Days, but **double shifts do grant Extra Days**. Non-security: `sundaysEligible + doubleShiftDays`.
-_Avoid_: Overtime hours, present days, putting doubles only into Dw
-
-**Present Day**:
-A calendar day counted as worked per Manual Sheet verdict or manual override (R1–R3), or any punch when no Manual Sheet is loaded (R4). Duration and short stay do **not** decide presence (ADR-0005).
-_Avoid_: Requiring five hours; treating a single punch as always absent
-
-**Short Stay**:
-Punched day under five hours (or single punch). **Presentational only** — a highlight on the attendance grid. Never inputs to presence, Days Worked, Month Threshold, or money (ADR-0005 / A1).
-_Avoid_: Half day; treating short stay as automatic absence
-
-**Double Shift**:
-A day marked `2` on the Manual Sheet (or set by hand with decision `D`). Requires presence (A3). Pays exactly one Extra Day; never increments Days Worked. Cleared by hand with decision `d`.
-_Avoid_: Counting A+B roster columns as a double; adding a double into Dw
-
-**Manual Sheet**:
-Typed attendance workbook — the **presence authority** (ADR-0006). Formats: NKPL `double-shift`, APTUS `aptus-daily`. Cell `2` means double shift.
-_Avoid_: Treating the biometric export as the presence authority
-
-**Biometric Export**:
-Device punch log — **evidence only**, never presence authority (ADR-0006). Formats: `standard`, `repeating-logs`. Supplies punches, shift, duration, short-stay / ambiguous-span highlights.
-_Avoid_: Paying from punches alone when a Manual Sheet exists
-
-**Attendance Conflict**:
-Classified disagreement between Manual Sheet and Biometric Export (or mapping gaps): `sheet-present-no-punch`, `sheet-present-short-stay`, `punched-sheet-absent`, `double-no-corroboration`, `missing-biometric`, `unmapped-biometric`. Surfaced for review; nothing auto-applied to pay.
-_Avoid_: Silently resolving conflicts into money
-
-**Biometric ID**:
-Device employee id stored once and mapped to roster id in `attendance_meta` (ADR-0009). The only join key for biometric rows; name matching is suggestion-only.
-_Avoid_: Silent name-only joins for biometric → roster
-
-**Excluded Employee**:
-Per-company soft exclusion from the attendance checker (cash workers etc.). Persisted in `attendance_meta.excluded`; omitted from stats, conflicts, and sync. **Never deletes the payroll roster row.**
-_Avoid_: Roster delete from the attendance screen
-
-**Unapproved Absence**:
-Uninformed leave day. Costs two days of pay: the day is already unpaid as absent, and one additional present day is removed.
-_Avoid_: Approved leave, sandwich
-
-**Month Threshold**:
-Minimum effective present days before Sunday benefits apply: 21 if the month has 31 days, 20 if 30, otherwise round(calendarDays × 20/30). Measured before auto-paid Sundays.
-_Avoid_: Official 26, full attendance
-
-**Sandwich Rule**:
-For a given Sunday, Sunday benefits are denied only when the employee is absent on both the preceding Saturday and the following Monday. Present on Saturday or Monday is enough to keep benefits available (if the month threshold is also met).
-_Avoid_: Requiring both Saturday and Monday present
-
-**Sunday Package**:
-Benefits available when month threshold is met, sandwich is not violated, and the person is not Security and not Special: (1) auto-paid Sunday if they did not work that Sunday; (2) one Extra Day if they did work that Sunday. Worked Sunday always counts as one Present Day for pay even when double pay is denied.
-_Avoid_: Generic OT
-
-**Auto-Paid Sunday**:
-A Sunday counted in Days Worked without a qualifying punch, only when the Sunday Package applies and they did not work that day.
-_Avoid_: Double pay, Extra Days
+Manual count of extra-day units flowing into `performanceBonus`. Each unit pays one full day rate of (wage per day + bonus per day) on Reference. **Forced to 0 for Special.** The value is entered per employee-month; no Sunday, punch, double-shift, or attendance import can create it.
+_Avoid_: Overtime hours, derived Sunday benefits, putting extra work only into Days Worked
 
 ### Money components (Reference)
 
@@ -172,7 +116,7 @@ Manual flat amount for the month, outside the basic/HRA/TA split.
 _Avoid_: Performance bonus
 
 **Earned Salary**:
-Attendance-prorated monthly salary on Reference (full month for Special Employees).
+Days-Worked-prorated monthly salary on Reference (full month for Special Employees).
 _Avoid_: Gross payable (includes more components)
 
 ### Statutory
@@ -228,8 +172,8 @@ Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **M
 _Avoid_: Treating it as a per-month record; overlaying it onto closed months
 
 **Month Carry-Forward**:
-Opening a month with no saved data automatically copies the roster from the nearest earlier month for that company — every employee, salary, allowance, category, PF/ESI choice and TDS carries over. Only the per-month inputs reset: **Days Worked** to full attendance, **Extra Days** to 0, and advance and special bonus cleared. The user is never asked to pick a month to copy from; the picker survives only for the genuine first month of a company, where there is nothing to carry.
-_Avoid_: Copying last month's attendance forward; prompting the user to copy a month by hand
+Opening a month with no saved data automatically copies the roster from the nearest earlier month for that company — every employee, salary, allowance, category, PF/ESI choice and TDS carries over. Only the per-month inputs reset: **Days Worked** to Calendar Days, **Extra Days** to 0, and advance and special bonus cleared. Existing month records are left untouched; the user enters the new month's day values manually.
+_Avoid_: Copying last month's manual day values forward; prompting the user to copy a month by hand
 
 **Scope Guard**:
 The rule that a roster may only be written to the company+month it was loaded for. Switching company changes the active company a render before the new roster arrives, so without this guard the debounced auto-save writes the previous company's employees under the new company's key. This is not hypothetical — it put all 51 NKPL employees into `monthly_salary/APTUS/July 2026` and `employee_rates/APTUS` on 2026-07-29.

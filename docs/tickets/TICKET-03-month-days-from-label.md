@@ -27,7 +27,7 @@ Two failure modes:
 
 ```ts
 export function calendarDaysForMonth(label: string): number {
-  const p = parseMonthYearString(label);          // already exists in attendance.ts:200
+  const p = parseMonthYearString(label);          // shared month utility in src/months.ts
   if (!p) return 30;                              // safe neutral default, never 31
   return new Date(p.year, p.monthIndex + 1, 0).getDate();
 }
@@ -37,7 +37,7 @@ export function calendarDaysForMonth(label: string): number {
 
 - `src/salary.ts:3` — delete `WORKING_DAYS`. Replace with `DEFAULT_MONTH_DAYS = 30` used
   only as a parse-failure fallback. `MIN_MONTH_DAYS`/`MAX_MONTH_DAYS` become `28`/`31`.
-- `src/attendance.ts` — export `calendarDaysForMonth` (it already owns `parseMonthYearString`).
+- `src/months.ts` — keep `calendarDaysForMonth` and `parseMonthYearString` together as month utilities.
 - `src/App.tsx:333` — `monthDays` stops being independent state. Derive it:
   `const effectiveMonthDays = useMemo(() => calendarDaysForMonth(monthLabel), [monthLabel]);`
   Delete `setMonthDays` and the month-days input control.

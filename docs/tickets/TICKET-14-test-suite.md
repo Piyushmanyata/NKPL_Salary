@@ -51,7 +51,7 @@ Seeded generator (`seed = 7`, reproducible) over the full input space:
 `monthDays ∈ {28,29,30,31}`, all four categories, `salaryPerDay ∈ {0, 150…3000}`,
 `monthlySalary ∈ {0, 4000…120000}`, `bonusPerDay ∈ {0, 1…500}`, `daysWorked ∈ [0, D]`,
 `extraDays ∈ {0,1,2,4,8}`, `basicPercent ∈ {50,54,60,70,76,100}`, `pfOptIn`, `esiOptIn`,
-`isSecurity`, `advance ∈ {0, 500, 1500, 20000}`, `otherDeduction ∈ {0, 100, 15000}`,
+`advance ∈ {0, 500, 1500, 20000}`, `otherDeduction ∈ {0, 100, 15000}`,
 `specialBonus ∈ {0, 5000}`.
 
 Run 200,000 cases and assert **I1–I10** from SPEC §7. Report the `unpackable` rate in the
@@ -71,7 +71,6 @@ exports — those predate the statutory rework and are known to disagree (see TI
 | Test | Asserts |
 |---|---|
 | `special_is_month_length_invariant` | Special `monthlySalary` identical at `D = 28` and `D = 31` (T-01) |
-| `security_never_earns_extra_days` | `isSecurity: true, extraDays: 5` → `performanceBonus === 0` (T-02) |
 | `month_days_from_label` | Feb 2026 → 28, Feb 2028 → 29, Jul 2026 → 31 (T-03) |
 | `unskilled_backfills_day_rate` | `{Unskilled, M:9600, r:0}` → `r === 320`, `gross > 0` (T-04) |
 | `seed_rosters_store_base_salary` | Both bundled rosters pass the `M ≈ r × 30` guard (T-05) |

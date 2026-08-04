@@ -138,7 +138,6 @@ export function calculateSalary(
 
   const category = input.category;
   const isSpecial = isSpecialCategory(category);
-  const isSecurity = input.isSecurity === true;
 
   let salaryPerDay = Math.max(0, numberValue(input.salaryPerDay));
   let monthlySalary = Math.max(0, numberValue(input.monthlySalary));
@@ -149,9 +148,7 @@ export function calculateSalary(
     category === "Unskilled" ? salaryPerDay <= 0 : monthlySalary <= 0;
 
   const daysWorked = isSpecial ? workingDays : clampDays(numberValue(input.daysWorked), workingDays);
-  // Special has no Extra Days at all. Security gets no *automatic* Sunday
-  // package — the attendance layer never grants them one — but a typed Extra
-  // Day is honoured, because approved extra work is a manual decision.
+  // Special has no Extra Days; every other row accepts a manually entered value.
   const extraDays = isSpecial ? 0 : Math.max(0, numberValue(input.extraDays));
   // Stored positive = amount advanced and recovered this month. Engine always
   // subtracts. Negative input is clamped to 0 at the boundary (TICKET-06).
@@ -164,7 +161,6 @@ export function calculateSalary(
     return {
       ...input,
       category,
-      isSecurity,
       missingRate: true,
       basicPercent: Math.round(basicShare * 100),
       monthlySalary,
@@ -276,7 +272,6 @@ export function calculateSalary(
   return {
     ...input,
     category,
-    isSecurity,
     missingRate: false,
     basicPercent: Math.round(basicShare * 100),
     monthlySalary,

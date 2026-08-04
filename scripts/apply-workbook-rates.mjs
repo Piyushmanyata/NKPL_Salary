@@ -213,7 +213,7 @@ async function main() {
     const rateRaw = await redis.get(rateKey);
 
     // The month may not exist yet. Carry the roster forward from the most
-    // recent month for this company, resetting the per-month attendance
+    // recent month for this company, resetting the per-month manual day
     // inputs — the same rule App.tsx applies when you open a new month.
     if (!monthRaw) {
       const source = await latestMonthBefore(t);
@@ -233,7 +233,7 @@ async function main() {
         updatedAt: new Date().toISOString(),
       };
       monthRaw = JSON.stringify(carried);
-      console.log(`${monthKey}: created by carrying ${source} forward (attendance reset)`);
+      console.log(`${monthKey}: created by carrying ${source} forward (manual days reset)`);
     }
 
     const month = JSON.parse(monthRaw);

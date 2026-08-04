@@ -175,7 +175,7 @@ def attribute(name: str, old: dict, new: dict) -> list[str]:
     old_adv_effect = old["advance"]  # stored as in export (often negative)
     new_adv = new["advance"]
     # In old engine: net = ... + advance (negative reduces). In new: net = ... - advance (positive reduces).
-    # Recovery amount old = -old_adv if old_adv < 0 else ? 
+    # Recovery amount old = -old_adv if old_adv < 0 else ?
     # Compare absolute recovery:
     old_recovery = -old_adv_effect if old_adv_effect < 0 else (
         -old_adv_effect if False else abs(old_adv_effect) if old_adv_effect else 0
@@ -202,11 +202,6 @@ def attribute(name: str, old: dict, new: dict) -> list[str]:
         tags.append(
             f"P-Tax {old['ptax']:.0f} → {new['ptax']:.0f} (T-15 open: exemption? / slab on gross)"
         )
-
-    # Security Extra Days
-    if re.search(r"security", name, re.I) or "(Security)" in name:
-        if abs(d_net) > 0.01:
-            tags.append("T-02 isSecurity / Sunday package (if Extra Days dropped)")
 
     # PF / gross component shifts
     if abs(new["pf"] - old["pf"]) > 0.01:
@@ -312,9 +307,6 @@ def main() -> None:
     parts.append(
         "3. **P-Tax (T-15 open):** PUNIT SODHANI and Nawneet Sodhani show ₹0 in archive vs slab ₹200 in engine — "
         "needs business confirmation of exemption vs arrears."
-    )
-    parts.append(
-        "4. **Security (T-02):** Parimal / Monaj may lose Extra Days pay once `isSecurity` is enforced."
     )
     parts.append("")
     out = ARCHIVE / "JUNE-DIFF-ATTRIBUTION.md"

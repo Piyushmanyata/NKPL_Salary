@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickCarrySource } from "../attendance";
+import { pickCarrySource } from "../months";
 
 /**
  * A new month inherits the previous month's roster and rates automatically —

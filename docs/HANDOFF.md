@@ -62,7 +62,6 @@ Wave 0  ── independent, no shared files
 
 Wave 1  ── schema foundation
    01 + 11 ── MUST land in the SAME commit
-   02      ── persist isSecurity
 
 Wave 2  ── depends on the new schema
    04 ── Unskilled day-rate back-fill
@@ -201,7 +200,6 @@ Settled in the 2026-07-26 grill. Reopening one costs a re-derivation of the whol
 | ₹15,000 | EPF *contribution* ceiling only. Never caps a displayed basic. |
 | Official attendance | `clamp(26 − calendar absences, 0, 26)` for **everyone**. |
 | Unpackable rows | Flag, warn, block export. Never print an unverifiable net. |
-| Security identification | Persisted `isSecurity` boolean, not a name-string match. |
 | Advance sign | Stored **positive**, always subtracted. |
 | Missing rate | One-time back-fill at load; then assert. Never back-fill per calculation. |
 

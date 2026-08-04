@@ -54,8 +54,7 @@ def reference(e, D):
     else:
         r, b = 0.0, 0.0
 
-    sec = e.get('isSecurity', False)
-    Xd = 0 if (sec or cat == 'Special') else max(0, e.get('extraDays', 0))
+    Xd = 0 if cat == 'Special' else max(0, e.get('extraDays', 0))
     Dw = D if cat == 'Special' else max(0, min(D, e.get('daysWorked', 0)))
     total = R(M + D * b)
     absent = 0 if cat == 'Special' else max(0, D - Dw)
@@ -76,7 +75,7 @@ def reference(e, D):
     pt = professional_tax(gross)
     adv, od = max(0, e.get('advance', 0)), max(0, e.get('otherDeduction', 0))
 
-    return dict(category=cat, isSecurity=sec, D=D, Dw=Dw, Xd=Xd, r=r, M=M, totalSalary=total,
+    return dict(category=cat, D=D, Dw=Dw, Xd=Xd, r=r, M=M, totalSalary=total,
                 absentDays=absent, earnedSalary=earned, basicSalary=R(basic), hra=R(hra), ta=R(ta),
                 performanceBonus=R(perf), grossPayable=R(gross), pfOptIn=pf_ok, esiOptIn=esi_ok,
                 employeePf=epf, esi=esi, professionalTax=pt, advance=adv, otherDeduction=od,
@@ -145,7 +144,6 @@ def fuzz(n=200000, seed=7):
                    daysWorked=random.randint(0, D),
                    extraDays=random.choice([0, 0, 0, 1, 2, 4, 8]),
                    pfOptIn=random.random() < .6, esiOptIn=random.random() < .6,
-                   isSecurity=random.random() < .15,
                    advance=random.choice([0, 0, 500, 1500, -1500, 20000]),
                    otherDeduction=random.choice([0, 0, 100, 15000]),
                    specialBonus=random.choice([0, 0, 0, 5000]))
@@ -173,8 +171,6 @@ def fuzz(n=200000, seed=7):
                                      and r['employeePf'] == 0 and r['esi'] == 0
                                      and o['pf'] == 0 and o['esi'] == 0):
             v['I5'] += 1
-        if r['isSecurity'] and not (r['Xd'] == 0 and r['performanceBonus'] == 0):
-            v['I6'] += 1
         if r['Dw'] > 0 and r['grossPayable'] == 0:
             v['I7'] += 1
         if cat != r['category']:

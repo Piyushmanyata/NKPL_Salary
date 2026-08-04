@@ -120,4 +120,5 @@ Attribution is best-effort from field deltas; ESI-on-earned vs ESI-on-gross is t
 1. **Advance (T-06):** archive stored negative advances; engine now stores positive recovery. For Ashok / Kajal / Jayanta / Biswasundar / Piku the *recovery amount* is unchanged once data is migrated.
 2. **ESI (ADR-0002):** Reference ESI moved from earned salary to gross payable (July 24 rework, live as `9425051`).
 3. **P-Tax (T-15 open):** PUNIT SODHANI and Nawneet Sodhani show ₹0 in archive vs slab ₹200 in engine — needs business confirmation of exemption vs arrears.
-4. **Security (T-02):** Parimal / Monaj may lose Extra Days pay once `isSecurity` is enforced.
+4. **Historical attendance note:** The old Security/T-02 behavior is superseded by ADR-0010;
+   current payroll uses manually entered Extra Days.

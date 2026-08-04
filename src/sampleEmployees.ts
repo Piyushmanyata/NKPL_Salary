@@ -92,7 +92,7 @@ export const sampleEmployees: EmployeeInput[] = [
     "advance": null,
     "otherDeduction": 0,
   },
-  // Standing NKPL people present on June+ payroll and July attendance, but
+  // Standing NKPL people present on June+ payroll and July records, but
   // historically missing from this May-sourced sample (broke name→roster join).
   {
     "id": "emp-j1",

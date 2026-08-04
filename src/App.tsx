@@ -13,30 +13,21 @@ import {
   Trash2,
   Users,
   AlertTriangle,
-  Calendar,
-  Clock,
   X,
   Check,
-  Info,
   Cloud,
   Wifi,
   Building2,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   saveMonthData,
   getMonthData,
   getAllMonthLabels,
   getEmployeeRates,
   saveEmployeeRates,
-  getAttendance,
-  getAttendanceMeta,
-  saveAttendanceMeta,
   EmployeeRateMap
 } from "./db";
-import { AttendanceUpload } from "./AttendanceUpload";
-import { AttendanceMappingModal } from "./AttendanceMappingModal";
-import { reconcile } from "./reconcile";
 import {
   ESI_EMPLOYER_RATE,
   ESI_GROSS_LIMIT,
@@ -60,8 +51,6 @@ import {
   uid,
 } from "./salary";
 import type {
-  AttendanceEmployee,
-  AttendanceMetaV1,
   Category,
   EmployeeInput,
   SalaryRow,
@@ -70,17 +59,10 @@ import { buildOfficialRow, normalizeCategory } from "./officialSheet";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
-  calculateEmployeeAttendanceStats,
   calendarDaysForMonth,
-  namesMatch,
-  normalizeKey,
   pickCarrySource,
   sortMonthsChronologically,
-} from "./attendance";
-
-function emptyAttendanceMeta(company: string): AttendanceMetaV1 {
-  return { v: 1, c: company, u: new Date().toISOString(), map: {}, excluded: [] };
-}
+} from "./months";
 
 type SheetMode = "reference" | "main";
 
@@ -95,7 +77,6 @@ const blankEmployee = (monthDays: number): EmployeeInput => ({
   id: uid(),
   name: "New Employee",
   category: "Skilled",
-  isSecurity: false,
   monthlySalary: 0,
   salaryPerDay: 0,
   bonusPerDay: 0,
@@ -108,9 +89,6 @@ const blankEmployee = (monthDays: number): EmployeeInput => ({
   otherDeduction: 0,
   specialBonus: undefined,
 });
-
-/** One-time name heuristic for back-filling isSecurity when the flag is absent. */
-const nameLooksLikeSecurity = (name: string) => /\(?\s*security\s*\)?/i.test(name);
 
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
@@ -148,8 +126,6 @@ const monthNames = [
   "november",
   "december",
 ];
-
-const loadXLSX = () => import("xlsx");
 
 function loadActiveCompany(): CompanyCode {
   try {
@@ -226,12 +202,6 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     category = "Unskilled";
   }
   const isSpecial = category === "Special";
-  // Persist isSecurity; back-fill once from name when the field is absent (TICKET-02).
-  const isSecurity =
-    row.isSecurity !== undefined && row.isSecurity !== null
-      ? Boolean(row.isSecurity)
-      : nameLooksLikeSecurity(name);
-
   const days = clampMonthDays(monthDays);
   const rawSalaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
   const rawBonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
@@ -249,7 +219,6 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     id: String(row.id || `emp-${Date.now()}-${index}`),
     name,
     category,
-    isSecurity,
     monthlySalary,
     // Typed package anchor for the fixed-monthly categories; never below M, and
     // never stored for Unskilled (whose total stays derived from r and b).
@@ -262,8 +231,7 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     salaryPerDay,
     bonusPerDay,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
-    // Security keeps typed Extra Days (the Sunday package is still withheld by
-    // the attendance layer); only Special has none at all.
+    // Extra Days are a manual payroll input; only Special has none at all.
     extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
@@ -279,10 +247,7 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
 
 // A new month inherits the roster and every standing rate from the month
 // before it — salary, allowance, category, PF/ESI choices and TDS all carry.
-// Only the per-month inputs reset, because attendance is the thing that
-// actually differs month to month. Days Worked starts at full attendance and
-// the Attendance Checker (or the user) marks people down from there; carrying
-// last month's absences forward would quietly bill them twice.
+  // Reset manual per-month pay inputs so last month's absences are not billed twice.
 const carryForwardEmployee = (employee: EmployeeInput, monthDays: number): EmployeeInput => ({
   ...employee,
   daysWorked: clampMonthDays(monthDays),
@@ -303,10 +268,8 @@ const defaultEmployeesForCompany = async (
     return [];
   }
   // Always use the real June 2026 payroll roster as the NKPL seed. The older
-  // sampleEmployees list (May-sourced) omitted people who still appear on
-  // later Manual Sheets / biometric (e.g. UTTAM DAS, PRIYOJIT GHOSH), so
-  // attendance could not join them to payroll. Per-month days/extra/advance
-  // are reset by sanitizeEmployee / carryForwardEmployee.
+  // sampleEmployees list (May-sourced) omitted people still present in the
+  // current payroll roster (e.g. UTTAM DAS, PRIYOJIT GHOSH).
   return (await import("./juneEmployees")).juneEmployees;
 };
 
@@ -368,10 +331,6 @@ function App() {
   // it resets naturally when a different row is opened.
   const [rateMode, setRateMode] = useState<"perDay" | "perMonth" | null>(null);
   const [sheetMode, setSheetMode] = useState<SheetMode>("reference");
-  const [attendanceData, setAttendanceData] = useState<AttendanceEmployee[] | null>(null);
-  const [attendanceMonth, setAttendanceMonth] = useState<string>("");
-  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
-
   // D is a pure function of the month label — never independently editable (TICKET-03).
   const effectiveMonthDays = useMemo(
     () => calendarDaysForMonth(monthLabel),
@@ -419,17 +378,6 @@ function App() {
       toastTimeoutRef.current = null;
     }, 4000);
   };
-
-  // The Attendance Checker is a local audit/import tool: it parses an uploaded
-  // punch-in/out Excel file into a day-by-day breakdown purely to help review
-  // and correct present days before syncing. The breakdown itself is never
-  // persisted -- only its end result (each employee's present day count)
-  // matters, and that lives in `daysWorked`, which is saved to Redis. So the
-  // audit view is simply discarded whenever the month or company changes.
-  useEffect(() => {
-    setAttendanceData(null);
-    setAttendanceMonth("");
-  }, [monthLabel, activeCompany]);
 
   const salaryRows = useMemo(
     () =>
@@ -675,17 +623,6 @@ function App() {
           return { ...employee, category: next };
         }
 
-        if (field === "isSecurity") {
-          const next = booleanValue(value);
-          return {
-            ...employee,
-            isSecurity: next,
-            // Toggling Security no longer wipes Extra Days — they stay manually
-            // editable. Only Special has no Extra Days concept at all.
-            extraDays: isSpecialCategory(employee.category) ? 0 : employee.extraDays,
-          };
-        }
-
         if (field === "pfOptIn" || field === "esiOptIn") {
           if (isSpecialCategory(employee.category)) {
             return { ...employee, pfOptIn: false, esiOptIn: false };
@@ -816,12 +753,6 @@ function App() {
     setActiveCompany(next);
     setCompanyName(loadCompanyLabel(next));
     setMonthLabel(cfg.label);
-    // Attendance data belongs to the company it was loaded/uploaded for; clear it
-    // so switching companies never shows one company's attendance audit against
-    // another company's employee list.
-    setAttendanceData(null);
-    setAttendanceMonth("");
-    setIsAttendanceModalOpen(false);
   };
 
   // Persist the active company selection and its display label
@@ -922,7 +853,7 @@ function App() {
             const carried = await carryMonthInto(source, normalized, rates);
             if (!active) return;
             if (carried) {
-              showToast(`${normalized} started from ${source} — salaries kept, attendance reset`);
+              showToast(`${normalized} started from ${source} — salaries kept, manual days reset`);
               return;
             }
           }
@@ -988,7 +919,7 @@ function App() {
 
   // Auto-save salary/day + bonus/day rates to the shared cloud store whenever
   // they change, so every month and every visitor picks up the new rate.
-  // Debounced and skipped when unchanged so unrelated edits (attendance,
+  // Debounced and skipped when unchanged so unrelated edits (manual days,
   // deductions, etc.) don't trigger redundant writes.
   useEffect(() => {
     if (dbLoading || showNoDataModal) return;
@@ -1057,8 +988,8 @@ function App() {
     }
   };
 
-  // Carry a month's roster forward into `target`, resetting the per-month
-  // attendance inputs. Shared by the automatic carry on opening a new month and
+  // Carry a month's roster forward into `target`, resetting the manual
+  // days/extra inputs. Shared by the automatic carry on opening a new month and
   // by the explicit picker, so both behave identically.
   const carryMonthInto = async (
     source: string,
@@ -1088,7 +1019,7 @@ function App() {
     try {
       const targetDays = calendarDaysForMonth(noDataMonth);
       if (await carryMonthInto(source, noDataMonth, employeeRates)) {
-        showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, attendance reset)`);
+        showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, manual days reset)`);
       } else {
         showToast(`Failed to copy: source month ${source} has no data`, "error");
       }
@@ -1109,22 +1040,20 @@ function App() {
   // Close whichever modal is open on Escape, matching the explicit close/cancel
   // action each modal already exposes via its own button.
   useEffect(() => {
-    if (!isAttendanceModalOpen && !isDbModalOpen && !showNoDataModal) {
+    if (!isDbModalOpen && !showNoDataModal) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (isDbModalOpen) {
         setIsDbModalOpen(false);
-      } else if (isAttendanceModalOpen) {
-        setIsAttendanceModalOpen(false);
       } else if (showNoDataModal) {
         handleCancelNoData();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isAttendanceModalOpen, isDbModalOpen, showNoDataModal]);
+  }, [isDbModalOpen, showNoDataModal]);
 
   const exportRows =
     sheetMode === "main"
@@ -1315,20 +1244,6 @@ function App() {
               <Calculator size={17} />
               {sheetMode === "reference" ? "Show Main Sheet" : "Show Reference Sheet"}
             </button>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => {
-                if (!attendanceData) {
-                  setAttendanceData([]);
-                  setAttendanceMonth(monthLabel);
-                }
-                setIsAttendanceModalOpen(true);
-              }}
-            >
-              <FileSpreadsheet size={17} />
-              Attendance Checker
-            </button>
             <button className="ghost-button" type="button" onClick={exportCsv}>
               <FileDown size={17} />
               CSV
@@ -1505,7 +1420,6 @@ function App() {
                   <tbody>
                     {sortedFilteredRows.map((row) => {
                       const isSpecial = isSpecialCategory(row.category);
-                      const isSecurity = row.isSecurity === true;
                       const missingRate = row.missingRate === true;
                       // Special is paid a flat package and has no day rate, so it is
                       // always typed per month regardless of the toggle.
@@ -1753,22 +1667,6 @@ function App() {
                                         : "Change grade via the Category column"}
                                     </small>
                                   </div>
-                                  <div className="settings-column">
-                                    <span>Security</span>
-                                    <strong>{isSecurity ? "On" : "Off"}</strong>
-                                    <small>
-                                      {isSecurity
-                                        ? "No automatic Sunday package — Extra Days can still be set by hand"
-                                        : "Toggle if this employee is security staff"}
-                                    </small>
-                                    <button
-                                      type="button"
-                                      className={isSecurity ? "toggle-on" : "toggle-off"}
-                                      onClick={() => updateEmployee(row.id, "isSecurity", !isSecurity)}
-                                    >
-                                      {isSecurity ? "Turn Off" : "Turn On"}
-                                    </button>
-                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -1909,8 +1807,8 @@ function App() {
             </div>
             <div className="table-note">
               {sheetMode === "reference"
-                ? "Category is set by hand, never guessed from salary. Earned is Salary/Month prorated by present days. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
-                : `For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - present days), then reduces when needed so Basic always equals attendance x category daily wage. HRA/travel allowance are attendance-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
+                ? "Category is set by hand, never guessed from salary. Earned is Salary/Month prorated by Days Worked. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
+                : `For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - Days Worked), then reduces when needed so Basic always equals attendance x category daily wage. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
             </div>
           </article>
 
@@ -1919,20 +1817,20 @@ function App() {
               <div className="panel-heading compact">
                 <div>
                   <h2>Rules</h2>
-                  <p>Applied automatically</p>
+                  <p>Applied to calculations</p>
                 </div>
               </div>
               <div className="rule-list">
                 <Rule label="Category" value="Chosen per employee — Unskilled, Semi-skilled, Skilled or Special. Never inferred from salary." />
                 <Rule label="Salary Anchor" value="Unskilled is anchored on salary/day; the rest on salary/month. Either can be typed — Settings has a Per Day / Per Month switch." />
                 <Rule label="Calendar Days" value={`${effectiveMonthDays} days for ${monthLabel || "selected month"}`} />
-                <Rule label="Earned Salary" value="Salary/Month / calendar days x present days" />
+                <Rule label="Earned Salary" value="Salary/Month / calendar days x Days Worked" />
                 <Rule label="Reference Basic" value="Earned Salary x Basic %" />
-                <Rule label="Main PF Attendance" value={`Starts at 26 - (${effectiveMonthDays} - present days), then reduces if Basic plus Bonus is too high`} />
+                <Rule label="Main PF Attendance" value={`Starts at 26 - (${effectiveMonthDays} - Days Worked), then reduces if Basic plus Bonus is too high`} />
                 <Rule label="Official Basic" value="Attendance x category daily wage" />
                 <Rule label="Zone A Day Rate" value="Unskilled 400, Semi-skilled 440, Skilled 484" />
-                <Rule label="Sunday Attendance" value="Paid automatically for all Sundays if present >= 21 days (31-day month) or >= 20 days (30-day month). Denied if absent on Saturday and Monday surrounding a Sunday." />
-                <Rule label="Sunday Double Pay" value="Sundays actually worked count again as a bonus day (double pay) if threshold is met" />
+                 <Rule label="Days Worked" value="Entered manually per employee for the selected month" />
+                 <Rule label="Extra Days" value="Entered manually; used for the performance bonus" />
                 <Rule
                   label="HRA"
                   value={`${HRA_SHARE_OF_BALANCE * 100}% of prorated Total Salary minus Basic`}
@@ -1995,127 +1893,9 @@ function App() {
         </section>
       </main>
 
-      {isAttendanceModalOpen && attendanceData && (
-        <AttendanceCheckerModal
-          data={attendanceData}
-          month={attendanceMonth}
-          company={activeCompany}
-          onClose={() => setIsAttendanceModalOpen(false)}
-          employees={employees}
-          onUploadNewFile={(newData, newMonth) => {
-            setAttendanceData(newData);
-            setAttendanceMonth(newMonth);
-          }}
-          onSyncAttendance={(auditedEmps) => {
-            // An empty grid means "no sheet is loaded", not "nobody worked" --
-            // the checker seeds attendanceData with [] when it is opened before
-            // any upload, and syncing that would zero the whole roster.
-            if (auditedEmps.length === 0) {
-              showToast(
-                "No attendance rows loaded — upload a sheet before syncing.",
-                "error",
-              );
-              return;
-            }
-
-            const matchOf = (emp: EmployeeInput) =>
-              auditedEmps.find((d) => namesMatch(emp.name, d.name));
-
-            // A name-match miss and a genuine absence are indistinguishable
-            // here (sheet spellings drift from the roster), so never zero
-            // anyone silently -- name them and let the user decide.
-            const unmatched = employees.filter((emp) => !matchOf(emp));
-            let zeroUnmatched = false;
-            if (unmatched.length > 0) {
-              const shown = unmatched.slice(0, 10).map((emp) => `• ${emp.name}`);
-              if (unmatched.length > 10) {
-                shown.push(`…and ${unmatched.length - 10} more`);
-              }
-              zeroUnmatched = window.confirm(
-                `${unmatched.length} employee(s) on the roster are not on this attendance sheet:\n\n` +
-                  `${shown.join("\n")}\n\n` +
-                  `OK — set them to 0 days worked (they genuinely did not work).\n\n` +
-                  `Cancel — leave their days untouched (their names are just spelled differently on the sheet).`,
-              );
-            }
-
-            let matchedCount = 0;
-            let importCount = 0;
-
-            // 1. Map existing employees and update their attendance.
-            // Keep persisted isSecurity; attendance already used it for Sunday stats.
-            const updatedExisting = employees.map((emp) => {
-              const matched = matchOf(emp);
-              if (matched) {
-                matchedCount++;
-                const isSecurity = emp.isSecurity === true || matched.isSecurity;
-                return {
-                  ...emp,
-                  isSecurity,
-                  daysWorked: matched.presentDays,
-                  // SPEC-attendance §8: doubles pay as Extra Days (including Security).
-                  // Never add doubles to daysWorked (A6).
-                  extraDays: isSpecialCategory(emp.category)
-                    ? 0
-                    : isSecurity
-                      ? matched.doubleShiftDays
-                      : matched.sundaysEligible + matched.doubleShiftDays,
-                };
-              }
-              // Not on the sheet -- only zeroed when the user confirmed above.
-              return zeroUnmatched ? { ...emp, daysWorked: 0, extraDays: 0 } : emp;
-            });
-
-            // 2. Identify and import new employees that aren't in the current roster.
-            // Do not overload category with security status (TICKET-02).
-            const newEmployees: EmployeeInput[] = [];
-            auditedEmps.forEach((d) => {
-              const exists = employees.some((emp) => namesMatch(emp.name, d.name));
-              if (!exists) {
-                importCount++;
-                newEmployees.push({
-                  id: uid(),
-                  name: d.name,
-                  category: "Unskilled",
-                  isSecurity: d.isSecurity,
-                  monthlySalary: 0,
-                  salaryPerDay: 0,
-                  bonusPerDay: 0,
-                  daysWorked: d.presentDays,
-                  extraDays: d.isSecurity
-                    ? d.doubleShiftDays
-                    : d.sundaysEligible + d.doubleShiftDays,
-                  basicPercent: 70,
-                  pfOptIn: true,
-                  esiOptIn: true,
-                  advance: undefined,
-                  otherDeduction: 0,
-                  specialBonus: undefined,
-                });
-              }
-            });
-
-            setEmployees([...updatedExisting, ...newEmployees]);
-
-            let toastMsg = `Synced attendance: ${matchedCount} employees matched.`;
-            if (importCount > 0) {
-              toastMsg += ` Imported ${importCount} new employees from attendance sheet.`;
-            }
-            if (unmatched.length > 0) {
-              toastMsg += zeroUnmatched
-                ? ` ${unmatched.length} set to 0 due to no attendance.`
-                : ` ${unmatched.length} left unchanged (not on the sheet).`;
-            }
-            showToast(toastMsg, "success");
-            setIsAttendanceModalOpen(false);
-          }}
-          showToast={showToast}
-        />
-      )}
-
-      {showNoDataModal && (
-        <div className="attendance-overlay">
-          <div className="attendance-modal" style={{ maxWidth: "500px", height: "auto", padding: "28px" }}>
+       {showNoDataModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: "500px", height: "auto", padding: "28px" }}>
             <div style={{ marginBottom: "20px" }}>
               <span className="modal-eyebrow">Database Notice</span>
               <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "8px 0" }}>
@@ -2125,7 +1905,7 @@ function App() {
                 No records exist for <strong>{companyName || activeCompany}</strong> in <strong>{noDataMonth}</strong> yet. How would you like to initialize this month?
               </p>
             </div>
-            
+
             <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
               {allMonths.filter(m => m !== noDataMonth).length > 0 && (
                 <div style={{ padding: "14px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
@@ -2133,8 +1913,8 @@ function App() {
                     Copy Employees From:
                   </label>
                   <div style={{ display: "flex", gap: "8px" }}>
-                    <select 
-                      value={copySourceMonth} 
+                    <select
+                      value={copySourceMonth}
                       onChange={(e) => setCopySourceMonth(e.target.value)}
                       style={{ flex: 1, padding: "8px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff", fontSize: "14px" }}
                     >
@@ -2142,8 +1922,8 @@ function App() {
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
-                    <button 
-                      className="primary-button" 
+                    <button
+                      className="primary-button"
                       onClick={() => handleCopyMonth(copySourceMonth)}
                       style={{ padding: "0 14px", height: "38px", fontSize: "13px" }}
                     >
@@ -2163,8 +1943,8 @@ function App() {
                 </button>
               )}
 
-              <button 
-                className="quiet-button" 
+              <button
+                className="quiet-button"
                 onClick={handleCreateBlankMonth}
                 style={{ justifyContent: "center", height: "42px", fontWeight: "500", border: "1px solid #cbd5e1" }}
               >
@@ -2173,8 +1953,8 @@ function App() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button 
-                className="quiet-button" 
+              <button
+                className="quiet-button"
                 onClick={handleCancelNoData}
                 style={{ color: "#ef4444", fontWeight: "600" }}
               >
@@ -2186,9 +1966,9 @@ function App() {
       )}
 
       {isDbModalOpen && (
-        <div className="attendance-overlay" onClick={() => setIsDbModalOpen(false)}>
+        <div className="modal-overlay" onClick={() => setIsDbModalOpen(false)}>
           <div
-            className="attendance-modal"
+            className="modal"
             style={{ maxWidth: "600px", height: "auto", padding: "28px" }}
             onClick={(event) => event.stopPropagation()}
           >
@@ -2229,8 +2009,8 @@ function App() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
-              <button 
-                className="quiet-button" 
+              <button
+                className="quiet-button"
                 onClick={() => setIsDbModalOpen(false)}
                 style={{ fontWeight: "600" }}
               >
@@ -2256,1048 +2036,6 @@ function App() {
   );
 }
 
-interface AttendanceCheckerModalProps {
-  data: AttendanceEmployee[];
-  month: string;
-  company: string;
-  onClose: () => void;
-  employees: EmployeeInput[];
-  onUploadNewFile: (data: AttendanceEmployee[], month: string) => void;
-  onSyncAttendance: (auditedEmployees: AttendanceEmployee[]) => void;
-  showToast: (message: string, type?: "success" | "error") => void;
-}
-
-function AttendanceCheckerModal({
-  data,
-  month,
-  company,
-  onClose,
-  employees,
-  onUploadNewFile,
-  onSyncAttendance,
-  showToast,
-}: AttendanceCheckerModalProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(data[0]?.id || null);
-  const [meta, setMeta] = useState<AttendanceMetaV1>(() => emptyAttendanceMeta(company));
-  const [manualSource, setManualSource] = useState<AttendanceEmployee[] | null>(null);
-  const [biometricSource, setBiometricSource] = useState<AttendanceEmployee[] | null>(null);
-  const [hasSavedAttendance, setHasSavedAttendance] = useState(false);
-  const [mappingOpen, setMappingOpen] = useState(false);
-  const [excludedOpen, setExcludedOpen] = useState(false);
-  const [excludedPeople, setExcludedPeople] = useState<Array<{ key: string; name: string }>>([]);
-  const [unmappedCount, setUnmappedCount] = useState(0);
-
-  // Load meta + whether this month already has saved attendance (A10).
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const [loadedMeta, saved] = await Promise.all([
-        getAttendanceMeta(company),
-        getAttendance(company, month),
-      ]);
-      if (!active) return;
-      if (loadedMeta && loadedMeta.v === 1) {
-        setMeta(loadedMeta);
-        setExcludedPeople(
-          (loadedMeta.excluded || []).map((key) => ({ key, name: key }))
-        );
-      } else {
-        setMeta(emptyAttendanceMeta(company));
-      }
-      setHasSavedAttendance(Boolean(saved && saved.v === 1));
-    })();
-    return () => {
-      active = false;
-    };
-  }, [company, month]);
-
-  const runReconcile = (
-    manual: AttendanceEmployee[] | null,
-    biometric: AttendanceEmployee[] | null,
-    nextMeta: AttendanceMetaV1,
-    monthLabel: string,
-    fallbackData?: AttendanceEmployee[]
-  ) => {
-    // No dual sources yet — apply soft exclusions on the current grid only.
-    if (!manual && !biometric) {
-      const excluded = new Set(nextMeta.excluded || []);
-      const base = fallbackData || data;
-      const filtered = base.filter((e) => !excluded.has(normalizeKey(e.name)));
-      setUnmappedCount(0);
-      onUploadNewFile(filtered, monthLabel);
-      return { merged: filtered, conflicts: [], unmapped: 0 };
-    }
-    const { employees: merged, conflicts } = reconcile({
-      manual,
-      biometric,
-      roster: employees,
-      meta: nextMeta,
-      monthLabel,
-    });
-    const unmapped = conflicts.filter((c) => c.kind === "unmapped-biometric").length;
-    setUnmappedCount(unmapped);
-    onUploadNewFile(merged.length ? merged : manual || biometric || [], monthLabel);
-    return { merged, conflicts, unmapped };
-  };
-
-  const persistMeta = async (next: AttendanceMetaV1) => {
-    setMeta(next);
-    const result = await saveAttendanceMeta(company, next);
-    if (!result.ok) {
-      showToast(result.error || "Failed to save attendance mapping.", "error");
-    }
-  };
-
-  const handleDualParsed = (args: {
-    slot: "biometric" | "manual";
-    employees: AttendanceEmployee[];
-    monthLabel: string;
-  }) => {
-    const nextManual = args.slot === "manual" ? args.employees : manualSource;
-    const nextBio = args.slot === "biometric" ? args.employees : biometricSource;
-    if (args.slot === "manual") setManualSource(args.employees);
-    else setBiometricSource(args.employees);
-
-    const { unmapped } = runReconcile(nextManual, nextBio, meta, args.monthLabel);
-    if (args.slot === "manual" && !nextBio) {
-      showToast("Manual sheet loaded. Upload biometric for full reconciliation.");
-    } else if (args.slot === "biometric" && !nextManual) {
-      showToast("Biometric loaded (R4 fallback — no Manual Sheet).");
-    } else {
-      showToast(
-        unmapped > 0
-          ? `Reconciled. ${unmapped} biometric row(s) need mapping.`
-          : "Reconciled both sources."
-      );
-    }
-    if (unmapped > 0) setMappingOpen(true);
-  };
-
-  // Uploading a different attendance file replaces `data`; if the previously
-  // selected employee no longer exists, fall back to the first row instead of
-  // showing the empty "select an employee" prompt with a stale selection.
-  useEffect(() => {
-    if (selectedId && data.some((emp) => emp.id === selectedId)) {
-      return;
-    }
-    setSelectedId(data[0]?.id || null);
-  }, [data, selectedId]);
-  const [activeChartTab, setActiveChartTab] = useState<"days" | "hours">("days");
-  const [sortField, setSortField] = useState<"name" | "presentDays" | "extraDays">("name");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [modalTab, setModalTab] = useState<"audit" | "analytics">("audit");
-  const [chartSort, setChartSort] = useState<"name" | "value-desc" | "value-asc">("value-desc");
-
-  const handleSort = (field: typeof sortField) => {
-    if (sortField === field) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDirection(field === "name" ? "asc" : "desc");
-    }
-  };
-
-  const handleToggleOverride = (
-    employeeId: string,
-    dateString: string,
-    type: "override" | "leaveType" | "doubleShift",
-    value: any
-  ) => {
-    const updatedData = data.map((emp) => {
-      if (emp.id !== employeeId) return emp;
-
-      const updatedDaysDetail = emp.daysDetail.map((day) => {
-        if (day.dateString !== dateString) return day;
-
-        const newDay = { ...day };
-        let decisions = newDay.decisions || "";
-        if (type === "override") {
-          newDay.manualOverride = value; // "present" or undefined
-          if (value === "present") {
-            newDay.isPresent = true;
-            if (!decisions.includes("P")) decisions += "P";
-          } else {
-            decisions = decisions.replace(/P/g, "");
-            // Presence falls back to punches when override cleared (R4-ish for bio-only)
-            newDay.isPresent = newDay.punchTimes.length > 0;
-          }
-        } else if (type === "leaveType") {
-          newDay.leaveType = value; // "approved" or "unapproved"
-          decisions = decisions.replace(/[au]/g, "");
-          if (value === "approved") decisions += "a";
-          else if (value === "unapproved") decisions += "u";
-        } else if (type === "doubleShift") {
-          decisions = decisions.replace(/[Dd]/g, "");
-          if (value === true) {
-            decisions += "D";
-            newDay.isDoubleShift = true;
-            newDay.isPresent = true;
-          } else {
-            decisions += "d";
-            newDay.isDoubleShift = false;
-          }
-        }
-        newDay.decisions = decisions || undefined;
-        return newDay;
-      });
-
-      const stats = calculateEmployeeAttendanceStats(updatedDaysDetail, emp.isSecurity);
-
-      return {
-        ...emp,
-        daysDetail: updatedDaysDetail,
-        ...stats,
-      };
-    });
-
-    onUploadNewFile(updatedData, month);
-  };
-
-  const sortedAndFilteredData = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    let result = [...data];
-    if (q) {
-      result = result.filter(
-        (e) =>
-          e.name.toLowerCase().includes(q) ||
-          e.department.toLowerCase().includes(q)
-      );
-    }
-
-    result.sort((a, b) => {
-      let valA: any;
-      let valB: any;
-
-      if (sortField === "extraDays") {
-        valA = a.extraDaysTotal ?? a.sundaysEligible + (a.doubleShiftDays || 0);
-        valB = b.extraDaysTotal ?? b.sundaysEligible + (b.doubleShiftDays || 0);
-      } else {
-        valA = a[sortField];
-        valB = b[sortField];
-      }
-
-      if (typeof valA === "string") {
-        return sortDirection === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      } else {
-        return sortDirection === "asc" ? valA - valB : valB - valA;
-      }
-    });
-
-    return result;
-  }, [searchQuery, data, sortField, sortDirection]);
-
-  const selectedEmployee = data.find((e) => e.id === selectedId);
-
-  const totalWorkedSundays = data.reduce((sum, e) => sum + e.sundaysWorked, 0);
-  const totalEligibleSundays = data.reduce((sum, e) => sum + e.sundaysEligible, 0);
-  const totalWarnings = data.reduce((sum, e) => {
-    const flaggedCount = e.sundayDetails.filter((d) => !d.isEligible).length;
-    return sum + flaggedCount;
-  }, 0);
-
-  const avgAttendance =
-    data.length > 0
-      ? data.reduce((sum, e) => sum + e.presentDays, 0) / data.length
-      : 0;
-  const avgStayHours =
-    data.length > 0
-      ? data.reduce((sum, e) => sum + e.avgHours, 0) / data.length
-      : 0;
-
-  const maxPresentDays = Math.max(...data.map((e) => e.presentDays), 1);
-  const maxStayHours = Math.max(...data.map((e) => e.avgHours), 1);
-
-  const sortedChartData = useMemo(() => {
-    const result = [...data];
-    if (chartSort === "name") {
-      result.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (chartSort === "value-desc") {
-      result.sort((a, b) => {
-        const valA = activeChartTab === "days" ? a.presentDays : a.avgHours;
-        const valB = activeChartTab === "days" ? b.presentDays : b.avgHours;
-        return valB - valA;
-      });
-    } else if (chartSort === "value-asc") {
-      result.sort((a, b) => {
-        const valA = activeChartTab === "days" ? a.presentDays : a.avgHours;
-        const valB = activeChartTab === "days" ? b.presentDays : b.avgHours;
-        return valA - valB;
-      });
-    }
-    return result;
-  }, [data, chartSort, activeChartTab]);
-
-  return (
-    <div className="attendance-overlay" onClick={onClose}>
-      <div className="attendance-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="attendance-header">
-          <div>
-            <span className="modal-eyebrow">Data Auditor</span>
-            <h1>Attendance Checker & Sunday Bonus Auditor</h1>
-            <p className="modal-copy">
-              Audit raw punch card logs, verify stay times, and inspect Sunday bonus eligibility for {month || "May 2026"}.
-            </p>
-          </div>
-          <div className="attendance-header-actions" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-            <AttendanceUpload
-              monthLabel={month}
-              employees={employees}
-              loadXLSX={loadXLSX}
-              onParsed={({ slot, employees: emps, monthLabel }) => {
-                handleDualParsed({ slot, employees: emps, monthLabel });
-              }}
-              onError={(msg) => showToast(msg, "error")}
-              hasSavedAttendance={hasSavedAttendance}
-              onConfirmOverwrite={() =>
-                window.confirm(
-                  "This month already has saved attendance. Overwrite decisions and conflicts?"
-                )
-              }
-            />
-            {biometricSource && (
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setMappingOpen(true)}
-                style={{ minHeight: 36, height: 36, padding: "0 12px", fontSize: 12 }}
-              >
-                Map IDs{unmappedCount > 0 ? ` (${unmappedCount})` : ""}
-              </button>
-            )}
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => onSyncAttendance(data)}
-              style={{ minHeight: "36px", height: "36px", padding: "0 12px", fontSize: "13px", background: "#059669", color: "#ffffff", borderColor: "#059669" }}
-            >
-              <Check size={14} /> Sync to Payroll
-            </button>
-            <button
-              className="icon-button close-modal"
-              type="button"
-              onClick={onClose}
-              style={{ minHeight: "36px", height: "36px", width: "36px" }}
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </header>
-
-        {mappingOpen && biometricSource && (
-          <AttendanceMappingModal
-            biometric={biometricSource}
-            roster={employees}
-            meta={meta}
-            onClose={() => setMappingOpen(false)}
-            onSave={async (nextMap) => {
-              const nextMeta: AttendanceMetaV1 = {
-                ...meta,
-                map: nextMap,
-                u: new Date().toISOString(),
-              };
-              await persistMeta(nextMeta);
-              runReconcile(manualSource, biometricSource, nextMeta, month);
-              setMappingOpen(false);
-              showToast("Biometric mapping saved.");
-            }}
-          />
-        )}
-
-        {/* Tab Selector Bar */}
-        <div className="attendance-tabs">
-          <button
-            className={`attendance-tab-link ${modalTab === "audit" ? "active" : ""}`}
-            onClick={() => setModalTab("audit")}
-          >
-            <Users size={15} /> Employee Auditor
-          </button>
-          <button
-            className={`attendance-tab-link ${modalTab === "analytics" ? "active" : ""}`}
-            onClick={() => setModalTab("analytics")}
-          >
-            <BarChart3 size={15} /> Analytics & Standings
-          </button>
-        </div>
-
-        {modalTab === "audit" ? (
-          /* Tab 1: Split Screen Auditor View */
-          <div className="attendance-split-workspace">
-            {/* Left Column: Employee List Table */}
-            <div className="attendance-left-pane">
-              <div className="attendance-panel-heading" style={{ padding: "16px 20px" }}>
-                <div>
-                  <h2 style={{ fontSize: "14px", fontWeight: 800 }}>Employee Records</h2>
-                  <p style={{ fontSize: "11px", color: "#64748b" }}>{sortedAndFilteredData.length} total</p>
-                </div>
-                <div className="search-box attendance-search-box" style={{ width: "200px", minHeight: "34px", height: "34px" }}>
-                  <Search size={14} />
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search name..."
-                    style={{ fontSize: "12px", minHeight: "30px", height: "30px" }}
-                  />
-                </div>
-              </div>
-
-              <div className="attendance-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th onClick={() => handleSort("name")} className="sortable-th">
-                        Name {sortField === "name" && (sortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleSort("presentDays")} className="sortable-th text-right">
-                        Days {sortField === "presentDays" && (sortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleSort("extraDays")} className="sortable-th text-right">
-                        Extra Days {sortField === "extraDays" && (sortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedAndFilteredData.map((emp) => {
-                      const isSelected = emp.id === selectedId;
-                      const xd = emp.extraDaysTotal ?? emp.sundaysEligible + (emp.doubleShiftDays || 0);
-                      return (
-                        <tr
-                          key={emp.id}
-                          onClick={() => setSelectedId(emp.id)}
-                          className={`clickable-row ${isSelected ? "selected-row" : ""}`}
-                        >
-                          <td className="name-cell font-bold" style={{ fontSize: "11.5px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ flex: 1 }}>{emp.name}</span>
-                              <button
-                                type="button"
-                                title="Exclude from attendance (does not delete payroll roster)"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (
-                                    !window.confirm(
-                                      `Exclude ${emp.name} from attendance checks? Their payroll roster row is kept.`
-                                    )
-                                  ) {
-                                    return;
-                                  }
-                                  const key = normalizeKey(emp.name);
-                                  const nextExcluded = Array.from(
-                                    new Set([...(meta.excluded || []), key])
-                                  );
-                                  const nextMeta: AttendanceMetaV1 = {
-                                    ...meta,
-                                    excluded: nextExcluded,
-                                    u: new Date().toISOString(),
-                                  };
-                                  setExcludedPeople((prev) =>
-                                    prev.some((p) => p.key === key)
-                                      ? prev
-                                      : [...prev, { key, name: emp.name }]
-                                  );
-                                  void persistMeta(nextMeta);
-                                  runReconcile(
-                                    manualSource,
-                                    biometricSource,
-                                    nextMeta,
-                                    month,
-                                    data.filter((e) => e.id !== emp.id)
-                                  );
-                                  showToast(`${emp.name} excluded from attendance.`);
-                                }}
-                                style={{
-                                  fontSize: 9,
-                                  padding: "1px 6px",
-                                  borderRadius: 4,
-                                  border: "1px solid #fecaca",
-                                  background: "#fef2f2",
-                                  color: "#b91c1c",
-                                  cursor: "pointer",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                Exclude
-                              </button>
-                            </div>
-                          </td>
-                          <td className="text-right">{emp.presentDays} Days</td>
-                          <td className="text-right">{xd}</td>
-                        </tr>
-                      );
-                    })}
-                    {sortedAndFilteredData.length === 0 && (
-                      <tr className="empty-row">
-                        <td colSpan={3}>No matching audited employees.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {excludedPeople.length > 0 && (
-                <div style={{ borderTop: "1px solid #e2e8f0", padding: "8px 12px" }}>
-                  <button
-                    type="button"
-                    onClick={() => setExcludedOpen((o) => !o)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#64748b",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    {excludedOpen ? "▼" : "▶"} Excluded ({excludedPeople.length})
-                  </button>
-                  {excludedOpen && (
-                    <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0 }}>
-                      {excludedPeople.map((p) => (
-                        <li
-                          key={p.key}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            fontSize: 12,
-                            padding: "4px 0",
-                          }}
-                        >
-                          <span>{p.name}</span>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            style={{ minHeight: 28, height: 28, padding: "0 8px", fontSize: 11 }}
-                            onClick={() => {
-                              const nextExcluded = (meta.excluded || []).filter((k) => k !== p.key);
-                              const nextMeta: AttendanceMetaV1 = {
-                                ...meta,
-                                excluded: nextExcluded,
-                                u: new Date().toISOString(),
-                              };
-                              setExcludedPeople((prev) => prev.filter((x) => x.key !== p.key));
-                              void persistMeta(nextMeta);
-                              runReconcile(manualSource, biometricSource, nextMeta, month);
-                              showToast(`${p.name} restored to attendance.`);
-                            }}
-                          >
-                            Restore
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Selected Employee Audit Detail */}
-            <div className="attendance-right-pane">
-              {selectedEmployee ? (
-                <div className="employee-audit-card">
-                  <header className="employee-audit-header">
-                    <div>
-                      <h3 style={{ fontSize: "22px", fontWeight: 900 }}>{selectedEmployee.name}</h3>
-                      <p style={{ fontSize: "13px", color: "#64748b", marginTop: "4px" }}>
-                        Department: <strong>{selectedEmployee.department}</strong> | Present days this month:{" "}
-                        <strong>{selectedEmployee.presentDays} Days</strong> | Average stay duration: <strong>{selectedEmployee.avgHours.toFixed(1)} Hrs/Day</strong>
-                      </p>
-                    </div>
-                    <div className="employee-badges" style={{ gap: "8px" }}>
-                      {selectedEmployee.isSecurity && (
-                        <span className="badge badge-rose">Security guard (Exempt)</span>
-                      )}
-                      {!selectedEmployee.meetsMonthThreshold && (
-                        <span className="badge badge-amber">Below Monthly Threshold</span>
-                      )}
-                      {selectedEmployee.daysDetail.some((d) => d.isShortStay) && (
-                        <span className="badge badge-rose">
-                          {selectedEmployee.daysDetail.filter((d) => d.isShortStay).length} Short Stays
-                        </span>
-                      )}
-                    </div>
-                  </header>
-
-                  {/* Summary of Employee Sunday Status & Shifts */}
-                  <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                    <div className="metric-card" style={{ flex: "1 1 120px", minHeight: "80px", padding: "12px 16px" }}>
-                      <div>
-                        <p style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Sundays Worked</p>
-                        <strong style={{ fontSize: "20px", marginTop: "4px" }}>{selectedEmployee.sundaysWorked} Days</strong>
-                      </div>
-                    </div>
-                    <div className="metric-card" style={{ flex: "1 1 120px", minHeight: "80px", padding: "12px 16px" }}>
-                      <div>
-                        <p style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Sunday Bonus Days</p>
-                        <strong style={{ fontSize: "20px", marginTop: "4px" }}>{selectedEmployee.sundaysEligible} Days</strong>
-                      </div>
-                    </div>
-                    <div className="metric-card" style={{ flex: "1 1 120px", minHeight: "80px", padding: "12px 16px" }}>
-                      <div>
-                        <p style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Day Shifts</p>
-                        <strong style={{ fontSize: "20px", marginTop: "4px", color: "#2563eb" }}>
-                          {selectedEmployee.daysDetail.filter((d) => d.isPresent && d.shift === "Day").length} Days
-                        </strong>
-                      </div>
-                    </div>
-                    <div className="metric-card" style={{ flex: "1 1 120px", minHeight: "80px", padding: "12px 16px" }}>
-                      <div>
-                        <p style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Night Shifts</p>
-                        <strong style={{ fontSize: "20px", marginTop: "4px", color: "#7c3aed" }}>
-                          {selectedEmployee.daysDetail.filter((d) => d.isPresent && d.shift === "Night").length} Days
-                        </strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedEmployee.sundayDetails && selectedEmployee.sundayDetails.length > 0 ? (
-                    <div className="sunday-audit-section">
-                      <h4 style={{ fontSize: "12px", fontWeight: 900 }}>Sunday Audit Logs</h4>
-                      <div className="sunday-cards-grid" style={{ marginTop: "12px" }}>
-                        {selectedEmployee.sundayDetails.map((sun, idx) => {
-                          const dayDetail = selectedEmployee.daysDetail.find(
-                            (d) => d.dateString === sun.date
-                          );
-                          const actuallyWorked = dayDetail?.isPresent;
-
-                          let badgeText = "Not Paid";
-                          let badgeBg = "#ffe4e6";
-                          let badgeColor = "#b91c1c";
-                          let borderStyle = "4px solid #f87171";
-                          let cardBg = "#fffafb";
-
-                          if (sun.isEligible) {
-                            if (actuallyWorked) {
-                              badgeText = "Double Pay (Present + Bonus)";
-                              badgeBg = "#dcfce7";
-                              badgeColor = "#15803d";
-                              borderStyle = "4px solid #10b981";
-                              cardBg = "#f6fdf9";
-                            } else {
-                              badgeText = "Paid (Auto-Presence)";
-                              badgeBg = "#dbeafe";
-                              badgeColor = "#1e40af";
-                              borderStyle = "4px solid #3b82f6";
-                              cardBg = "#f5f9ff";
-                            }
-                          } else {
-                            if (actuallyWorked) {
-                              badgeText = "Single Pay (No Bonus)";
-                              badgeBg = "#fef3c7";
-                              badgeColor = "#b45309";
-                              borderStyle = "4px solid #f59e0b";
-                              cardBg = "#fffdf5";
-                            }
-                          }
-
-                          return (
-                            <div
-                              key={idx}
-                              className="sunday-card"
-                              style={{
-                                padding: "12px",
-                                borderLeft: borderStyle,
-                                background: cardBg,
-                              }}
-                            >
-                              <div className="sunday-card-header">
-                                <span className="sunday-date" style={{ fontSize: "12px" }}>
-                                  <Calendar size={13} style={{ marginRight: "4px" }} /> {sun.date}
-                                </span>
-                                <span
-                                  className="badge"
-                                  style={{
-                                    fontSize: "9px",
-                                    fontWeight: 800,
-                                    textTransform: "uppercase",
-                                    padding: "4px 8px",
-                                    borderRadius: "9999px",
-                                    background: badgeBg,
-                                    color: badgeColor,
-                                  }}
-                                >
-                                  {badgeText}
-                                </span>
-                              </div>
-                              <ul className="reasons-list" style={{ marginTop: "8px" }}>
-                                {sun.reasons.map((r, i) => (
-                                  <li key={i} style={{ fontSize: "11px", color: badgeColor }}>
-                                    <AlertTriangle size={12} style={{ marginRight: "4px" }} /> {r}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="info-callout" style={{ padding: "12px 16px" }}>
-                      <Info size={16} />
-                      <p style={{ fontSize: "13px" }}>No Sunday details available for this month.</p>
-                    </div>
-                  )}
-
-                  <div className="daily-log-section">
-                    <h4 style={{ fontSize: "12px", fontWeight: 900 }}>Daily Punch Logs & Durations</h4>
-                    <div className="daily-timeline" style={{ marginTop: "16px" }}>
-                      {selectedEmployee.daysDetail.map((day, idx) => {
-                        const isSunday = day.dayOfWeek === 0;
-                        const isSaturday = day.dayOfWeek === 6;
-                        const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day.dayOfWeek];
-                        const dateNum = day.dateString.split("/")[2] || "";
-
-                        return (
-                          <div
-                            key={idx}
-                            className={`timeline-row ${day.isPresent ? "present" : day.isShortStay ? "short-stay" : "absent"} ${
-                              isSunday ? "sunday-row" : ""
-                            } ${isSaturday ? "saturday-row" : ""}`}
-                          >
-                            <div className="timeline-date-col">
-                              <span className="timeline-day-num">{dateNum}</span>
-                              <span className="timeline-day-name" style={{ fontSize: "9px" }}>{dayName}</span>
-                            </div>
-                            <div className="timeline-status-indicator">
-                              <span className="dot"></span>
-                            </div>
-                            <div className="timeline-info-col">
-                              {day.isPresent ? (
-                                <div className="punch-details" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                                  <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                                    {day.punchTimes.length > 0 ? (
-                                      <div className="punch-times-badge" style={{ padding: "3px 8px", fontSize: "11.5px" }}>
-                                        <Clock size={12} />
-                                        <span>Punches: {day.punchTimes.join("  |  ")}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="punch-times-badge" style={{ padding: "3px 8px", fontSize: "11.5px", background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }}>
-                                        <Clock size={12} style={{ color: "#16a34a" }} />
-                                        <span>No Punch Logs (Forgot Punch)</span>
-                                      </div>
-                                    )}
-                                    {day.punchTimes.length > 0 && (
-                                      <span className="punch-duration" style={{ fontSize: "11.5px" }}>
-                                        {day.duration.toFixed(1)} Hours Stayed
-                                      </span>
-                                    )}
-                                    {day.shift && day.punchTimes.length > 0 && (
-                                      <span className="badge" style={{ fontSize: "10px", padding: "3px 8px", background: day.shift === "Night" ? "#f3e8ff" : "#eff6ff", color: day.shift === "Night" ? "#6b21a8" : "#1e40af", border: day.shift === "Night" ? "1px solid #d8b4fe" : "1px solid #bfdbfe", textTransform: "none" }}>
-                                        {day.shift === "Night" ? "Night Shift" : "Day Shift"}
-                                      </span>
-                                    )}
-                                    {day.manualOverride === "present" && (
-                                      <span className="badge badge-green" style={{ fontSize: "10px", textTransform: "none", padding: "3px 8px", display: "inline-flex", alignItems: "center" }}>
-                                        Approved (Manual Override)
-                                      </span>
-                                    )}
-                                    {day.manualOverride === "present" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "override", undefined)}
-                                        style={{ background: "none", border: "none", color: "#b91c1c", fontSize: "11px", fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0 }}
-                                      >
-                                        Revert
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleToggleOverride(
-                                          selectedEmployee.id,
-                                          day.dateString,
-                                          "doubleShift",
-                                          !day.isDoubleShift
-                                        )
-                                      }
-                                      style={{
-                                        fontSize: "10px",
-                                        padding: "3px 8px",
-                                        borderRadius: "4px",
-                                        fontWeight: 700,
-                                        cursor: "pointer",
-                                        border: "1px solid #c4b5fd",
-                                        background: day.isDoubleShift ? "#7c3aed" : "#f5f3ff",
-                                        color: day.isDoubleShift ? "#fff" : "#5b21b6",
-                                      }}
-                                    >
-                                      Double Shift
-                                    </button>
-                                    {day.ambiguousSpan && (
-                                      <span className="badge badge-amber" style={{ fontSize: "10px" }}>
-                                        Ambiguous span
-                                      </span>
-                                    )}
-                                    {day.isShortStay && (
-                                      <span className="badge badge-amber" style={{ fontSize: "10px" }}>
-                                        Short stay (highlight only)
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : day.isShortStay ? (
-                                <div className="punch-details" style={{ gap: "12px", flexDirection: "column", alignItems: "flex-start" }}>
-                                  <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                                    <div className="punch-times-badge" style={{ padding: "3px 8px", fontSize: "11.5px", background: "#fff5f5", borderColor: "#feb2b2", color: "#9b1c1c" }}>
-                                      <Clock size={12} style={{ color: "#c53030" }} />
-                                      <span>Punches: {day.punchTimes.join("  |  ")}</span>
-                                    </div>
-                                    <span className="badge badge-amber" style={{ fontSize: "10.5px", textTransform: "none", padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                                      <AlertTriangle size={11} />
-                                      Short Stay ({day.duration.toFixed(1)} Hrs) — evidence only
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "override", "present")}
-                                      style={{ background: "#dcfce7", border: "1px solid #bbf7d0", color: "#15803d", fontSize: "11px", fontWeight: 700, cursor: "pointer", padding: "4px 8px", borderRadius: "4px" }}
-                                    >
-                                      Mark Present
-                                    </button>
-                                  </div>
-                                  
-                                  {/* Leave Status controls for Short Stay */}
-                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>Leave Status:</span>
-                                    <div style={{ display: "flex", background: "#f1f5f9", padding: "2px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "leaveType", "approved")}
-                                        style={{ fontSize: "10px", padding: "2px 8px", border: 0, borderRadius: "4px", fontWeight: 700, cursor: "pointer", background: day.leaveType !== "unapproved" ? "#ffffff" : "transparent", color: day.leaveType !== "unapproved" ? "#16a34a" : "#64748b", boxShadow: day.leaveType !== "unapproved" ? "0 1px 2px rgba(0,0,0,0.05)" : "none" }}
-                                      >
-                                        Approved (Informed)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "leaveType", "unapproved")}
-                                        style={{ fontSize: "10px", padding: "2px 8px", border: 0, borderRadius: "4px", fontWeight: 700, cursor: "pointer", background: day.leaveType === "unapproved" ? "#ffffff" : "transparent", color: day.leaveType === "unapproved" ? "#dc2626" : "#64748b", boxShadow: day.leaveType === "unapproved" ? "0 1px 2px rgba(0,0,0,0.05)" : "none" }}
-                                      >
-                                        Unapproved (Uninformed)
-                                      </button>
-                                    </div>
-                                    {day.leaveType === "unapproved" && (
-                                      <span className="badge badge-rose" style={{ fontSize: "10px", textTransform: "none", padding: "2px 6px", display: "inline-flex", alignItems: "center", gap: "2px" }}>
-                                        <AlertTriangle size={9} />
-                                        -1 Penalty Day (Marked 2 Days Absent)
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="punch-details" style={{ gap: "12px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", width: "100%" }}>
-                                  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                                    <span className="absent-label" style={{ fontSize: "11px" }}>Absent / Off-day</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "override", "present")}
-                                      style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", fontSize: "11px", fontWeight: 700, cursor: "pointer", padding: "4px 8px", borderRadius: "4px", display: "inline-flex", alignItems: "center", gap: "4px", transition: "all 0.15s ease" }}
-                                    >
-                                      <Check size={12} /> Mark Present (Forgot Punch)
-                                    </button>
-                                  </div>
-                                  
-                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>Leave Status:</span>
-                                    <div style={{ display: "flex", background: "#f1f5f9", padding: "2px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "leaveType", "approved")}
-                                        style={{ fontSize: "10px", padding: "2px 8px", border: 0, borderRadius: "4px", fontWeight: 700, cursor: "pointer", background: day.leaveType !== "unapproved" ? "#ffffff" : "transparent", color: day.leaveType !== "unapproved" ? "#16a34a" : "#64748b", boxShadow: day.leaveType !== "unapproved" ? "0 1px 2px rgba(0,0,0,0.05)" : "none" }}
-                                      >
-                                        Approved (Informed)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleOverride(selectedEmployee.id, day.dateString, "leaveType", "unapproved")}
-                                        style={{ fontSize: "10px", padding: "2px 8px", border: 0, borderRadius: "4px", fontWeight: 700, cursor: "pointer", background: day.leaveType === "unapproved" ? "#ffffff" : "transparent", color: day.leaveType === "unapproved" ? "#dc2626" : "#64748b", boxShadow: day.leaveType === "unapproved" ? "0 1px 2px rgba(0,0,0,0.05)" : "none" }}
-                                      >
-                                        Unapproved (Uninformed)
-                                      </button>
-                                    </div>
-                                    {day.leaveType === "unapproved" && (
-                                      <span className="badge badge-rose" style={{ fontSize: "10px", textTransform: "none", padding: "2px 6px", display: "inline-flex", alignItems: "center", gap: "2px" }}>
-                                        <AlertTriangle size={9} />
-                                        -1 Penalty Day (Marked 2 Days Absent)
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="select-prompt">
-                  <Users size={32} />
-                  <p>Select an employee from the list to audit their daily logs.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Tab 2: Analytics & Overall Standings View */
-          <div className="attendance-analytics-tab" style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-            {/* Global Metric Cards */}
-            <section className="attendance-stats-row" style={{ borderBottom: "1px solid #edf1f7", padding: "24px 32px" }}>
-              <div className="metric-card blue">
-                <span>
-                  <Calendar />
-                </span>
-                <div>
-                  <p>Avg Present Days</p>
-                  <strong>{avgAttendance.toFixed(1)} Days</strong>
-                  <small>Across {data.length} audited rows</small>
-                </div>
-              </div>
-              <div className="metric-card green">
-                <span>
-                  <Clock />
-                </span>
-                <div>
-                  <p>Avg Stay Duration</p>
-                  <strong>{avgStayHours.toFixed(1)} Hrs/Day</strong>
-                  <small>Present day durations</small>
-                </div>
-              </div>
-              <div className="metric-card amber">
-                <span>
-                  <FileSpreadsheet />
-                </span>
-                <div>
-                  <p>Worked Sundays</p>
-                  <strong>{totalWorkedSundays} Sundays</strong>
-                  <small>{totalEligibleSundays} Sundays eligible for bonus</small>
-                </div>
-              </div>
-              <div className="metric-card rose">
-                <span>
-                  <AlertTriangle />
-                </span>
-                <div>
-                  <p>Bonus Exclusions</p>
-                  <strong>{totalWarnings} Flags</strong>
-                  <small>Worked Sundays denied bonus</small>
-                </div>
-              </div>
-            </section>
-
-            {/* Standings Charts section */}
-            <div className="attendance-panel charts-panel" style={{ margin: "32px", border: "1px solid #e0e5ee", borderRadius: "8px", background: "#ffffff", boxShadow: "none" }}>
-              <div className="detail-tabs" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px" }}>
-                <span className="tab-title-text" style={{ fontSize: "14px", fontWeight: 800, color: "#334155" }}>Comparative Standings Charts</span>
-                
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  {/* Chart Sorting Controls */}
-                  <div className="chart-sort-controls" style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f1f5f9", padding: "3px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", padding: "0 6px" }}>Sort:</span>
-                    <button
-                      className={`chart-tab-btn ${chartSort === "value-desc" ? "active" : ""}`}
-                      onClick={() => setChartSort("value-desc")}
-                      style={{ fontSize: "11px", padding: "4px 8px" }}
-                    >
-                      High-Low
-                    </button>
-                    <button
-                      className={`chart-tab-btn ${chartSort === "value-asc" ? "active" : ""}`}
-                      onClick={() => setChartSort("value-asc")}
-                      style={{ fontSize: "11px", padding: "4px 8px" }}
-                    >
-                      Low-High
-                    </button>
-                    <button
-                      className={`chart-tab-btn ${chartSort === "name" ? "active" : ""}`}
-                      onClick={() => setChartSort("name")}
-                      style={{ fontSize: "11px", padding: "4px 8px" }}
-                    >
-                      A-Z
-                    </button>
-                  </div>
-
-                  {/* Chart Metric Tabs */}
-                  <div className="chart-tabs-btn-group" style={{ display: "flex", background: "#f1f5f9", padding: "3px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                    <button
-                      className={`chart-tab-btn ${activeChartTab === "days" ? "active" : ""}`}
-                      onClick={() => setActiveChartTab("days")}
-                      style={{ fontSize: "11px", padding: "4px 8px" }}
-                    >
-                      Days Present
-                    </button>
-                    <button
-                      className={`chart-tab-btn ${activeChartTab === "hours" ? "active" : ""}`}
-                      onClick={() => setActiveChartTab("hours")}
-                      style={{ fontSize: "11px", padding: "4px 8px" }}
-                    >
-                      Staying Hours
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="detail-content" style={{ padding: "24px", background: "#ffffff" }}>
-                <div className="global-charts-card">
-                  <div className="chart-body">
-                    {activeChartTab === "days" ? (
-                      <div className="custom-horizontal-chart">
-                        <p className="chart-instructions">
-                          Days present during month (out of {data[0]?.daysDetail.length || 31} calendar days)
-                        </p>
-                        <div className="chart-scroll-area" style={{ maxHeight: "480px" }}>
-                          {sortedChartData.map((emp) => {
-                            const pct = (emp.presentDays / maxPresentDays) * 100;
-                            return (
-                              <div key={emp.id} className="chart-bar-row">
-                                <div className="bar-label-name" title={emp.name}>
-                                  {emp.name}
-                                </div>
-                                <div className="bar-track-wrap">
-                                  <div className="bar-fill" style={{ width: `${pct}%` }}></div>
-                                </div>
-                                <div className="bar-val-outside">{emp.presentDays} days</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="custom-horizontal-chart">
-                        <p className="chart-instructions">
-                          Average hours spent between earliest and latest punches
-                        </p>
-                        <div className="chart-scroll-area" style={{ maxHeight: "480px" }}>
-                          {sortedChartData.map((emp) => {
-                            const pct = (emp.avgHours / maxStayHours) * 100;
-                            return (
-                              <div key={emp.id} className="chart-bar-row">
-                                <div className="bar-label-name" title={emp.name}>
-                                  {emp.name}
-                                </div>
-                                <div className="bar-track-wrap">
-                                  <div className="bar-fill hours-fill" style={{ width: `${pct}%` }}></div>
-                                </div>
-                                <div className="bar-val-outside">{emp.avgHours.toFixed(1)} hrs</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function MetricCard({
   icon,
   label,
@@ -3305,10 +2043,10 @@ function MetricCard({
   caption,
   tone,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
-  caption?: string;
+  caption: string;
   tone: "green" | "blue" | "amber" | "rose";
 }) {
   return (
@@ -3317,14 +2055,14 @@ function MetricCard({
       <div>
         <p>{label}</p>
         <strong>{value}</strong>
-        {caption ? <small>{caption}</small> : null}
+        <small>{caption}</small>
       </div>
     </article>
   );
 }
 
 function NumberInput({
-  value,
+   value,
   onChange,
   className = "number-input",
   min,

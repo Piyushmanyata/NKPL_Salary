@@ -11,7 +11,7 @@ function normalizeCompany(value: unknown): string {
 // A single small JSON value per company holds every employee's per-day rates:
 // { [employeeId]: { id, name, salaryPerDay, bonusPerDay } }.
 // This is the one piece of employee data meant to persist across every
-// month -- everything else (attendance, deductions, bonuses, etc.) still
+// month -- everything else (manual days, deductions, bonuses, etc.) still
 // lives in the per-month record in api/db.ts.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');

@@ -11,12 +11,12 @@ Four of its entries now contradict `SPEC-payroll.md`:
 | `CONTEXT.md` entry | States | Spec says |
 |---|---|---|
 | **Semi-skilled / Skilled** | "monthly salary is fixed…" | Correct, but must be restated as one of **four** categories, not a pair alongside a Special *flag* |
-| **Special Employee** | "Attendance-exempt class… Membership is a **role/flag**, not a hardcoded name list" | Special is a **Category**, mutually exclusive with the other three (TICKET-01) |
+| **Special Employee** | "Special was an attendance-exempt role/flag" | Special is a **Category**, mutually exclusive with the other three (TICKET-01) |
 | **Official Attendance** | "at most 26" | Correct, but the PF-off path violated it; add that the 26-day frame applies to **every** employee (TICKET-07) |
 | **Opt-Out Basic** | "if no ESI, max(₹21,100, 51%…); if no PF, max(₹15,100, 51%…)" | Applies **only when PF is off**. When PF is on, the wage board wins (TICKET-08) |
 
-`CONTEXT.md` also has no entry for **Security Employee** as a persisted flag (it describes the
-rule but not the field), and no entry for **Unpackable Row**.
+`CONTEXT.md` also needed to distinguish manual day inputs from the computed Official attendance
+field, and had no entry for **Unpackable Row**.
 
 ADR-0001 and ADR-0002 remain valid — ADR-0002's ESI bases were explicitly reconfirmed in the
 2026-07-26 grill (Reference ESI on Gross Payable, Official ESI on Official Basic).
@@ -26,7 +26,7 @@ ADR-0001 and ADR-0002 remain valid — ADR-0002's ESI bases were explicitly reco
 **`CONTEXT.md`**
 
 - Rewrite **Special Employee** as a Category. Add the constraint list from SPEC §2.2.
-- Add **Security Employee**: note it is a persisted `isSecurity` boolean, orthogonal to Category.
+- Remove the retired Security Employee / attendance-checker vocabulary.
 - Amend **Official Attendance**: "Derived as `clamp(26 − calendar absences, 0, 26)` for every
   employee regardless of PF status."
 - Amend **Opt-Out Basic**: "Used only when PF is off. When PF is on, Official basic is the
@@ -57,7 +57,8 @@ line, and a copied `netPayable` that misreported net in 13.1% of fuzzed inputs.
 - Unskilled anchors on day rate; Semi-skilled and Skilled anchor on monthly salary;
   Special is fixed monthly, attendance-exempt, with no day rate.
 - Calendar days are derived from the month label.
-- `isSecurity` is a persisted boolean, orthogonal to Category.
+- Days Worked and Extra Days are manual employee-month inputs; no attendance checker or automatic
+  Sunday/double-shift behavior remains.
 - The Official sheet has one code path. Attendance is `clamp(26 − calendar absences, 0, 26)`
   for everyone. PF status affects only the basic formula and the PF amount.
 - Official basic uses the wage board when PF is on; the opt-out elevation applies only when
@@ -74,6 +75,6 @@ line, and a copied `netPayable` that misreported net in 13.1% of fuzzed inputs.
 ## Acceptance criteria
 
 - [ ] No statement in `CONTEXT.md` contradicts `SPEC-payroll.md`.
-- [ ] `CONTEXT.md` has entries for Security Employee (as a field) and Unpackable Row.
+- [ ] `CONTEXT.md` distinguishes manual day inputs, computed Official attendance, and Unpackable Row.
 - [ ] ADR-0003 exists, is marked Accepted, and references ADR-0001.
 - [ ] ADR-0001 and ADR-0002 are left in place, with ADR-0001 marked "Amended by ADR-0003".
