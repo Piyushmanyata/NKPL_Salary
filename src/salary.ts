@@ -230,15 +230,20 @@ export function calculateSalary(
   const absentDays = isSpecial ? 0 : Math.max(0, workingDays - daysWorked);
   const standardBasic = monthlySalary * basicShare;
   const hasBasicAbove15k = standardBasic > PF_BASIC_LIMIT;
-  // ESI eligibility is tested on Basic, the same quantity the Official sheet
-  // tests (officialEsi: basic > 21,000 -> no ESI). Both sheets now answer the
-  // question the same way, so a row can no longer be ESI-eligible on one and
-  // exempt on the other. Like the PF 15k cutoff this uses the STANDING basic
-  // (M x basic%), never the prorated one, so eligibility cannot flip just
-  // because someone was absent for a few days.
-  const hasBasicAbove21k = standardBasic > ESI_GROSS_LIMIT;
   const requestedPfOptIn = (isSpecial || hasBasicAbove15k) ? false : (input.pfOptIn !== false);
-  const requestedEsiOptIn = (isSpecial || hasBasicAbove21k) ? false : (input.esiOptIn !== false);
+  // Above a ₹21,000 package ESI is OFF by default — that is the statutory
+  // exemption these rows have always had — but it is no longer forced. Turning
+  // the toggle on marks the row esiOverLimitOptIn and ESI applies, and the
+  // Official sheet then holds the basic inside (15,000, 21,000] so the charge
+  // actually lands (officialBasic). A separate field carries that consent
+  // because `esiOptIn` cannot: it reads true on every row nobody ever touched,
+  // which would switch these on by surprise. An explicit opt-out still wins.
+  const packageAboveEsiLimit = totalSalary > ESI_GROSS_LIMIT;
+  const requestedEsiOptIn = isSpecial
+    ? false
+    : packageAboveEsiLimit
+      ? input.esiOptIn !== false && input.esiOverLimitOptIn === true
+      : input.esiOptIn !== false;
   const perDayWage = salaryPerDay;
   const absentDeduction = isSpecial ? 0 : perDayWage * absentDays;
   const performanceBonus = isSpecial ? 0 : (perDayWage + bonusPerDay) * extraDays;

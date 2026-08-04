@@ -25,6 +25,15 @@ export type EmployeeInput = {
   basicPercent?: number;
   pfOptIn?: boolean;
   esiOptIn?: boolean;
+  /**
+   * Consent for the one band ADR-0011 newly made eligible: package above
+   * ₹21,000 with Basic at or below it. Those rows were exempt under the old
+   * package test, so they stay off until this is explicitly set true — an
+   * absent flag is not consent, and `esiOptIn` cannot say this because it
+   * defaults to true for every row that was never touched. Ignored outside
+   * the band. ADR-0011.
+   */
+  esiOverLimitOptIn?: boolean;
   advance?: number | null;
   otherDeduction: number;
   specialBonus?: number | null;

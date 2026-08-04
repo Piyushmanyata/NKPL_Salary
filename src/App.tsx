@@ -237,6 +237,9 @@ const sanitizeEmployee = (value: unknown, index: number, monthDays: number): Emp
     basicPercent: clampBasicPercent(row.basicPercent),
     pfOptIn: isSpecial ? false : row.pfOptIn !== false,
     esiOptIn: isSpecial ? false : row.esiOptIn !== false,
+    // Absent stays absent: this one must default to "no consent", never to true
+    // the way esiOptIn does (ADR-0011).
+    esiOverLimitOptIn: !isSpecial && row.esiOverLimitOptIn === true ? true : undefined,
     // Positive advance = recovered from net. Negatives (legacy UI convention) clamp to absent.
     advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) > 0 ? numberValue(row.advance) : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
@@ -644,9 +647,16 @@ function App() {
           return { ...employee, category: next };
         }
 
-        if (field === "pfOptIn" || field === "esiOptIn") {
+        if (field === "pfOptIn" || field === "esiOptIn" || field === "esiOverLimitOptIn") {
           if (isSpecialCategory(employee.category)) {
-            return { ...employee, pfOptIn: false, esiOptIn: false };
+            return { ...employee, pfOptIn: false, esiOptIn: false, esiOverLimitOptIn: undefined };
+          }
+          if (field === "esiOverLimitOptIn") {
+            // Only ever stored as an explicit true; off is the absence of consent.
+            return {
+              ...employee,
+              esiOverLimitOptIn: booleanValue(value) ? true : undefined,
+            };
           }
           return {
             ...employee,
@@ -1446,6 +1456,10 @@ function App() {
                       // always typed per month regardless of the toggle.
                       const perDayInput =
                         !isSpecial && (rateMode ?? (row.category === "Unskilled" ? "perDay" : "perMonth")) === "perDay";
+                      // Above a 21,000 package the ESI toggle is opt-IN: off until
+                      // switched on, and the click is recorded as esiOverLimitOptIn
+                      // so an untouched row is never mistaken for consent (ADR-0011).
+                      const esiOverLimit = !isSpecial && row.totalSalary > ESI_GROSS_LIMIT;
                       return (
                         <Fragment key={row.id}>
                           <tr className={missingRate ? "row-missing-rate" : undefined}>
@@ -1669,12 +1683,22 @@ function App() {
                                   <div className="settings-column">
                                     <span>ESI</span>
                                     <strong>{row.esiOptIn ? "On" : "Off"}</strong>
-                                    <small>{row.monthlySalary * (row.basicPercent / 100) > ESI_GROSS_LIMIT ? `ESI is off automatically above ${currency(ESI_GROSS_LIMIT)} Basic` : "Toggle controls employee ESI choice"}</small>
+                                    <small>
+                                      {esiOverLimit
+                                        ? row.esiOptIn
+                                          ? `Enabled by hand above ${currency(ESI_GROSS_LIMIT)} Total Salary — main-sheet Basic is held under ${currency(ESI_GROSS_LIMIT)} so the ESI applies`
+                                          : `Off by default above ${currency(ESI_GROSS_LIMIT)} Total Salary — turn it on here if this employee is covered`
+                                        : "Toggle controls employee ESI choice"}
+                                    </small>
                                     <button
                                       type="button"
                                       className={row.esiOptIn ? "toggle-on" : "toggle-off"}
                                       disabled={isSpecial}
-                                      onClick={() => updateEmployee(row.id, "esiOptIn", !row.esiOptIn)}
+                                      onClick={() =>
+                                        esiOverLimit
+                                          ? updateEmployee(row.id, "esiOverLimitOptIn", !row.esiOptIn)
+                                          : updateEmployee(row.id, "esiOptIn", !row.esiOptIn)
+                                      }
                                     >
                                       {row.esiOptIn ? "Turn Off" : "Turn On"}
                                     </button>
@@ -1884,7 +1908,7 @@ function App() {
                   label="PF"
                   value={`${PF_RATE * 100}% on Basic (capped at ${currency(PF_BASIC_LIMIT)} Basic) when PF is enabled`}
                 />
-                <Rule label="ESI" value={`${ESI_RATE * 100}% on Earned Salary when ESI is enabled (auto-off when Basic exceeds ${currency(ESI_GROSS_LIMIT)}, the same test the main sheet applies)`} />
+                <Rule label="ESI" value={`${ESI_RATE * 100}% on Earned Salary when ESI is enabled. Off by default above ${currency(ESI_GROSS_LIMIT)} Total Salary — enable it per employee in Settings, and the main-sheet Basic is held under ${currency(ESI_GROSS_LIMIT)} so it applies`} />
                 <Rule label="P-Tax" value="Based on Gross Payable (before PF/ESI) slab" />
                 <Rule label="Advance" value="Amount advanced to the employee, recovered from this month's net pay" />
                 <Rule label="Performance Bonus" value="(salary/day + bonus/day) x Extra Days" />

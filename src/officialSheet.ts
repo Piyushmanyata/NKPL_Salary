@@ -120,7 +120,10 @@ function displayFor(category: Category | string): { employeeTypes: string; allow
  *
  * - PF on  → wage board daily × A (Special cannot have PF — throws).
  * - PF off + ESI off → elevated floor max(21100, 0.51 × totalSalary) prorated on 26.
- * - PF off + ESI on  → elevated floor max(15100, 0.51 × totalSalary) prorated on 26.
+ * - PF off + ESI on  → 0.51 × totalSalary held inside (15,000, 21,000]: above the
+ *   PF ceiling so PF stays off, at or below the ESI ceiling so the ESI the user
+ *   switched on is actually charged. Without the cap a large package pushed the
+ *   basic past 21,000 and officialEsi quietly returned 0. ADR-0011.
  */
 export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: number): number {
   if (A <= 0) return 0;
@@ -132,9 +135,10 @@ export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: num
     return roundMoney(A * WAGE_BOARD_DAILY[wageCategory]);
   }
 
+  const half = Math.round(row.totalSalary * 0.51);
   const fullMonthRate = !row.esiOptIn
-    ? Math.max(21100, Math.round(row.totalSalary * 0.51))
-    : Math.max(15100, Math.round(row.totalSalary * 0.51));
+    ? Math.max(21100, half)
+    : Math.min(ESI_GROSS_LIMIT, Math.max(15100, half));
   return roundMoney((fullMonthRate / OFFICIAL_WAGE_DAYS) * A);
 }
 
