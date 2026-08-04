@@ -194,7 +194,7 @@ Settled in the 2026-07-26 grill. Reopening one costs a re-derivation of the whol
 | Rate anchor per grade | Unskilled → day rate. Semi-skilled / Skilled → fixed monthly. Special → fixed monthly, no day rate. |
 | Does full pay vary with month length? | Only for Unskilled with a stored day rate. |
 | Is `Special` a category or a flag? | **Category.** Fourth value, mutually exclusive. |
-| Reference ESI base | **Gross Payable** (ADR-0002). |
+| Reference ESI amount | **Main/Official ESI** after attendance selection; Reference net is recalculated with it (ADR-0005). |
 | Official ESI base | **Official Monthly Basic** (ADR-0002). |
 | Official basic when PF is on | **Wage board** (400 / 440 / 484 × attendance), uncapped. |
 | ₹15,000 | EPF *contribution* ceiling only. Never caps a displayed basic. |

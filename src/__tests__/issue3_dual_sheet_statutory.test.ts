@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildOfficialRow } from "../officialSheet";
-import { calculateSalary } from "../salary";
+import { alignReferenceEsi, calculateSalary } from "../salary";
 import type { EmployeeInput } from "../types";
 
 describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
-  it("Reference ESI: ROUNDUP(0.75% of Earned Salary) when Total Salary <= 21,000; employer ESI 3.25% on same base", () => {
+  it("Reference ESI uses the Main/Official amount and the Reference net is repacked to match", () => {
     const input: EmployeeInput = {
       id: "emp-ref-esi",
       name: "ESI Eligible Worker",
@@ -19,14 +19,17 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
       otherDeduction: 0,
     };
 
-    const ref = calculateSalary(input, { workingDays: 30 });
+    const raw = calculateSalary(input, { workingDays: 30 });
+    const main = buildOfficialRow(raw, 30);
+    const ref = alignReferenceEsi(raw, main.esi, main.employerEsi);
     expect(ref.totalSalary).toBeLessThanOrEqual(21000);
     expect(ref.esiOptIn).toBe(true);
-    expect(ref.esi).toBe(Math.ceil(ref.earnedSalary * 0.0075));
-    expect(ref.employerEsi).toBe(Math.ceil(ref.earnedSalary * 0.0325));
+    expect(ref.esi).toBe(main.esi);
+    expect(ref.employerEsi).toBe(main.employerEsi);
+    expect(ref.netPayable).toBeCloseTo(main.netPayable, 2);
   });
 
-  it("Reference ESI excludes performanceBonus and specialBonus — base is Earned Salary, not Gross", () => {
+  it("Main ESI controls Reference ESI even when bonuses change the Reference gross", () => {
     const input: EmployeeInput = {
       id: "emp-bonus-esi",
       name: "Bonus Worker",
@@ -42,11 +45,13 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
       otherDeduction: 0,
     };
 
-    const ref = calculateSalary(input, { workingDays: 30 });
-    // grossPayable = 12000 + 800 + 1000 = 13800, but ESI rides earnedSalary = 12000
+    const raw = calculateSalary(input, { workingDays: 30 });
+    const main = buildOfficialRow(raw, 30);
+    const ref = alignReferenceEsi(raw, main.esi, main.employerEsi);
     expect(ref.grossPayable).toBe(13800);
     expect(ref.earnedSalary).toBe(12000);
-    expect(ref.esi).toBe(Math.ceil(12000 * 0.0075));
+    expect(ref.esi).toBe(main.esi);
+    expect(ref.netPayable).toBeCloseTo(main.netPayable, 2);
   });
 
   it("Reference PF: 12% of min(basic, 15,000); auto-off when full-month basic > 15,000", () => {
@@ -105,14 +110,14 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
       otherDeduction: 0,
     };
 
-    const ref = calculateSalary(input, { workingDays: 30 });
-    const off = buildOfficialRow(ref, 30);
+    const raw = calculateSalary(input, { workingDays: 30 });
+    const off = buildOfficialRow(raw, 30);
+    const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
 
-    // Reference ESI is computed on Earned Salary; Official ESI on Official Basic (11,440)
-    expect(ref.esi).toBe(Math.ceil(ref.earnedSalary * 0.0075));
+    // Main ESI is based on Official Basic (11,440) and is copied to Reference.
     expect(off.esi).toBe(Math.round(off.monthlyBasic * 0.0075 * 100) / 100);
-    expect(off.esi).not.toBe(ref.esi); // Divergent!
-    expect(off.netPayable).toBeCloseTo(ref.netPayable, 2); // Net Equality preserved!
+    expect(ref.esi).toBe(off.esi);
+    expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
   });
 
   it("Guarantees Official Net Payable == Reference Net Payable (ADR 0001) across diverse fixtures", () => {
@@ -169,8 +174,9 @@ describe("Issue #3: Dual-sheet statutory math & Net Equality Packing", () => {
     ];
 
     fixtures.forEach((fix) => {
-      const ref = calculateSalary(fix, { workingDays: 30 });
-      const off = buildOfficialRow(ref, 30);
+      const raw = calculateSalary(fix, { workingDays: 30 });
+      const off = buildOfficialRow(raw, 30);
+      const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
       expect(off.netPayable).toBeCloseTo(ref.netPayable, 2);
     });
   });

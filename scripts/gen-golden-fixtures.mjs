@@ -8,18 +8,19 @@
  */
 import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { juneEmployees } from "../src/juneEmployees.ts";
-import { calculateSalary, clampBasicPercent, roundMoney } from "../src/salary.ts";
+import { alignReferenceEsi, calculateSalary, clampBasicPercent, roundMoney } from "../src/salary.ts";
 import { buildOfficialRow } from "../src/officialSheet.ts";
 
 mkdirSync("src/__tests__/fixtures", { recursive: true });
 
 function goldenRow(emp, D = 30) {
   const share = clampBasicPercent(emp.basicPercent) / 100;
-  const ref = calculateSalary(emp, { workingDays: D, basicShare: share });
-  if (ref.missingRate) {
+  const raw = calculateSalary(emp, { workingDays: D, basicShare: share });
+  if (raw.missingRate) {
     throw new Error(`missingRate for ${emp.name}`);
   }
-  const off = buildOfficialRow(ref, D);
+  const off = buildOfficialRow(raw, D);
+  const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
   return {
     id: emp.id,
     name: emp.name,

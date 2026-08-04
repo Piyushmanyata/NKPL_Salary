@@ -9,8 +9,9 @@ import { calendarDaysForMonth } from "../months";
    buildOfficialRow,
    normalizeCategory,
  } from "../officialSheet";
- import {
-   calculateSalary,
+  import {
+    alignReferenceEsi,
+    calculateSalary,
    clampBasicPercent,
    repairRates,
    roundMoney,
@@ -19,12 +20,14 @@ import { calendarDaysForMonth } from "../months";
  import { sampleEmployees } from "../sampleEmployees";
  import type { EmployeeInput } from "../types";
 
- function refFrom(partial: EmployeeInput, monthDays = 30) {
-   return calculateSalary(partial, {
-     workingDays: monthDays,
-     basicShare: clampBasicPercent(partial.basicPercent) / 100,
-   });
- }
+  function refFrom(partial: EmployeeInput, monthDays = 30) {
+    const raw = calculateSalary(partial, {
+      workingDays: monthDays,
+      basicShare: clampBasicPercent(partial.basicPercent) / 100,
+    });
+    const official = buildOfficialRow(raw, monthDays);
+    return alignReferenceEsi(raw, official.esi, official.employerEsi);
+  }
 
  describe("TICKET-14: targeted ticket regressions", () => {
    it("special_is_month_length_invariant", () => {

@@ -213,21 +213,22 @@ matches the June sheets.
                   && esiOptIn !== false
                   && totalSalary ≤ 21000               // package, not this month — ADR-0004
 
-19  esi         = esiEligible ? ceil(0.0075 × earnedSalary) : 0             // whole rupee
-20  employerEsi = esiEligible ? ceil(0.0325 × earnedSalary) : 0
+19  rawReferenceEsi = esiEligible ? ceil(0.0075 × earnedSalary) : 0       // pre-alignment baseline
+20  referenceEsi    = officialEsi(A*)                                      // final Reference amount
+21  employerEsi     = officialEmployerEsi(A*)
 
-21  professionalTax = otherDeduction > 0 ? 0 : wbSlab(grossPayable)   // TDS payers exempt
+22  professionalTax = otherDeduction > 0 ? 0 : wbSlab(grossPayable)   // TDS payers exempt
 
-22  netPayable = grossPayable − employeePf − esi − professionalTax − advance − otherDeduction
-23  totalCost  = grossPayable + employerPf + employerEsi
+23  netPayable = grossPayable − employeePf − referenceEsi − professionalTax − advance − otherDeduction
+24  totalCost  = grossPayable + employerPf + employerEsi
 ```
 
 `pfEligible` and `esiEligible` are **independent**. Neither forces the other.
 
-Steps 16, 19 and 20 reproduce the Source Workbooks (`data/SALARY OLD NKPL.xlsx` col `X`/`W`,
-`data/SALARY OLD APTUS.xlsx` col `W`/`V`) to the rupee — `ROUNDUP` for ESI, `ROUND` for PF.
-The asymmetry is in the source. **ADR-0004** supersedes ADR-0002's Reference clause; ADR-0002's
-Official clause (step 6.4, ESI on Official Monthly Basic) is unchanged. `pfEligible` deliberately
+The raw baseline in step 19 reproduces the Source Workbooks (`data/SALARY OLD NKPL.xlsx` col
+`X`/`W`, `data/SALARY OLD APTUS.xlsx` col `W`/`V`) to the rupee, but the user-facing Reference
+amount is replaced by Main/Official ESI at the selected attendance (`A*`). **ADR-0005** makes
+that alignment explicit; ADR-0004 remains the source-arithmetic record. `pfEligible` deliberately
 stays on the **full-month** basic `M × p`, not the earned basic the NKPL workbook tests, so PF
 status is stable month to month.
 
@@ -304,13 +305,15 @@ officialEsi(A) = (Category !== "Special" && esiOptIn !== false && officialBasic(
 ```
 
 Official ESI is **never** forced on merely because PF is on.
-Official PF and ESI **may** differ in rupees from Reference PF and ESI. That is expected.
+The final Reference ESI is set to `officialEsi(A*)`; Official PF may still differ from Reference PF.
 
 ### 6.5 Net Equality Packing
 
 ```
-targetGross(A) = referenceNet
-               + officialPf(A) + officialEsi(A) + professionalTax
+referenceNetBeforeEsi = grossPayable − employeePf − professionalTax − advance − otherDeduction
+
+targetGross(A) = referenceNetBeforeEsi
+               + officialPf(A) + professionalTax
                + advance + otherDeduction
 
 packable(A)    = targetGross(A) ≥ officialBasic(A)

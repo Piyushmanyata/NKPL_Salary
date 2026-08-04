@@ -1,4 +1,5 @@
 import {
+  ESI_EMPLOYER_RATE,
   ESI_GROSS_LIMIT,
   ESI_RATE,
   HRA_SHARE_OF_BALANCE,
@@ -27,6 +28,7 @@ export type OfficialRow = {
   grossPayable: number;
   pf: number;
   esi: number;
+  employerEsi: number;
   professionalTax: number;
   advance?: number | null;
   otherDeduction: number;
@@ -144,7 +146,7 @@ export function officialPf(row: SalaryRow, basic: number): number {
 
 /**
  * Official employee ESI: 0.75% of Official basic when eligible.
- * Base is BASIC (ADR-0002). Never forced on merely because PF is on.
+ * Base is BASIC. Never forced on merely because PF is on.
  */
 export function officialEsi(row: SalaryRow, basic: number): number {
   if (row.category === "Special") return 0;
@@ -153,13 +155,24 @@ export function officialEsi(row: SalaryRow, basic: number): number {
   return roundMoney(basic * ESI_RATE);
 }
 
+/** Official employer ESI follows the same Official-basic eligibility as employee ESI. */
+export function officialEmployerEsi(row: SalaryRow, basic: number): number {
+  if (officialEsi(row, basic) <= 0) return 0;
+  return roundMoney(basic * ESI_EMPLOYER_RATE);
+}
+
 function advanceAmount(row: SalaryRow): number {
   return Math.max(0, Number(row.advance) || 0);
 }
 
-function targetGrossFor(row: SalaryRow, pf: number, esi: number): number {
+/**
+ * The ESI amount is aligned to Official after attendance is selected, so the
+ * packing target starts from the Reference net before ESI. This keeps the
+ * target stable while moving the ESI rupee from Reference to Official.
+ */
+function targetGrossFor(row: SalaryRow, pf: number): number {
   return roundMoney(
-    row.netPayable + pf + esi + row.professionalTax + advanceAmount(row) + row.otherDeduction,
+    row.netPayable + row.esi + pf + row.professionalTax + advanceAmount(row) + row.otherDeduction,
   );
 }
 
@@ -176,8 +189,7 @@ export function pickPackableAttendance(
   for (let A = aMax; A >= aMin; A -= 1) {
     const basic = officialBasic(row, wageCategory, A);
     const pf = officialPf(row, basic);
-    const esi = officialEsi(row, basic);
-    const target = targetGrossFor(row, pf, esi);
+    const target = targetGrossFor(row, pf);
     if (target >= basic) {
       return { attendance: A, unpackable: false };
     }
@@ -199,8 +211,9 @@ export function assembleOfficialRow(
   const monthlyBasic = officialBasic(row, wageCategory, attendance);
   const pf = officialPf(row, monthlyBasic);
   const esiValue = officialEsi(row, monthlyBasic);
+  const employerEsi = officialEmployerEsi(row, monthlyBasic);
   const adv = advanceAmount(row);
-  const targetGross = targetGrossFor(row, pf, esiValue);
+  const targetGross = targetGrossFor(row, pf);
   const proratedTotal26 = roundMoney((row.totalSalary / OFFICIAL_WAGE_DAYS) * attendance);
   const base = Math.min(proratedTotal26, targetGross);
 
@@ -230,11 +243,12 @@ export function assembleOfficialRow(
     grossPayable,
     pf,
     esi: esiValue,
+    employerEsi,
     professionalTax: row.professionalTax,
     advance: row.advance,
     otherDeduction: row.otherDeduction,
     netPayable,
-    referenceNetPayable: row.netPayable,
+    referenceNetPayable: roundMoney(row.netPayable + row.esi - esiValue),
     unpackable,
   };
 }

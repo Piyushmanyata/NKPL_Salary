@@ -126,8 +126,8 @@ Whether employee PF applies. Forced off for Special Employees and when full-mont
 _Avoid_: ESI
 
 **ESI (Reference)**:
-Employee state insurance on Reference: 0.75% of **Earned Salary**, **rounded up to the whole rupee**, only if **Total Salary** is at most ₹21,000 and the employee is not excluded (special / opted out). Eligibility is a property of the package, so it does not flip because someone missed days this month. Employer ESI is 3.25% of the same base, rounded up the same way, when employee ESI applies. Reproduces the **Source Workbook** formula `=IF(J<=21000, ROUNDUP(O*0.75%, 0), 0)` (ADR-0004, superseding ADR-0002's Reference clause).
-_Avoid_: ESI on Gross Payable, ESI eligibility on this month's gross, ESI on Official basic, sub-rupee ESI
+Final Reference ESI is the **Main/Official ESI amount** for the selected Official attendance: 0.75% of Official Monthly Basic when the employee is eligible, rounded using the Main-sheet rule. Reference Net Payable is then recalculated using that ESI, and the Main sheet is repacked from its own components to match the new Reference net. Eligibility remains a property of the package (Total Salary ≤ ₹21,000, not special, not opted out), not this month's gross. Employer ESI follows the same Official-basic basis. The Source Workbook Earned Salary formula remains an internal pre-alignment baseline only (ADR-0005).
+_Avoid_: ESI on Reference Gross Payable, ESI eligibility on this month's gross, leaving Reference ESI different from Main ESI, copying net instead of recalculating it
 
 **ESI (Official)**:
 Employee state insurance on Official: 0.75% of Official **Monthly Basic**, only if that basic is at most ₹21,000 and not opted out. Must not be forced on merely because PF is on. Employer ESI follows the same Official base when employee ESI applies.
@@ -152,7 +152,7 @@ Elevated Official basic used **only when PF is off**. When PF is on, Official ba
 _Avoid_: Applying opt-out elevation when PF is on; capping displayed basic at ₹15,000
 
 **Net Equality Packing**:
-Process of choosing Official attendance (from A_max down to A_min) and setting Official gross components (HRA, travel, bonus residual) after Official basic, PF, and ESI so Official Net Payable equals Reference Net Payable. PF and ESI may differ between sheets; net must not for packable rows. Official net is **always computed**, never copied from Reference.
+Process of choosing Official attendance (from A_max down to A_min), aligning Reference ESI to the resulting Main ESI, and setting Official gross components (HRA, travel, bonus residual) after Official basic, PF, and ESI so Official Net Payable equals the recalculated Reference Net Payable. PF may differ between sheets; ESI is intentionally synchronized. Official net is **always computed**, never copied from Reference.
 _Avoid_: Copying every statutory rupee from Reference onto Official; assigning `netPayable` from Reference
 
 **Unpackable Row**:

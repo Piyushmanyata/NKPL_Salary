@@ -1,7 +1,7 @@
 # ADR 0002: ESI bases by sheet
 
 ## Status
-Accepted (grill 2026-07-24). **Reference clause superseded by [ADR-0004](0004-reference-statutory-matches-source-workbooks.md)** (2026-07-29): Reference ESI now rides Earned Salary with eligibility on Total Salary, per the Source Workbooks. The Official clause below still stands.
+Accepted (grill 2026-07-24). **Reference clause superseded by [ADR-0004](0004-reference-statutory-matches-source-workbooks.md), then by [ADR-0005](0005-main-esi-drives-reference.md)**: the raw Reference baseline follows the Source Workbooks, while the final user-facing Reference ESI is aligned to Official ESI. The Official clause below still stands.
 
 ## Context
 Reference and Official use different component structures. A single ESI base produced wrong register lines on one side or the other.

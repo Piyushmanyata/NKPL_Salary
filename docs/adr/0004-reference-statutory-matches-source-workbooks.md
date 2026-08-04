@@ -4,7 +4,8 @@
 
 Accepted (issue #24, 2026-07-29). **Supersedes the Reference clause of [ADR-0002](0002-esi-bases-by-sheet.md).**
 ADR-0002's *Official* clause — Official ESI is 0.75% of Official Monthly Basic — is untouched and
-remains correct. The two sheets keep deliberately different ESI bases.
+remains correct. ADR-0005 later aligned the final Reference ESI amount to that Official result;
+this ADR remains the source-arithmetic record for the raw pre-alignment Reference calculation.
 
 ## Context
 

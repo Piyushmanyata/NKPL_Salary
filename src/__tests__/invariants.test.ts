@@ -4,8 +4,9 @@
   */
  import { describe, expect, it } from "vitest";
  import { buildOfficialRow } from "../officialSheet";
- import {
-   calculateSalary,
+  import {
+    alignReferenceEsi,
+    calculateSalary,
    clampBasicPercent,
    isSpecialCategory,
    repairRates,
@@ -91,13 +92,14 @@
          };
 
          const share = clampBasicPercent(input.basicPercent) / 100;
-         const ref = calculateSalary(input, { workingDays: D, basicShare: share });
-         if (ref.missingRate) {
-           missing += 1;
-           continue;
-         }
+          const raw = calculateSalary(input, { workingDays: D, basicShare: share });
+          if (raw.missingRate) {
+            missing += 1;
+            continue;
+          }
 
-         const off = buildOfficialRow(ref, D);
+          const off = buildOfficialRow(raw, D);
+          const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
          computed += 1;
          if (off.unpackable) unpackable += 1;
 

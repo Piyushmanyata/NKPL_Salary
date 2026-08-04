@@ -38,6 +38,7 @@ import {
   PF_BASIC_LIMIT,
   PF_RATE,
   TA_SHARE_OF_BALANCE,
+  alignReferenceEsi,
   calculateSalary,
   clampBasicPercent,
   clampDays,
@@ -379,7 +380,7 @@ function App() {
     }, 4000);
   };
 
-  const salaryRows = useMemo(
+  const calculatedSalaryRows = useMemo(
     () =>
       employees
         .filter((employee) => employee.name.trim())
@@ -392,6 +393,22 @@ function App() {
     [employees, effectiveMonthDays],
   );
 
+  const officialRows = useMemo(
+    () => calculatedSalaryRows.map((row) => buildOfficialRow(row, effectiveMonthDays)),
+    [calculatedSalaryRows, effectiveMonthDays],
+  );
+
+  const salaryRows = useMemo(
+    () =>
+      calculatedSalaryRows.map((row, index) => {
+        const official = officialRows[index];
+        return official
+          ? alignReferenceEsi(row, official.esi, official.employerEsi)
+          : row;
+      }),
+    [calculatedSalaryRows, officialRows],
+  );
+
   const filteredRows = useMemo(() => {
     const search = query.trim().toLowerCase();
     if (!search) {
@@ -402,11 +419,6 @@ function App() {
       `${row.name} ${row.category}`.toLowerCase().includes(search),
     );
   }, [query, salaryRows]);
-
-  const officialRows = useMemo(
-    () => salaryRows.map((row) => buildOfficialRow(row, effectiveMonthDays)),
-    [effectiveMonthDays, salaryRows],
-  );
 
   const filteredOfficialRows = useMemo(() => {
     const search = query.trim().toLowerCase();

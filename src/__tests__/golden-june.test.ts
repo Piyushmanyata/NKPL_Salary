@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildOfficialRow } from "../officialSheet";
-import { calculateSalary, clampBasicPercent, roundMoney } from "../salary";
+import { alignReferenceEsi, calculateSalary, clampBasicPercent, roundMoney } from "../salary";
 import { juneEmployees } from "../juneEmployees";
 import type { EmployeeInput } from "../types";
 
@@ -35,8 +35,9 @@ function loadGolden(name: string): GoldenFile {
 
 function compute(emp: EmployeeInput, monthDays: number) {
   const share = clampBasicPercent(emp.basicPercent) / 100;
-  const ref = calculateSalary(emp, { workingDays: monthDays, basicShare: share });
-  const off = buildOfficialRow(ref, monthDays);
+  const raw = calculateSalary(emp, { workingDays: monthDays, basicShare: share });
+  const off = buildOfficialRow(raw, monthDays);
+  const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
   return { ref, off };
 }
 
@@ -129,8 +130,8 @@ describe("TICKET-14: golden-master June 2026", () => {
     const bidyut = juneEmployees.find((e) => e.name === "BIDYUT RAY");
     expect(bidyut).toBeDefined();
     const { ref, off } = compute(bidyut!, 30);
-    // Re-pinned by issue #24 (workbook-parity ESI/PF rounding). Prior values:
-    // gross 23,866.92 · net 22,226.84 · Ashok ref net 16,527.87.
+    // Re-pinned by issue #24 and Main-ESI alignment. Prior values:
+    // gross 23,866.92 · net 22,226.84 · Ashok ref net 16,557.
     expect(off.monthlyBasic).toBe(12584);
     expect(off.pf).toBe(1510.08);
     expect(off.grossPayable).toBeCloseTo(23867.08, 2);
@@ -140,6 +141,6 @@ describe("TICKET-14: golden-master June 2026", () => {
     const ashok = juneEmployees.find((e) => e.name === "Ashok Ram");
     expect(ashok).toBeDefined();
     const ashokRef = compute(ashok!, 30).ref;
-    expect(ashokRef.netPayable).toBeCloseTo(16557, 2);
+    expect(ashokRef.netPayable).toBeCloseTo(16589.2, 2);
   });
 });

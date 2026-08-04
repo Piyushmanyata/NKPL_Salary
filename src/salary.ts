@@ -307,6 +307,27 @@ export function calculateSalary(
   };
 }
 
+/**
+ * Align the user-facing Reference statutory ESI and net to the Main/Official
+ * result. The raw calculation remains available as the pre-alignment baseline
+ * used to choose Official attendance.
+ */
+export function alignReferenceEsi(
+  row: SalaryRow,
+  officialEsi: number,
+  officialEmployerEsi: number,
+): SalaryRow {
+  const alignedEsi = roundMoney(Math.max(0, officialEsi));
+  const alignedEmployerEsi = roundMoney(Math.max(0, officialEmployerEsi));
+  return {
+    ...row,
+    esi: alignedEsi,
+    employerEsi: alignedEmployerEsi,
+    netPayable: roundMoney(row.netPayable + row.esi - alignedEsi),
+    totalCost: row.grossPayable + row.employerPf + alignedEmployerEsi,
+  };
+}
+
 
 export function roundMoney(value: number) {
   return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;

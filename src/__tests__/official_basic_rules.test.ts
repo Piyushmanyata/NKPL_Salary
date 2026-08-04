@@ -9,7 +9,7 @@ import {
   officialPf,
   wageBoardCategory,
 } from "../officialSheet";
-import { calculateSalary, roundMoney } from "../salary";
+import { alignReferenceEsi, calculateSalary, roundMoney } from "../salary";
 import type { EmployeeInput, SalaryRow } from "../types";
 
 const WAGE_BOARD_DAILY = {
@@ -23,7 +23,9 @@ function refRow(
   monthDays = 30,
   options?: { basicShare?: number },
 ): SalaryRow {
-  return calculateSalary(partial, { workingDays: monthDays, ...options });
+  const raw = calculateSalary(partial, { workingDays: monthDays, ...options });
+  const official = buildOfficialRow(raw, monthDays);
+  return alignReferenceEsi(raw, official.esi, official.employerEsi);
 }
 
 /** SPEC §8 worked example — BIDYUT RAY, NKPL June 2026 (basicShare 70%). */

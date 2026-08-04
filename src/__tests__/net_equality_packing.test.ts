@@ -8,7 +8,7 @@
    pickPackableAttendance,
    wageBoardCategory,
  } from "../officialSheet";
- import { calculateSalary, clampBasicPercent, repairRates, roundMoney } from "../salary";
+import { alignReferenceEsi, calculateSalary, clampBasicPercent, repairRates, roundMoney } from "../salary";
  import type { Category, EmployeeInput, SalaryRow } from "../types";
  import { juneEmployees } from "../juneEmployees";
 
@@ -17,7 +17,9 @@
    monthDays = 30,
  ): SalaryRow {
    const share = clampBasicPercent(partial.basicPercent) / 100;
-   return calculateSalary(partial, { workingDays: monthDays, basicShare: share });
+  const raw = calculateSalary(partial, { workingDays: monthDays, basicShare: share });
+  const official = buildOfficialRow(raw, monthDays);
+  return alignReferenceEsi(raw, official.esi, official.employerEsi);
  }
 
  /** Mulberry32 — deterministic PRNG for seeded fuzz. */
@@ -224,13 +226,14 @@
          specialBonus: pick(rng, [0, 0, 0, 5000]),
        };
 
-       const ref = calculateSalary(input, {
+       const raw = calculateSalary(input, {
          workingDays: D,
          basicShare: clampBasicPercent(input.basicPercent) / 100,
        });
-       if (ref.missingRate) continue;
+       if (raw.missingRate) continue;
 
-       const off = buildOfficialRow(ref, D);
+       const off = buildOfficialRow(raw, D);
+       const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
        computed += 1;
        if (off.unpackable) unpackable += 1;
 
