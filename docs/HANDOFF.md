@@ -1,6 +1,6 @@
 # HANDOFF — NKPL Salary (current state)
 
-Last updated: 2026-08-06 after issue #26 App decomposition.
+Last updated: 2026-08-06 after issue #27 lifecycle write-gate work.
 
 ## What this app is
 
@@ -14,7 +14,7 @@ Dual-sheet payroll for NKPL and APTUS: Reference Salary Sheet + Official Main Sh
 | Domain edit rules | `src/editEmployee.ts` |
 | Roster / hydrate | `src/roster.ts` |
 | Export | `src/exportSheet.ts` |
-| Month lifecycle + Scope Guard | `src/monthLifecycle.ts` |
+| Month lifecycle + write gate | `src/monthLifecycle.ts`, `src/hooks/useMonthLifecycle.ts` |
 | Client persistence | `src/db.ts`, `src/storageKeys.ts` |
 | UI composition | `src/App.tsx` + `src/components/*` + `src/hooks/*` |
 | Seed data | `src/data/nkpl-seed-roster.json` (via `src/juneEmployees.ts`) |
@@ -31,9 +31,17 @@ npx tsc --noEmit
 
 Suite is **green**. Golden fixtures must stay byte-identical; if a fixture would need regenerating, stop — that is a behavior change.
 
-## Scope Guard
+## Lifecycle write gate
 
-Saves are gated by `loadedScope` in `monthLifecycleReducer`. A save for any company/month other than the loaded roster is rejected. This replaces the old `loadedForRef` comment-enforced guard (the APTUS contamination incident).
+`monthLifecycleReducer` owns `loadedScope`, the no-data choice, save suppression,
+payload signatures, pending writes, and retry state. `useMonthLifecycle` owns
+the matching load/save effects and hydrates month records with the real Rate
+Card only after a found record or an explicit blank/sample/copy choice.
+
+The client distinguishes found, empty, and unavailable reads. Empty months stay
+blocked behind the choice modal; unavailable reads show a retryable error. A
+month or rate save is rejected unless the reducer has a matching loaded scope
+and a changed payload.
 
 ## Live scripts
 

@@ -1,4 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { redisGetJson, redisSetJson } from './_lib/redis.js';
 import { normalizeCompany, withApiHandler } from './_lib/http.js';
 
