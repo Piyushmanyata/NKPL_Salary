@@ -25,6 +25,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -75,6 +76,11 @@ import {
   serializeSpreadsheetHtml,
 } from "./exportSheet";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
+import {
+  canSaveForScope,
+  initialLifecycleState,
+  monthLifecycleReducer,
+} from "./monthLifecycle";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
@@ -219,16 +225,19 @@ function App() {
   const prevMonthRef = useRef(monthLabel);
   const prevCompanyRef = useRef(activeCompany);
   const justLoadedRef = useRef(false);
-  // Which company+month the `employees` state actually belongs to. Switching
-  // company flips `activeCompany` a render before the new roster arrives, and
-  // without this guard the debounced auto-saves below write the OLD company's
-  // roster under the NEW company's key. That is how NKPL's 51 employees once
-  // landed in monthly_salary/APTUS/July 2026 and employee_rates/APTUS.
-  const loadedForRef = useRef("");
-  const scopeOf = (company: string, month: string) => `${company}::${normalizeMonthLabel(month)}`;
+  // Scope Guard lives in monthLifecycleReducer (loadedScope), not a ref racing
+  // beside state. Saves are only legal when canSaveForScope matches.
+  const [lifecycle, dispatchLifecycle] = useReducer(
+    monthLifecycleReducer,
+    monthLabel,
+    initialLifecycleState,
+  );
   const lastMonthPayloadRef = useRef<string>("");
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveRetryToken, setSaveRetryToken] = useState(0);
+  const saveError = lifecycle.saveError;
+  const saveRetryToken = lifecycle.retryToken;
+  const setSaveRetryToken = () => {
+    dispatchLifecycle({ type: "RETRY" });
+  };
 
   // Shared salary/day + bonus/day rates for the active company, kept in sync
   // with the cloud store (see api/rates.ts) independently of month records.
@@ -605,14 +614,17 @@ function App() {
 
       setDbLoading(true);
       // Nothing may be written for this scope until its own data has landed.
-      loadedForRef.current = "";
+      dispatchLifecycle({
+        type: "SELECT_SCOPE",
+        company: activeCompany,
+        monthLabel: normalized,
+      });
       try {
         const [data, rates] = await Promise.all([
           getMonthData(activeCompany, normalized),
           getEmployeeRates(activeCompany),
         ]);
         if (!active) return;
-        loadedForRef.current = scopeOf(activeCompany, normalized);
         setEmployeeRates(rates);
         ratesSignatureRef.current = JSON.stringify(rates);
         if (data) {
@@ -623,11 +635,16 @@ function App() {
           // The shared rate card seeds NEW months (see carryMonthInto); applying
           // it here too would let today's raise retroactively rewrite a filed
           // month's payroll, which is the opposite of "carry it forward".
-          setEmployees(
-            data.employees
+          const roster = data.employees
               .map((emp, index) => sanitizeEmployee(emp, index, days))
-              .filter((emp): emp is EmployeeInput => Boolean(emp)),
-          );
+              .filter((emp): emp is EmployeeInput => Boolean(emp));
+          setEmployees(roster);
+          dispatchLifecycle({
+            type: "LOAD_SUCCESS",
+            company: activeCompany,
+            monthLabel: normalized,
+            roster,
+          });
         } else {
           // No data saved for this company + month yet. The roster and every
           // rate carry forward from the previous month automatically — the user
@@ -674,7 +691,12 @@ function App() {
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
     // Never write a roster into a scope it was not loaded for (company switch).
-    if (loadedForRef.current !== scopeOf(activeCompany, normalized)) return;
+    if (!canSaveForScope(lifecycle, activeCompany, normalized)) return;
+    dispatchLifecycle({
+      type: "SAVE_REQUEST",
+      company: activeCompany,
+      monthLabel: normalized,
+    });
 
     const payload = JSON.stringify({
       company: activeCompany,
@@ -694,18 +716,24 @@ function App() {
         );
         if (result.ok) {
           lastMonthPayloadRef.current = payload;
-          setSaveError(null);
+          dispatchLifecycle({ type: "SAVE_SUCCESS" });
         } else {
-          setSaveError(result.error || "Failed to save month data to the database.");
+          dispatchLifecycle({
+            type: "SAVE_ERROR",
+            error: result.error || "Failed to save month data to the database.",
+          });
         }
       } catch (err: any) {
         console.error("Failed to save month data:", err);
-        setSaveError(err?.message || "Failed to save month data to the database.");
+        dispatchLifecycle({
+          type: "SAVE_ERROR",
+          error: err?.message || "Failed to save month data to the database.",
+        });
       }
     }, 2000);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal, saveRetryToken]);
+  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal, saveRetryToken, lifecycle.loadedScope]);
 
   // Auto-save salary/day + bonus/day rates to the shared cloud store whenever
   // they change, so every month and every visitor picks up the new rate.
@@ -715,7 +743,7 @@ function App() {
     if (dbLoading || showNoDataModal) return;
     // Same scope guard as the month save: a company switch must not push the
     // previous company's people into the new company's shared rate card.
-    if (loadedForRef.current !== scopeOf(activeCompany, monthLabel)) return;
+    if (!canSaveForScope(lifecycle, activeCompany, normalizeMonthLabel(monthLabel))) return;
     const nextRates = buildRateMap(employees);
     const signature = JSON.stringify(nextRates);
     if (signature === ratesSignatureRef.current) return;
@@ -726,18 +754,23 @@ function App() {
         if (result.ok) {
           ratesSignatureRef.current = signature;
           setEmployeeRates(nextRates);
-          setSaveError(null);
         } else {
-          setSaveError(result.error || "Failed to save employee rates.");
+          dispatchLifecycle({
+            type: "SAVE_ERROR",
+            error: result.error || "Failed to save employee rates.",
+          });
         }
       } catch (err: any) {
         console.error("Failed to save employee rates:", err);
-        setSaveError(err?.message || "Failed to save employee rates.");
+        dispatchLifecycle({
+          type: "SAVE_ERROR",
+          error: err?.message || "Failed to save employee rates.",
+        });
       }
     }, 2000);
 
     return () => clearTimeout(delayDebounce);
-  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal, saveRetryToken]);
+  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal, saveRetryToken, lifecycle.loadedScope]);
 
   // A month that was just written exists; record it locally rather than paying
   // for another Redis SCAN to be told what we already know.
@@ -750,6 +783,12 @@ function App() {
   const handleCreateBlankMonth = async () => {
     setShowNoDataModal(false);
     setEmployees([]);
+    dispatchLifecycle({
+      type: "LOAD_SUCCESS",
+      company: activeCompany,
+      monthLabel: noDataMonth,
+      roster: [],
+    });
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
       rememberMonth(noDataMonth);
@@ -768,6 +807,12 @@ function App() {
       employeeRates,
     );
     setEmployees(sanitized);
+    dispatchLifecycle({
+      type: "LOAD_SUCCESS",
+      company: activeCompany,
+      monthLabel: noDataMonth,
+      roster: sanitized,
+    });
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
       rememberMonth(noDataMonth);
@@ -797,6 +842,12 @@ function App() {
       rates,
     );
     setEmployees(carried);
+    dispatchLifecycle({
+      type: "LOAD_SUCCESS",
+      company: activeCompany,
+      monthLabel: target,
+      roster: carried,
+    });
     await saveMonthData(activeCompany, target, targetDays, carried);
     rememberMonth(target);
     return true;
@@ -932,7 +983,7 @@ function App() {
             onClick={() => {
               lastMonthPayloadRef.current = "";
               ratesSignatureRef.current = "";
-              setSaveRetryToken((n) => n + 1);
+              setSaveRetryToken();
             }}
           >
             Retry save
