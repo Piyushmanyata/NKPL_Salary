@@ -17,7 +17,7 @@ import { calendarDaysForMonth } from "../months";
    roundMoney,
  } from "../salary";
  import { juneEmployees } from "../juneEmployees";
- import { sampleEmployees } from "../sampleEmployees";
+ import { sampleEmployees } from "./sampleEmployees";
  import type { EmployeeInput } from "../types";
 
   function refFrom(partial: EmployeeInput, monthDays = 30) {
