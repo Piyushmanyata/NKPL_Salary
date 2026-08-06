@@ -74,6 +74,7 @@ import {
   serializeCsv,
   serializeSpreadsheetHtml,
 } from "./exportSheet";
+import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
@@ -101,10 +102,6 @@ const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }
 const num = (value: number) => numberFormat.format(Number.isFinite(value) ? value : 0);
 
 const DEFAULT_COMPANY: CompanyCode = "NKPL";
-const legacyMonthConfigStorageKey = "salary-sheet-month-config";
-const activeCompanyStorageKey = "salary-sheet-active-company";
-const monthConfigStorageKey = (company: string) => `salary-sheet-month-config-${company}`;
-const companyLabelStorageKey = (company: string) => `salary-sheet-company-label-${company}`;
 
 const monthNames = [
   "january",
@@ -122,39 +119,34 @@ const monthNames = [
 ];
 
 function loadActiveCompany(): CompanyCode {
-  try {
-    const stored = localStorage.getItem(activeCompanyStorageKey);
-    if (stored && COMPANIES.some((company) => company.code === stored)) {
-      return stored as CompanyCode;
-    }
-  } catch {
-    // ignore
+  const stored = readStorage(storageKeys.activeCompany, legacyStorageKeys.activeCompany);
+  if (stored && COMPANIES.some((company) => company.code === stored)) {
+    return stored as CompanyCode;
   }
   return DEFAULT_COMPANY;
 }
 
 function loadCompanyLabel(company: CompanyCode): string {
-  try {
-    return localStorage.getItem(companyLabelStorageKey(company)) || company;
-  } catch {
-    return company;
-  }
+  return (
+    readStorage(storageKeys.companyLabel(company), legacyStorageKeys.companyLabel(company)) ||
+    company
+  );
 }
 
 function loadMonthConfig(company: CompanyCode) {
   try {
-    const raw =
-      localStorage.getItem(monthConfigStorageKey(company)) ??
-      (company === DEFAULT_COMPANY ? localStorage.getItem(legacyMonthConfigStorageKey) : null) ??
-      "{}";
+    const legacy =
+      company === DEFAULT_COMPANY
+        ? [legacyStorageKeys.monthConfig(company), legacyStorageKeys.monthConfigFlat]
+        : [legacyStorageKeys.monthConfig(company)];
+    const raw = readStorage(storageKeys.monthConfig(company), ...legacy) ?? "{}";
     const parsed = JSON.parse(raw) as {
       label?: unknown;
-      days?: unknown; // ignored — D is derived from label (TICKET-03)
+      days?: unknown;
     };
     const label = String(parsed.label || "May 2026");
     return {
       label,
-      // Recompute days from the label; never trust a stored days value.
       days: calendarDaysForMonth(label),
     };
   } catch {
@@ -570,19 +562,11 @@ function App() {
 
   // Persist the active company selection and its display label
   useEffect(() => {
-    try {
-      localStorage.setItem(activeCompanyStorageKey, activeCompany);
-    } catch {
-      // ignore storage failures (e.g. private browsing)
-    }
+    writeStorage(storageKeys.activeCompany, activeCompany);
   }, [activeCompany]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(companyLabelStorageKey(activeCompany), companyName);
-    } catch {
-      // ignore storage failures
-    }
+    writeStorage(storageKeys.companyLabel(activeCompany), companyName);
   }, [companyName, activeCompany]);
 
   // Initialize / fetch month labels for the active company on mount and on company switch
@@ -606,15 +590,8 @@ function App() {
     if (dbLoading || showNoDataModal) return;
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
-    try {
-      // Persist label only — days are always recomputed from the label (TICKET-03).
-      localStorage.setItem(
-        monthConfigStorageKey(activeCompany),
-        JSON.stringify({ label: normalized }),
-      );
-    } catch {
-      // ignore storage failures
-    }
+    // Persist label only — days are always recomputed from the label (TICKET-03).
+    writeStorage(storageKeys.monthConfig(activeCompany), JSON.stringify({ label: normalized }));
   }, [activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
   // Load selected company + month payroll data from DB
