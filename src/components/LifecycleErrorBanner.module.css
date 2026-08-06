@@ -1,0 +1,28 @@
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px 16px;
+  color: var(--color-danger-strong);
+  background: var(--color-danger-soft);
+  border-bottom: 1px solid var(--color-danger-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.banner span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.banner button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+}

@@ -18,5 +18,5 @@ export function useToast() {
 
   const dismissToast = () => setToast(null);
 
-  return { toast, showToast, dismissToast, setToast };
+  return { toast, showToast, dismissToast };
 }

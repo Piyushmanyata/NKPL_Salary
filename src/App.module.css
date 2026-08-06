@@ -112,10 +112,6 @@
   min-width: 1080px;
 }
 
-.table-wrap--official {
-  /* Marker class retained for parity with prior markup; no extra rules. */
-}
-
 @media (max-width: 720px) {
   .app-shell {
     width: min(100% - 16px, 1680px);
@@ -128,7 +124,6 @@
 }
 
 @media print {
-  .panel-actions,
   .sheet-tabs {
     display: none !important;
   }

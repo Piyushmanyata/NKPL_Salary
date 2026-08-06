@@ -1,19 +1,7 @@
 import { IndianRupee } from "lucide-react";
 import { currency } from "../salary";
+import type { MonthTotals } from "../totals";
 import styles from "./TotalsStrip.module.css";
-
-export type MonthTotals = {
-  net: number;
-  gross: number;
-  deductions: number;
-  employerPf: number;
-  employerEsi: number;
-  pf: number;
-  esi: number;
-  professionalTax: number;
-  cost: number;
-  employees: number;
-};
 
 export function TotalsStrip({ totals }: { totals: MonthTotals }) {
   return (

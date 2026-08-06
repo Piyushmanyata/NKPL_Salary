@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Calculator,
   FileSpreadsheet,
   Plus,
@@ -13,12 +12,9 @@ import {
   useState,
 } from "react";
 import {
-  ESI_EMPLOYER_RATE,
   alignReferenceEsi,
   calculateSalary,
   clampBasicPercent,
-  numberValue,
-  roundMoney,
 } from "./salary";
 import type {
   Category,
@@ -27,12 +23,7 @@ import type {
 import { buildOfficialRow } from "./officialSheet";
 import { applyEmployeeEdit, type EditableField } from "./editEmployee";
 import { blankEmployee } from "./roster";
-import {
-  buildOfficialExportRows,
-  buildReferenceExportRows,
-  serializeCsv,
-  serializeSpreadsheetHtml,
-} from "./exportSheet";
+import { createExportDownload, downloadBlob } from "./exportActions";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
 import {
   calendarDaysForMonth,
@@ -45,12 +36,15 @@ import { OfficialSheet } from "./components/OfficialSheet";
 import { ReferenceSheet } from "./components/ReferenceSheet";
 import { RulesDialog } from "./components/RulesDialog";
 import { SidePanel } from "./components/SidePanel";
+import { LifecycleErrorBanner } from "./components/LifecycleErrorBanner";
 import { Toast } from "./components/Toast";
 import { TotalsStrip } from "./components/TotalsStrip";
 import { useGridNavigation } from "./hooks/useGridNavigation";
 import { useMonthLifecycle } from "./hooks/useMonthLifecycle";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
+import { calculateCategoryTotals, calculateMonthTotals } from "./totals";
+import { sortRows } from "./sortRows";
 import styles from "./App.module.css";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
@@ -63,9 +57,6 @@ const COMPANIES = [
 ] as const;
 
 type CompanyCode = (typeof COMPANIES)[number]["code"];
-
-const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
-  rows.reduce((total, row) => total + numberValue(row[key]), 0);
 
 const DEFAULT_COMPANY: CompanyCode = "NKPL";
 
@@ -221,132 +212,27 @@ function App() {
   } = useRowSort("name");
   const { handleGridKey } = useGridNavigation(tableWrapRef);
 
-  const sortedFilteredRows = useMemo(() => {
-    const sorted = [...filteredRows];
-    sorted.sort((a, b) => {
-      if (a.id === newlyAddedId) return -1;
-      if (b.id === newlyAddedId) return 1;
-      let valA = a[refSortField as keyof typeof a];
-      let valB = b[refSortField as keyof typeof b];
+  const sortedFilteredRows = useMemo(
+    () => sortRows(filteredRows, refSortField as keyof SalaryRow, refSortDirection, newlyAddedId),
+    [filteredRows, refSortField, refSortDirection, newlyAddedId],
+  );
 
-      if (valA === undefined || valA === null) valA = 0 as any;
-      if (valB === undefined || valB === null) valB = 0 as any;
+  const sortedFilteredOfficialRows = useMemo(
+    () => sortRows(
+      filteredOfficialRows,
+      officialSortField as keyof (typeof filteredOfficialRows)[number],
+      officialSortDirection,
+      newlyAddedId,
+    ),
+    [filteredOfficialRows, officialSortField, officialSortDirection, newlyAddedId],
+  );
 
-      if (typeof valA === "string") {
-        return refSortDirection === "asc"
-          ? valA.localeCompare(valB as string)
-          : (valB as string).localeCompare(valA);
-      } else {
-        return refSortDirection === "asc"
-          ? (valA as number) - (valB as number)
-          : (valB as number) - (valA as number);
-      }
-    });
-    return sorted;
-  }, [filteredRows, refSortField, refSortDirection, newlyAddedId]);
+  const totals = useMemo(
+    () => calculateMonthTotals(sheetMode, salaryRows, officialRows),
+    [sheetMode, salaryRows, officialRows],
+  );
 
-  const sortedFilteredOfficialRows = useMemo(() => {
-    const sorted = [...filteredOfficialRows];
-    sorted.sort((a, b) => {
-      if (a.id === newlyAddedId) return -1;
-      if (b.id === newlyAddedId) return 1;
-      let valA = a[officialSortField as keyof typeof a];
-      let valB = b[officialSortField as keyof typeof b];
-
-      if (valA === undefined || valA === null) valA = 0 as any;
-      if (valB === undefined || valB === null) valB = 0 as any;
-
-      if (typeof valA === "string") {
-        return officialSortDirection === "asc"
-          ? valA.localeCompare(valB as string)
-          : (valB as string).localeCompare(valA);
-      } else {
-        return officialSortDirection === "asc"
-          ? (valA as number) - (valB as number)
-          : (valB as number) - (valA as number);
-      }
-    });
-    return sorted;
-  }, [filteredOfficialRows, officialSortField, officialSortDirection, newlyAddedId]);
-
-  const totals = useMemo(() => {
-    if (sheetMode === "main") {
-      // Reconciliation summary excludes unpackable rows (TICKET-09); sheet still lists them.
-      const packable = officialRows.filter((row) => !row.unpackable);
-      const unpackableCount = officialRows.length - packable.length;
-      const gross = packable.reduce((total, row) => total + row.grossPayable, 0);
-      const net = packable.reduce((total, row) => total + row.netPayable, 0);
-      const pf = packable.reduce((total, row) => total + row.pf, 0);
-      // Employer PF mirrors employee PF in this model (both 12% of basic, capped
-      // at PF_BASIC_LIMIT) -- see calculateSalary. Reusing `pf` here (instead of
-      // recomputing from monthlyBasic without the cap) keeps this in sync with
-      // that formula and avoids overstating employer cost for high-basic rows.
-      const employerPf = pf;
-      const esi = packable.reduce((total, row) => total + row.esi, 0);
-      const professionalTax = packable.reduce((total, row) => total + row.professionalTax, 0);
-      const employerEsi = packable.reduce((total, row) => total + (row.esi > 0 ? roundMoney(row.monthlyBasic * ESI_EMPLOYER_RATE) : 0), 0);
-      const deductions =
-        pf +
-        esi +
-        professionalTax +
-        packable.reduce((total, row) => total + (row.advance || 0) + row.otherDeduction, 0);
-      const cost = gross + employerPf + employerEsi;
-      return {
-        employees: officialRows.length,
-        unpackableCount,
-        gross,
-        net,
-        pf,
-        employerPf,
-        employerEsi,
-        esi,
-        professionalTax,
-        deductions,
-        cost,
-      };
-    } else {
-      const gross = sum(salaryRows, "grossPayable");
-      const net = sum(salaryRows, "netPayable");
-      const pf = sum(salaryRows, "employeePf");
-      const employerPf = sum(salaryRows, "employerPf");
-      const employerEsi = sum(salaryRows, "employerEsi");
-      const esi = sum(salaryRows, "esi");
-      const professionalTax = sum(salaryRows, "professionalTax");
-      const deductions =
-        pf +
-        esi +
-        professionalTax +
-        sum(salaryRows, "advance") +
-        sum(salaryRows, "otherDeduction");
-      const cost = sum(salaryRows, "totalCost");
-      return {
-        employees: salaryRows.length,
-        unpackableCount: 0,
-        gross,
-        net,
-        pf,
-        employerPf,
-        employerEsi,
-        esi,
-        professionalTax,
-        deductions,
-        cost,
-      };
-    }
-  }, [sheetMode, salaryRows, officialRows]);
-
-  const categoryTotals = useMemo(() => {
-    const grouped = salaryRows.reduce<Record<string, number>>((acc, row) => {
-      const category = row.category.trim() || "Staff";
-      acc[category] = (acc[category] || 0) + row.netPayable;
-      return acc;
-    }, {});
-
-    return Object.entries(grouped)
-      .map(([category, total]) => ({ category, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 6);
-  }, [salaryRows]);
+  const categoryTotals = useMemo(() => calculateCategoryTotals(salaryRows), [salaryRows]);
 
   const updateMonthLabel = (value: string) => {
     setMonthLabel(value);
@@ -482,90 +368,34 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isDbModalOpen, showNoDataModal, isRulesOpen, openSettingsId]);
 
-  const exportRows =
-    sheetMode === "main"
-      ? buildOfficialExportRows(officialRows)
-      : buildReferenceExportRows(salaryRows);
+  const createDownload = (format: "csv" | "workbook") =>
+    createExportDownload({
+      mode: sheetMode,
+      companyName,
+      monthLabel,
+      salaryRows,
+      officialRows,
+      format,
+    });
 
-  /** Block Official export when any row cannot pack net equality (TICKET-09). */
-  const assertOfficialExportAllowed = (): boolean => {
-    if (sheetMode !== "main") return true;
-    const blocked = officialRows.filter((row) => row.unpackable);
-    if (!blocked.length) return true;
-    const names = blocked.map((row) => row.name).join(", ");
-    showToast(
-      `Cannot export Official sheet: unpackable net for ${blocked.length} employee(s): ${names}`,
-      "error",
-    );
-    return false;
+  const exportFile = (format: "csv" | "workbook") => {
+    const result = createDownload(format);
+    if (!("download" in result)) {
+      showToast(
+        `Cannot export Official sheet: unpackable net for ${result.blocked.length} employee(s): ${result.blocked.join(", ")}`,
+        "error",
+      );
+      return;
+    }
+    downloadBlob(result.download);
   };
 
-  const exportWorkbook = () => {
-    if (!assertOfficialExportAllowed()) return;
-    downloadBlob(
-      serializeSpreadsheetHtml(exportRows),
-      `${companyName || "Company"} ${sheetMode === "main" ? "Official Main Sheet" : "Reference Salary Sheet"} ${monthLabel}.xls`,
-      "application/vnd.ms-excel;charset=utf-8;",
-    );
-  };
-
-  const exportCsv = () => {
-    if (!assertOfficialExportAllowed()) return;
-    downloadBlob(
-      serializeCsv(exportRows),
-      `${companyName || "Company"} ${sheetMode === "main" ? "Official Main Sheet" : "Reference Salary Sheet"} ${monthLabel}.csv`,
-      "text/csv;charset=utf-8;",
-    );
-  };
-
-  const downloadBlob = (content: string, fileName: string, type: string) => {
-    const blob = new Blob([content], { type });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-  };
+  const exportWorkbook = () => exportFile("workbook");
+  const exportCsv = () => exportFile("csv");
 
   return (
     <>
-      {saveError && (
-        <div
-          role="alert"
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 1000,
-            background: "#fef2f2",
-            borderBottom: "1px solid #fecaca",
-            color: "#991b1b",
-            padding: "10px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          <span>
-            <AlertTriangle size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
-            Database operation failed: {saveError}
-          </span>
-          <button
-            type="button"
-            className="primary-button"
-            style={{ minHeight: 32, height: 32, padding: "0 12px", fontSize: 12 }}
-            onClick={setSaveRetryToken}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      {saveError && <LifecycleErrorBanner error={saveError} onRetry={setSaveRetryToken} />}
       <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
@@ -653,7 +483,7 @@ function App() {
             <div
               ref={tableWrapRef}
               onKeyDown={handleGridKey}
-              className={`${styles.tableWrap} ${sheetMode === "main" ? styles.tableWrapOfficial : ""}`}
+              className={styles.tableWrap}
             >
               {sheetMode === "reference" ? (
                 <ReferenceSheet

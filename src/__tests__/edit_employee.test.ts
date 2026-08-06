@@ -118,6 +118,16 @@ describe("applyEmployeeEdit", () => {
     expect(next.monthlySalary).toBe(0);
   });
 
+  it("clamps a negative day rate to zero", () => {
+    const next = applyEmployeeEdit(
+      base({ category: "Unskilled", monthlySalary: 12000, salaryPerDay: 400, totalSalary: undefined }),
+      "salaryPerDay",
+      -10,
+      D,
+    );
+    expect(next.salaryPerDay).toBe(0);
+  });
+
   it("basicPercent clamps", () => {
     expect(applyEmployeeEdit(base(), "basicPercent", 40, D).basicPercent).toBe(50);
     expect(applyEmployeeEdit(base(), "basicPercent", 120, D).basicPercent).toBe(100);

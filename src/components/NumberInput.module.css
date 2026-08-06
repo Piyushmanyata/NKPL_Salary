@@ -1,3 +1,0 @@
-/* Number inputs stay global (.number-input) because tables pass className strings
-   and nest under .days-cell. This module is intentionally empty of rules so
-   callers keep using the global class names without a second dependency. */
