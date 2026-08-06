@@ -15,6 +15,11 @@ export interface MonthRecord {
   updatedAt: string;
 }
 
+export type MonthDataResult =
+  | { kind: "found"; record: MonthRecord }
+  | { kind: "empty" }
+  | { kind: "unavailable"; error: string };
+
 function recordId(company: string, monthLabel: string) {
   return `${company}::${monthLabel}`;
 }
@@ -39,14 +44,30 @@ function localGetRecord(company: string, monthLabel: string): MonthRecord | null
   }
 }
 
-async function fetchJson(url: string): Promise<{ ok: true; data: unknown } | { ok: false }> {
+type FetchResult =
+  | { ok: true; data: unknown }
+  | { ok: false; kind: "not-found" | "unavailable"; error: string };
+
+async function fetchJson(url: string): Promise<FetchResult> {
   try {
     const response = await fetch(url);
-    if (!response.ok) return { ok: false };
+    if (response.status === 404) {
+      return { ok: false, kind: "not-found", error: "Not found" };
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        kind: "unavailable",
+        error: (await response.text()) || `Request failed with status ${response.status}`,
+      };
+    }
     return { ok: true, data: await response.json() };
   } catch (error) {
-    console.error("fetch failed:", error);
-    return { ok: false };
+    return {
+      ok: false,
+      kind: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -93,10 +114,11 @@ export async function saveMonthData(
 export async function getMonthData(
   company: string,
   monthLabel: string,
-): Promise<MonthRecord | null> {
+): Promise<MonthDataResult> {
   const result = await fetchJson(
     `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`,
   );
+  const cached = localGetRecord(company, monthLabel);
   if (result.ok && result.data) {
     const data = result.data as Partial<MonthRecord>;
     const record: MonthRecord = {
@@ -108,9 +130,13 @@ export async function getMonthData(
       updatedAt: data.updatedAt || new Date().toISOString(),
     };
     localPutRecord(record);
-    return record;
+    return { kind: "found", record };
   }
-  return localGetRecord(company, monthLabel);
+  if (cached) return { kind: "found", record: cached };
+  if (!result.ok && result.kind === "unavailable") {
+    return { kind: "unavailable", error: result.error };
+  }
+  return { kind: "empty" };
 }
 
 export async function getAllMonthLabels(company: string): Promise<string[]> {
@@ -118,7 +144,7 @@ export async function getAllMonthLabels(company: string): Promise<string[]> {
     `/api/db?company=${encodeURIComponent(company)}&t=${Date.now()}`,
   );
   if (result.ok && Array.isArray(result.data)) {
-    return result.data as string[];
+    return Array.from(new Set(result.data as string[]));
   }
 
   const keys: string[] = [];
@@ -137,7 +163,7 @@ export async function getAllMonthLabels(company: string): Promise<string[]> {
   } catch (err) {
     console.error("Failed to read from local storage keys:", err);
   }
-  return keys;
+  return Array.from(new Set(keys));
 }
 
 export interface EmployeeRate {

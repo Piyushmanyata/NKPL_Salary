@@ -9,18 +9,9 @@ import {
 import {
   useEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
 } from "react";
-import {
-  saveMonthData,
-  getMonthData,
-  getAllMonthLabels,
-  getEmployeeRates,
-  saveEmployeeRates,
-  EmployeeRateMap
-} from "./db";
 import {
   ESI_EMPLOYER_RATE,
   alignReferenceEsi,
@@ -31,18 +22,11 @@ import {
 } from "./salary";
 import type {
   Category,
-  EmployeeInput,
   SalaryRow,
 } from "./types";
 import { buildOfficialRow } from "./officialSheet";
 import { applyEmployeeEdit, type EditableField } from "./editEmployee";
-import {
-  applyEmployeeRates,
-  blankEmployee,
-  buildRateMap,
-  carryForwardEmployee,
-  sanitizeEmployee,
-} from "./roster";
+import { blankEmployee } from "./roster";
 import {
   buildOfficialExportRows,
   buildReferenceExportRows,
@@ -51,13 +35,8 @@ import {
 } from "./exportSheet";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
 import {
-  initialLifecycleState,
-  monthLifecycleReducer,
-} from "./monthLifecycle";
-import {
   calendarDaysForMonth,
-  pickCarrySource,
-  sortMonthsChronologically,
+  normalizeMonthLabel,
 } from "./months";
 import { AppBar } from "./components/AppBar";
 import { DatabaseModal } from "./components/DatabaseModal";
@@ -69,6 +48,7 @@ import { SidePanel } from "./components/SidePanel";
 import { Toast } from "./components/Toast";
 import { TotalsStrip } from "./components/TotalsStrip";
 import { useGridNavigation } from "./hooks/useGridNavigation";
+import { useMonthLifecycle } from "./hooks/useMonthLifecycle";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
 import styles from "./App.module.css";
@@ -88,21 +68,6 @@ const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
 
 const DEFAULT_COMPANY: CompanyCode = "NKPL";
-
-const monthNames = [
-  "january",
-  "february",
-  "march",
-  "april",
-  "may",
-  "june",
-  "july",
-  "august",
-  "september",
-  "october",
-  "november",
-  "december",
-];
 
 function loadActiveCompany(): CompanyCode {
   const stored = readStorage(storageKeys.activeCompany, legacyStorageKeys.activeCompany);
@@ -140,43 +105,10 @@ function loadMonthConfig(company: CompanyCode) {
   }
 }
 
-function normalizeMonthLabel(value: string) {
-  const trimmed = value.trim();
-  const text = trimmed.toLowerCase();
-  const monthIndex = monthNames.findIndex((month) => text.includes(month.slice(0, 3)));
-  const year = Number(text.match(/\b(20\d{2}|19\d{2})\b/)?.[1] ?? new Date().getFullYear());
-
-  if (monthIndex < 0 || !Number.isFinite(year)) {
-    return trimmed;
-  }
-
-  return `${monthNames[monthIndex][0].toUpperCase()}${monthNames[monthIndex].slice(1)} ${year}`;
-}
-
-// NKPL is the only company with bundled sample/demo data; a newly added
-// company like APTUS starts blank until real employees are entered. Loaded on
-// demand so ~30 kB of seed roster stays out of the initial bundle — it is only
-// ever needed behind the "Use Default Sample Employees" button.
-const defaultEmployeesForCompany = async (
-  company: CompanyCode,
-  _monthLabel?: string,
-): Promise<EmployeeInput[]> => {
-  if (company !== "NKPL") {
-    return [];
-  }
-  // Always use the real June 2026 payroll roster as the NKPL seed. The older
-  // sampleEmployees list (May-sourced) omitted people still present in the
-  // current payroll roster (e.g. UTTAM DAS, PRIYOJIT GHOSH).
-  return (await import("./juneEmployees")).juneEmployees;
-};
-
 function App() {
   const [activeCompany, setActiveCompany] = useState<CompanyCode>(loadActiveCompany);
   const initialMonthConfig = useMemo(() => loadMonthConfig(activeCompany), []);
   const [monthLabel, setMonthLabel] = useState(initialMonthConfig.label);
-  // Always starts empty: the roster is owned by Redis and arrives from the load
-  // effect below. Seeding it here only ever produced a flash of stale rows.
-  const [employees, setEmployees] = useState<EmployeeInput[]>([]);
   const [query, setQuery] = useState("");
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState(() => loadCompanyLabel(activeCompany));
@@ -195,33 +127,26 @@ function App() {
 
   const { toast, showToast, dismissToast } = useToast();
 
-  // Database and Month tracking states
-  const [dbLoading, setDbLoading] = useState(true);
-  const [allMonths, setAllMonths] = useState<string[]>([]);
-  const [showNoDataModal, setShowNoDataModal] = useState(false);
-  const [noDataMonth, setNoDataMonth] = useState("");
-  const [copySourceMonth, setCopySourceMonth] = useState("");
+  const {
+    lifecycle,
+    employees,
+    setEmployees,
+    allMonths,
+    copySourceMonth,
+    setCopySourceMonth,
+    showNoDataModal,
+    dbLoading,
+    retry,
+    cancelNoData,
+    createBlankMonth,
+    createSampleMonth,
+    copyMonth,
+  } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays);
+  const saveError = lifecycle.saveError;
+  const setSaveRetryToken = retry;
+  const noDataMonth = monthLabel;
   const prevMonthRef = useRef(monthLabel);
   const prevCompanyRef = useRef(activeCompany);
-  const justLoadedRef = useRef(false);
-  // Scope Guard lives in monthLifecycleReducer (loadedScope), not a ref racing
-  // beside state. Saves are only legal when canSaveForScope matches.
-  const [lifecycle, dispatchLifecycle] = useReducer(
-    monthLifecycleReducer,
-    monthLabel,
-    initialLifecycleState,
-  );
-  const lastMonthPayloadRef = useRef<string>("");
-  const saveError = lifecycle.saveError;
-  const saveRetryToken = lifecycle.retryToken;
-  const setSaveRetryToken = () => {
-    dispatchLifecycle({ type: "RETRY" });
-  };
-
-  // Shared salary/day + bonus/day rates for the active company, kept in sync
-  // with the cloud store (see api/rates.ts) independently of month records.
-  const [employeeRates, setEmployeeRates] = useState<EmployeeRateMap>({});
-  const ratesSignatureRef = useRef<string>("");
 
   // Cloud Database Sync settings
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -485,13 +410,6 @@ function App() {
     writeStorage(storageKeys.companyLabel(activeCompany), companyName);
   }, [companyName, activeCompany]);
 
-  // Initialize / fetch month labels for the active company on mount and on company switch
-  useEffect(() => {
-    getAllMonthLabels(activeCompany).then((months) => {
-      setAllMonths(sortMonthsChronologically(months));
-    }).catch(console.error);
-  }, [activeCompany]);
-
   // Update previous active month/company tracker when data is loaded successfully
   useEffect(() => {
     const normalized = normalizeMonthLabel(monthLabel);
@@ -510,271 +428,32 @@ function App() {
     writeStorage(storageKeys.monthConfig(activeCompany), JSON.stringify({ label: normalized }));
   }, [activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
-  // Load selected company + month payroll data from DB
-  useEffect(() => {
-    let active = true;
-    async function loadData() {
-      const normalized = normalizeMonthLabel(monthLabel);
-      if (normalized !== monthLabel) {
-        return; // wait until committed/normalized
-      }
-
-      setDbLoading(true);
-      // Nothing may be written for this scope until its own data has landed.
-      dispatchLifecycle({
-        type: "SELECT_SCOPE",
-        company: activeCompany,
-        monthLabel: normalized,
-      });
-      try {
-        const [data, rates] = await Promise.all([
-          getMonthData(activeCompany, normalized),
-          getEmployeeRates(activeCompany),
-        ]);
-        if (!active) return;
-        setEmployeeRates(rates);
-        ratesSignatureRef.current = JSON.stringify(rates);
-        if (data) {
-          justLoadedRef.current = true;
-          // Ignore stored data.days — calendar days come from the month label.
-          const days = calendarDaysForMonth(normalized);
-          // A month that already has data keeps the salaries it was saved with.
-          // The shared rate card seeds NEW months (see carryMonthInto); applying
-          // it here too would let today's raise retroactively rewrite a filed
-          // month's payroll, which is the opposite of "carry it forward".
-          const roster = data.employees
-              .map((emp, index) => sanitizeEmployee(emp, index, days))
-              .filter((emp): emp is EmployeeInput => Boolean(emp));
-          setEmployees(roster);
-          dispatchLifecycle({
-            type: "LOAD_SUCCESS",
-            company: activeCompany,
-            monthLabel: normalized,
-          });
-        } else {
-          // No data saved for this company + month yet. The roster and every
-          // rate carry forward from the previous month automatically — the user
-          // should never have to copy a month by hand. Only when there is no
-          // earlier month at all is there a genuine choice to make.
-          const months = sortMonthsChronologically(await getAllMonthLabels(activeCompany));
-          if (!active) return;
-          setAllMonths(months);
-          setNoDataMonth(normalized);
-          const source = pickCarrySource(months, normalized);
-          if (source) {
-            justLoadedRef.current = true;
-            const carried = await carryMonthInto(source, normalized, rates);
-            if (!active) return;
-            if (carried) {
-              showToast(`${normalized} started from ${source} — salaries kept, manual days reset`);
-              return;
-            }
-          }
-          setCopySourceMonth(source);
-          setShowNoDataModal(true);
-        }
-      } catch (err) {
-        console.error("Failed to load month data from database:", err);
-      } finally {
-        if (active) setDbLoading(false);
-      }
-    }
-    loadData();
-    return () => {
-      active = false;
-    };
-  }, [monthLabel, activeCompany]);
-
-  // Auto-save changes to the database (2000ms debounce; skip identical payloads).
-  useEffect(() => {
-    if (dbLoading || showNoDataModal) return;
-    // Skip the save that would otherwise immediately follow a fresh load --
-    // there's nothing new to persist, and it just costs a redundant write.
-    if (justLoadedRef.current) {
-      justLoadedRef.current = false;
-      return;
-    }
-    const normalized = normalizeMonthLabel(monthLabel);
-    if (normalized !== monthLabel) return;
-    // Never write a roster into a scope it was not loaded for (company switch).
-    const payload = JSON.stringify({
-      company: activeCompany,
-      monthLabel: normalized,
-      days: effectiveMonthDays,
-      employees,
-    });
-    if (payload === lastMonthPayloadRef.current) return;
-
-    // Only enter "saving" when a real write is scheduled (after payload check).
-    dispatchLifecycle({
-      type: "SAVE_REQUEST",
-      company: activeCompany,
-      monthLabel: normalized,
-      signature: payload,
-    });
-
-    const delayDebounce = setTimeout(async () => {
-      try {
-        const result = await saveMonthData(
-          activeCompany,
-          normalized,
-          effectiveMonthDays,
-          employees
-        );
-        if (result.ok) {
-          lastMonthPayloadRef.current = payload;
-          dispatchLifecycle({ type: "SAVE_SUCCESS" });
-        } else {
-          dispatchLifecycle({
-            type: "SAVE_ERROR",
-            error: result.error || "Failed to save month data to the database.",
-          });
-        }
-      } catch (err: any) {
-        console.error("Failed to save month data:", err);
-        dispatchLifecycle({
-          type: "SAVE_ERROR",
-          error: err?.message || "Failed to save month data to the database.",
-        });
-      }
-    }, 2000);
-
-    return () => clearTimeout(delayDebounce);
-  }, [employees, effectiveMonthDays, monthLabel, activeCompany, dbLoading, showNoDataModal, saveRetryToken, lifecycle.loadedScope]);
-
-  // Auto-save salary/day + bonus/day rates to the shared cloud store whenever
-  // they change, so every month and every visitor picks up the new rate.
-  // Debounced and skipped when unchanged so unrelated edits (manual days,
-  // deductions, etc.) don't trigger redundant writes.
-  useEffect(() => {
-    if (dbLoading || showNoDataModal) return;
-    const nextRates = buildRateMap(employees);
-    const signature = JSON.stringify(nextRates);
-    if (signature === ratesSignatureRef.current) return;
-
-    const delayDebounce = setTimeout(async () => {
-      try {
-        const result = await saveEmployeeRates(activeCompany, nextRates);
-        if (result.ok) {
-          ratesSignatureRef.current = signature;
-          setEmployeeRates(nextRates);
-        } else {
-          dispatchLifecycle({
-            type: "SAVE_ERROR",
-            error: result.error || "Failed to save employee rates.",
-          });
-        }
-      } catch (err: any) {
-        console.error("Failed to save employee rates:", err);
-        dispatchLifecycle({
-          type: "SAVE_ERROR",
-          error: err?.message || "Failed to save employee rates.",
-        });
-      }
-    }, 2000);
-
-    return () => clearTimeout(delayDebounce);
-  }, [employees, activeCompany, monthLabel, dbLoading, showNoDataModal, saveRetryToken, lifecycle.loadedScope]);
-
-  // A month that was just written exists; record it locally rather than paying
-  // for another Redis SCAN to be told what we already know.
-  const rememberMonth = (label: string) =>
-    setAllMonths((current) =>
-      current.includes(label) ? current : sortMonthsChronologically([...current, label]),
-    );
-
   // Month initialization methods
-  const handleCreateBlankMonth = async () => {
-    setShowNoDataModal(false);
-    setEmployees([]);
-    dispatchLifecycle({
-      type: "LOAD_SUCCESS",
-      company: activeCompany,
-      monthLabel: noDataMonth,
-    });
-    try {
-      await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
-      rememberMonth(noDataMonth);
-      showToast(`Created blank payroll sheet for ${noDataMonth}`);
-    } catch (err) {
-      console.error(err);
-      showToast("Error creating month", "error");
-    }
+  const handleCreateBlankMonth = () => {
+    createBlankMonth();
+    showToast(`Created blank payroll sheet for ${noDataMonth}`);
   };
 
   const handleCreateSampleMonth = async () => {
-    setShowNoDataModal(false);
-    const defaults = await defaultEmployeesForCompany(activeCompany, noDataMonth);
-    const sanitized = applyEmployeeRates(
-      defaults.map((emp, index) => sanitizeEmployee(emp, index, effectiveMonthDays)!),
-      employeeRates,
-    );
-    setEmployees(sanitized);
-    dispatchLifecycle({
-      type: "LOAD_SUCCESS",
-      company: activeCompany,
-      monthLabel: noDataMonth,
-    });
-    try {
-      await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
-      rememberMonth(noDataMonth);
-      showToast(`Initialized ${noDataMonth} with sample employees`);
-    } catch (err) {
-      console.error(err);
-      showToast("Error initializing month", "error");
-    }
-  };
-
-  // Carry a month's roster forward into `target`, resetting the manual
-  // days/extra inputs. Shared by the automatic carry on opening a new month and
-  // by the explicit picker, so both behave identically.
-  const carryMonthInto = async (
-    source: string,
-    target: string,
-    rates: EmployeeRateMap,
-  ): Promise<boolean> => {
-    const sourceData = await getMonthData(activeCompany, source);
-    if (!sourceData) return false;
-    const targetDays = calendarDaysForMonth(target);
-    const carried = applyEmployeeRates(
-      sourceData.employees
-        .map((emp, index) => sanitizeEmployee(emp, index, targetDays))
-        .filter((emp): emp is EmployeeInput => Boolean(emp))
-        .map((emp) => carryForwardEmployee(emp, targetDays)),
-      rates,
-    );
-    setEmployees(carried);
-    dispatchLifecycle({
-      type: "LOAD_SUCCESS",
-      company: activeCompany,
-      monthLabel: target,
-    });
-    await saveMonthData(activeCompany, target, targetDays, carried);
-    rememberMonth(target);
-    return true;
+    await createSampleMonth();
+    showToast(`Initialized ${noDataMonth} with sample employees`);
   };
 
   const handleCopyMonth = async (source: string) => {
     if (!source) return;
-    setDbLoading(true);
-    setShowNoDataModal(false);
-    try {
+    const result = await copyMonth(source);
+    if (result === "copied") {
       const targetDays = calendarDaysForMonth(noDataMonth);
-      if (await carryMonthInto(source, noDataMonth, employeeRates)) {
-        showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, manual days reset)`);
-      } else {
-        showToast(`Failed to copy: source month ${source} has no data`, "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("Error copying month data", "error");
-    } finally {
-      setDbLoading(false);
+      showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, manual days reset)`);
+    } else if (result === "unavailable") {
+      showToast("Unable to read the source month", "error");
+    } else {
+      showToast(`Failed to copy: source month ${source} has no data`, "error");
     }
   };
 
   const handleCancelNoData = () => {
-    setShowNoDataModal(false);
+    cancelNoData();
     setActiveCompany(prevCompanyRef.current);
     setMonthLabel(prevMonthRef.current);
   };
@@ -875,19 +554,15 @@ function App() {
         >
           <span>
             <AlertTriangle size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
-            Database save failed: {saveError}
+            Database operation failed: {saveError}
           </span>
           <button
             type="button"
             className="primary-button"
             style={{ minHeight: 32, height: 32, padding: "0 12px", fontSize: 12 }}
-            onClick={() => {
-              lastMonthPayloadRef.current = "";
-              ratesSignatureRef.current = "";
-              setSaveRetryToken();
-            }}
+            onClick={setSaveRetryToken}
           >
-            Retry save
+            Retry
           </button>
         </div>
       )}

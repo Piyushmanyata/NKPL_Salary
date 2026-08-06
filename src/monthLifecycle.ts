@@ -33,8 +33,16 @@ export type MonthLifecycleState = {
 
 export type MonthLifecycleAction =
   | { type: "SELECT_SCOPE"; company: string; monthLabel: string }
-  | { type: "LOAD_SUCCESS"; company: string; monthLabel: string }
+  | {
+      type: "LOAD_SUCCESS";
+      company: string;
+      monthLabel: string;
+      monthSignature?: string;
+      ratesSignature?: string;
+      suppressNextSave?: boolean;
+    }
   | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
+  | { type: "CANCEL_CHOICE" }
   | { type: "LOAD_ERROR"; error: string }
   | { type: "SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
   | { type: "RATES_SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
@@ -137,9 +145,9 @@ export function monthLifecycleReducer(
         status: "loaded",
         loadedScope: { company: action.company, monthLabel: action.monthLabel },
         awaitingChoice: false,
-        suppressNextSave: true,
-        lastMonthSignature: null,
-        lastRatesSignature: null,
+        suppressNextSave: action.suppressNextSave ?? true,
+        lastMonthSignature: action.monthSignature ?? null,
+        lastRatesSignature: action.ratesSignature ?? null,
         saveError: null,
         pendingWrite: null,
       };
@@ -166,6 +174,13 @@ export function monthLifecycleReducer(
         suppressNextSave: false,
         pendingWrite: null,
         saveError: action.error,
+      };
+
+    case "CANCEL_CHOICE":
+      return {
+        ...state,
+        awaitingChoice: false,
+        suppressNextSave: false,
       };
 
     case "SAVE_REQUEST":
