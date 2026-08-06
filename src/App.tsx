@@ -1,28 +1,12 @@
 import {
-  BarChart3,
-  BookOpen,
+  AlertTriangle,
   Calculator,
-  ChevronDown,
-  FileDown,
   FileSpreadsheet,
-  IndianRupee,
   Plus,
   Printer,
-  RefreshCw,
   Search,
-  Settings2,
-  Trash2,
-  Users,
-  AlertTriangle,
-  X,
-  Check,
-  Cloud,
-  Wifi,
-  Building2,
 } from "lucide-react";
 import {
-  Fragment,
-  type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useMemo,
   useReducer,
@@ -39,19 +23,9 @@ import {
 } from "./db";
 import {
   ESI_EMPLOYER_RATE,
-  ESI_GROSS_LIMIT,
-  ESI_RATE,
-  HRA_SHARE_OF_BALANCE,
-  MAX_BASIC_PERCENT,
-  MIN_BASIC_PERCENT,
-  PF_BASIC_LIMIT,
-  PF_RATE,
-  TA_SHARE_OF_BALANCE,
   alignReferenceEsi,
   calculateSalary,
   clampBasicPercent,
-  currency,
-  isSpecialCategory,
   numberValue,
   roundMoney,
 } from "./salary";
@@ -81,13 +55,25 @@ import {
   initialLifecycleState,
   monthLifecycleReducer,
 } from "./monthLifecycle";
-
-const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
   calendarDaysForMonth,
   pickCarrySource,
   sortMonthsChronologically,
 } from "./months";
+import { AppBar } from "./components/AppBar";
+import { DatabaseModal } from "./components/DatabaseModal";
+import { NoDataModal } from "./components/NoDataModal";
+import { OfficialSheet } from "./components/OfficialSheet";
+import { ReferenceSheet } from "./components/ReferenceSheet";
+import { RulesDialog } from "./components/RulesDialog";
+import { SidePanel } from "./components/SidePanel";
+import { Toast } from "./components/Toast";
+import { TotalsStrip } from "./components/TotalsStrip";
+import { useGridNavigation } from "./hooks/useGridNavigation";
+import { useRowSort } from "./hooks/useRowSort";
+import { useToast } from "./hooks/useToast";
+
+const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 
 type SheetMode = "reference" | "main";
 
@@ -100,12 +86,6 @@ type CompanyCode = (typeof COMPANIES)[number]["code"];
 
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
-
-// Table bodies drop the rupee sign: every money column here is rupees, so
-// repeating the symbol eleven times a row buys nothing and costs the width we
-// need to fit on a laptop. Headers and the totals row keep it.
-const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const num = (value: number) => numberFormat.format(Number.isFinite(value) ? value : 0);
 
 const DEFAULT_COMPANY: CompanyCode = "NKPL";
 
@@ -213,8 +193,7 @@ function App() {
     [monthLabel],
   );
 
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const toastTimeoutRef = useRef<number | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
 
   // Database and Month tracking states
   const [dbLoading, setDbLoading] = useState(true);
@@ -253,17 +232,6 @@ function App() {
   // inside the settings panel until asked for.
   const [notesOpen, setNotesOpen] = useState(false);
   const tableWrapRef = useRef<HTMLDivElement>(null);
-
-  const showToast = (message: string, type: "success" | "error" = "success") => {
-    if (toastTimeoutRef.current) {
-      window.clearTimeout(toastTimeoutRef.current);
-    }
-    setToast({ message, type });
-    toastTimeoutRef.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimeoutRef.current = null;
-    }, 4000);
-  };
 
   const calculatedSalaryRows = useMemo(
     () =>
@@ -316,78 +284,17 @@ function App() {
     );
   }, [officialRows, query]);
 
-  // Column totals for the main sheet's footer. Kept beside filteredOfficialRows
-  // so the totals can never drift from the rows actually on screen.
-  type OfficialRow = (typeof officialRows)[number];
-  const officialSum = (key: keyof OfficialRow) =>
-    filteredOfficialRows.reduce((total, row) => {
-      const value = numberValue(row[key]);
-      // Advance is clamped at zero in the body cell, so its total must be too.
-      return total + (key === "advance" ? Math.max(0, value) : value);
-    }, 0);
-
-  const [refSortField, setRefSortField] = useState<string>("name");
-  const [refSortDirection, setRefSortDirection] = useState<"asc" | "desc">("asc");
-
-  const [officialSortField, setOfficialSortField] = useState<string>("name");
-  const [officialSortDirection, setOfficialSortDirection] = useState<"asc" | "desc">("asc");
-
-  const handleRefSort = (field: string) => {
-    if (refSortField === field) {
-      setRefSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setRefSortField(field);
-      setRefSortDirection("asc");
-    }
-  };
-
-  const handleOfficialSort = (field: string) => {
-    if (officialSortField === field) {
-      setOfficialSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setOfficialSortField(field);
-      setOfficialSortDirection("asc");
-    }
-  };
-
-  // Spreadsheet-style column movement. Typing a month means walking one column
-  // down 51 rows, which with native tab order costs eight keystrokes per
-  // employee; here it costs one. Cells opt in with data-cell, so the read-only
-  // currency columns and the open settings panel are skipped for free.
-  //
-  // Horizontal movement is deliberately left to Tab: arrow left/right has to
-  // keep moving the caret inside a text field, and stealing it would break
-  // ordinary editing to save a keystroke that Tab already provides.
-  const handleGridKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const { key } = event;
-    if (key !== "ArrowDown" && key !== "ArrowUp" && key !== "Enter") {
-      return;
-    }
-
-    const target = event.target as HTMLElement;
-    const cell = target.dataset?.cell;
-    if (!cell || !tableWrapRef.current) {
-      return;
-    }
-
-    // Arrow keys on a number input otherwise increment the value — on a Days
-    // Worked field that is a silent data change, so it is always suppressed.
-    event.preventDefault();
-
-    const peers = Array.from(
-      tableWrapRef.current.querySelectorAll<HTMLElement>(`[data-cell="${cell}"]`),
-    );
-    const index = peers.indexOf(target);
-    const next = peers[index + (key === "ArrowUp" ? -1 : 1)];
-    if (index < 0 || !next) {
-      return;
-    }
-
-    next.focus();
-    if (next instanceof HTMLInputElement) {
-      next.select();
-    }
-  };
+  const {
+    sortField: refSortField,
+    sortDirection: refSortDirection,
+    handleSort: handleRefSort,
+  } = useRowSort("name");
+  const {
+    sortField: officialSortField,
+    sortDirection: officialSortDirection,
+    handleSort: handleOfficialSort,
+  } = useRowSort("name");
+  const { handleGridKey } = useGridNavigation(tableWrapRef);
 
   const sortedFilteredRows = useMemo(() => {
     const sorted = [...filteredRows];
@@ -995,109 +902,27 @@ function App() {
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
             of permanent scroll depth, so the company and month became inline
             editable fields here instead of a separate control strip. */}
-        <section className="appbar">
-          <div className="appbar-identity">
-            <div className="company-switch" role="tablist" aria-label="Select company">
-              {COMPANIES.map((company) => (
-                <button
-                  key={company.code}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeCompany === company.code}
-                  className={`company-tab ${activeCompany === company.code ? "active" : ""}`}
-                  onClick={() => handleSwitchCompany(company.code)}
-                >
-                  <Building2 size={14} />
-                  {company.code}
-                </button>
-              ))}
-            </div>
-            <input
-              className="title-input"
-              value={companyName}
-              aria-label="Company name"
-              title="Company name"
-              onChange={(event) => setCompanyName(event.target.value)}
-            />
-            <span className="title-suffix">Payroll</span>
-            <input
-              className="month-input"
-              value={monthLabel}
-              aria-label="Month"
-              title="Month"
-              onBlur={commitMonthLabel}
-              onChange={(event) => updateMonthLabel(event.target.value)}
-            />
-            <span
-              className="days-chip"
-              title="Calendar days, derived from the month label (not editable)"
-            >
-              {effectiveMonthDays} days
-            </span>
-          </div>
-          <div className="appbar-actions">
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setIsRulesOpen(true)}
-              title="Calculation rules applied to this sheet"
-            >
-              <BookOpen size={17} />
-              Rules
-            </button>
-            <button className="ghost-button" type="button" onClick={exportCsv}>
-              <FileDown size={17} />
-              CSV
-            </button>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setIsDbModalOpen(true)}
-              title={dbLoading ? "Syncing with cloud database..." : "Cloud database connected"}
-            >
-              {dbLoading ? (
-                <RefreshCw size={17} className="spin-icon" style={{ color: "#2563eb" }} />
-              ) : (
-                <Cloud size={17} style={{ color: "#2563eb" }} />
-              )}
-              {dbLoading ? "Syncing" : "Cloud"}
-            </button>
-            <button className="primary-button" type="button" onClick={exportWorkbook}>
-              <FileSpreadsheet size={17} />
-              Excel
-            </button>
-          </div>
-        </section>
+        <AppBar
+          companies={COMPANIES}
+          activeCompany={activeCompany}
+          companyName={companyName}
+          monthLabel={monthLabel}
+          effectiveMonthDays={effectiveMonthDays}
+          dbLoading={dbLoading}
+          onSwitchCompany={(code) => handleSwitchCompany(code as CompanyCode)}
+          onCompanyNameChange={setCompanyName}
+          onMonthLabelChange={updateMonthLabel}
+          onMonthLabelBlur={commitMonthLabel}
+          onOpenRules={() => setIsRulesOpen(true)}
+          onExportCsv={exportCsv}
+          onOpenDb={() => setIsDbModalOpen(true)}
+          onExportWorkbook={exportWorkbook}
+        />
 
         {/* The four totals that used to be 118px-tall cards. Net Payable stays
             emphasized and on screen at every scroll position; the sticky totals
             row at the foot of the table is its filtered counterpart. */}
-        <section className="totals-strip" aria-label="Month totals">
-          <div className="totals-net">
-            <IndianRupee size={18} />
-            <span>Net Payable</span>
-            <strong>{currency(totals.net)}</strong>
-          </div>
-          <div className="totals-item" title={`${currency(totals.deductions)} total deductions`}>
-            <span>Gross</span>
-            <strong>{currency(totals.gross)}</strong>
-          </div>
-          <div
-            className="totals-item"
-            title={`${currency(totals.employerPf)} PF + ${currency(totals.employerEsi)} ESI (Employer)`}
-          >
-            <span>PF + ESI + P-Tax</span>
-            <strong>{currency(totals.pf + totals.esi + totals.professionalTax)}</strong>
-          </div>
-          <div className="totals-item">
-            <span>Employer Cost</span>
-            <strong>{currency(totals.cost)}</strong>
-          </div>
-          <div className="totals-item">
-            <span>Employees</span>
-            <strong>{totals.employees}</strong>
-          </div>
-        </section>
+        <TotalsStrip totals={totals} />
 
         <section className="workspace-grid">
           <article className="panel table-panel">
@@ -1162,570 +987,41 @@ function App() {
               className={`table-wrap ${sheetMode === "main" ? "table-wrap--official" : ""}`}
             >
               {sheetMode === "reference" ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th onClick={() => handleRefSort("name")} className="sortable-th">
-                        Name {refSortField === "name" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("category")} className="sortable-th">
-                        Category {refSortField === "category" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      {/* Days and Extra are always read together and are the two
-                          narrowest inputs on the sheet, so they share one cell
-                          rather than each paying for a column of padding. */}
-                      <th
-                        onClick={() => handleRefSort("daysWorked")}
-                        className="sortable-th"
-                        title="Days worked + extra days. Sorts by days worked."
-                      >
-                        Days + Extra {refSortField === "daysWorked" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("earnedSalary")} className="sortable-th">
-                        Earned {refSortField === "earnedSalary" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("basicSalary")} className="sortable-th">
-                        Basic {refSortField === "basicSalary" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("hra")} className="sortable-th">
-                        HRA {refSortField === "hra" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("travelAllowance")} className="sortable-th">
-                        TA {refSortField === "travelAllowance" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("performanceBonus")} className="sortable-th">
-                        Bonus {refSortField === "performanceBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("specialBonus")} className="sortable-th">
-                        Sp Bonus {refSortField === "specialBonus" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("employeePf")} className="sortable-th">
-                        PF {refSortField === "employeePf" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("esi")} className="sortable-th">
-                        ESI {refSortField === "esi" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("professionalTax")} className="sortable-th">
-                        P-Tax {refSortField === "professionalTax" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("advance")} className="sortable-th">
-                        Advance {refSortField === "advance" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleRefSort("netPayable")} className="sortable-th">
-                        Net Pay {refSortField === "netPayable" && (refSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th aria-label="Actions" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedFilteredRows.map((row) => {
-                      const isSpecial = isSpecialCategory(row.category);
-                      const missingRate = row.missingRate === true;
-                      // Special is paid a flat package and has no day rate, so it is
-                      // always typed per month regardless of the toggle.
-                      const perDayInput =
-                        !isSpecial && (rateMode ?? (row.category === "Unskilled" ? "perDay" : "perMonth")) === "perDay";
-                      // Above a 21,000 package the ESI toggle is opt-IN: off until
-                      // switched on, and the click is recorded as esiOverLimitOptIn
-                      // so an untouched row is never mistaken for consent (ADR-0011).
-                      const esiOverLimit = !isSpecial && row.totalSalary > ESI_GROSS_LIMIT;
-                      return (
-                        <Fragment key={row.id}>
-                          <tr className={missingRate ? "row-missing-rate" : undefined}>
-                            <td className="name-cell">
-                              <input
-                                value={row.name}
-                                data-cell="name"
-                                onChange={(event) => updateEmployee(row.id, "name", event.target.value)}
-                              />
-                              {missingRate ? (
-                                <span className="missing-rate-badge" title="No day rate or monthly salary — set a rate in Settings">
-                                  Missing rate
-                                </span>
-                              ) : null}
-                            </td>
-                            <td>
-                              <select
-                                className="select-input"
-                                value={row.category}
-                                title={
-                                  isSpecial
-                                    ? "Special: full pay, no day rate, no PF/ESI"
-                                    : "Set by hand — never inferred from salary"
-                                }
-                                onChange={(event) => updateEmployee(row.id, "category", event.target.value)}
-                              >
-                                {CATEGORIES.map((c) => (
-                                  <option key={c} value={c}>
-                                    {c}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            {/* The flex row lives in a div, not on the td: a
-                                display:flex table cell drops out of the fixed
-                                table layout and collapses to nothing. */}
-                            <td className="days-cell">
-                              <div className="cell-row">
-                                <NumberInput
-                                  className="number-input number-input--compact"
-                                  value={row.daysWorked}
-                                  min={0}
-                                  max={effectiveMonthDays}
-                                  disabled={isSpecial}
-                                  dataCell="daysWorked"
-                                  title="Days worked"
-                                  onChange={(value) => updateEmployee(row.id, "daysWorked", value)}
-                                />
-                                <span className="days-plus">+</span>
-                                <NumberInput
-                                  className="number-input number-input--compact"
-                                  value={row.extraDays}
-                                  min={0}
-                                  disabled={isSpecial}
-                                  dataCell="extraDays"
-                                  title="Extra days"
-                                  onChange={(value) => updateEmployee(row.id, "extraDays", value)}
-                                />
-                              </div>
-                            </td>
-                            <td>{num(row.earnedSalary)}</td>
-                            <td>{num(row.basicSalary)}</td>
-                            <td>{num(row.hra)}</td>
-                            <td>{num(row.travelAllowance)}</td>
-                            <td>{num(row.performanceBonus)}</td>
-                            <td>
-                              <NumberInput
-                                className="number-input number-input--compact"
-                                value={row.specialBonus ?? undefined}
-                                allowBlank={true}
-                                min={0}
-                                dataCell="specialBonus"
-                                onChange={(value) => updateEmployee(row.id, "specialBonus", value)}
-                              />
-                            </td>
-                            <td>{num(row.employeePf)}</td>
-                            <td>{num(row.esi)}</td>
-                            <td>{num(row.professionalTax)}</td>
-                            <td>
-                              <NumberInput
-                                className="number-input number-input--compact"
-                                value={row.advance ?? undefined}
-                                allowBlank={true}
-                                dataCell="advance"
-                                onChange={(value) => updateEmployee(row.id, "advance", value)}
-                              />
-                            </td>
-                            <td className="net-cell">{num(row.netPayable)}</td>
-                            <td className="actions-cell">
-                              <div className="cell-row cell-row--end">
-                              <button
-                                className={row.notes?.trim() ? "icon-button has-notes" : "icon-button"}
-                                title={row.notes?.trim() ? `Employee settings — notes:\n${row.notes}` : "Employee settings"}
-                                type="button"
-                                onClick={() => {
-                                  setRateMode(null);
-                                  setNotesOpen(false);
-                                  setOpenSettingsId((current) => (current === row.id ? null : row.id));
-                                }}
-                              >
-                                <Settings2 size={16} />
-                              </button>
-                              <button
-                                className="delete-button"
-                                title="Remove employee"
-                                type="button"
-                                onClick={() => removeEmployee(row.id)}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                              </div>
-                            </td>
-                          </tr>
-                          {openSettingsId === row.id ? (
-                            <tr className="settings-row">
-                              <td colSpan={15}>
-                                <div className="settings-panel">
-                                  {/* Salary can be typed either way round — the button
-                                      switches the input mode and converts (M = D × r).
-                                      The stored anchor still follows Category (SPEC §2.2):
-                                      Unskilled keeps the day rate, the rest keep the
-                                      monthly package. Special has no day rate at all. */}
-                                  {!isSpecial ? (
-                                    <div className="settings-column">
-                                      <span>Salary Input</span>
-                                      <button
-                                        type="button"
-                                        className="rate-mode-toggle"
-                                        aria-pressed={perDayInput}
-                                        title="Switch between typing salary per day and per month"
-                                        onClick={() => setRateMode(perDayInput ? "perMonth" : "perDay")}
-                                      >
-                                        <RefreshCw size={13} />
-                                        {perDayInput ? "Per Day" : "Per Month"}
-                                      </button>
-                                      <small>
-                                        Tap to type the {perDayInput ? "monthly package" : "day rate"} instead —{" "}
-                                        {effectiveMonthDays} days &times; day rate = month.
-                                      </small>
-                                    </div>
-                                  ) : null}
-                                  {perDayInput ? (
-                                    <>
-                                      <div className="settings-column">
-                                        <span>Salary per Day</span>
-                                        <NumberInput
-                                          value={row.salaryPerDay}
-                                          min={0}
-                                          onChange={(value) => updateEmployee(row.id, "salaryPerDay", value)}
-                                        />
-                                        <small>Applies to every month for this employee</small>
-                                      </div>
-                                      <div className="settings-column">
-                                        <span>Bonus per Day</span>
-                                        <NumberInput
-                                          value={row.bonusPerDay}
-                                          min={0}
-                                          onChange={(value) => updateEmployee(row.id, "bonusPerDay", value)}
-                                        />
-                                        <small>Applies to every month for this employee</small>
-                                      </div>
-                                      <div className="settings-column">
-                                        <span>Salary per Month</span>
-                                        <strong>{currency(row.monthlySalary)}</strong>
-                                        <small>{effectiveMonthDays} days &times; {currency(row.salaryPerDay)}</small>
-                                      </div>
-                                      <div className="settings-column">
-                                        <span>Total Salary</span>
-                                        <strong>{currency(row.totalSalary)}</strong>
-                                        <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="settings-column">
-                                        <span>Salary per Month</span>
-                                        <NumberInput
-                                          value={row.monthlySalary}
-                                          min={0}
-                                          onChange={(value) => updateEmployee(row.id, "monthlySalary", value)}
-                                        />
-                                        <small>
-                                          {isSpecial
-                                            ? "Fixed package — paid in full every month"
-                                            : `Day rate ${currency(row.salaryPerDay)} is derived from it`}
-                                        </small>
-                                      </div>
-                                      <div className="settings-column">
-                                        <span>Allowance / Month</span>
-                                        <NumberInput
-                                          value={Math.max(0, roundMoney(row.totalSalary - row.monthlySalary))}
-                                          min={0}
-                                          onChange={(value) => updateEmployee(row.id, "allowance", value)}
-                                        />
-                                        <small>
-                                          Total Salary <strong>{currency(row.totalSalary)}</strong> = monthly + allowance
-                                          {row.totalSalary > row.monthlySalary
-                                            ? ` — sets bonus/day ${currency(row.bonusPerDay)} and the Official 51% basic floor`
-                                            : " — 0 means no allowance"}
-                                        </small>
-                                      </div>
-                                    </>
-                                  )}
-                                  <div className="settings-column">
-                                    <span>TDS</span>
-                                    <NumberInput
-                                      value={row.otherDeduction}
-                                      min={0}
-                                      onChange={(value) => updateEmployee(row.id, "otherDeduction", value)}
-                                    />
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>Basic %</span>
-                                    <strong>{row.basicPercent}%</strong>
-                                    <input
-                                      className="basic-slider"
-                                      type="range"
-                                      min={MIN_BASIC_PERCENT}
-                                      max={MAX_BASIC_PERCENT}
-                                      step="1"
-                                      value={clampBasicPercent(row.basicPercent)}
-                                      onChange={(event) =>
-                                        updateEmployee(row.id, "basicPercent", Number(event.target.value))
-                                      }
-                                    />
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>PF</span>
-                                    <strong>{row.pfOptIn ? "On" : "Off"}</strong>
-                                    <small>{row.monthlySalary * (row.basicPercent / 100) > PF_BASIC_LIMIT ? `PF is off automatically above ${currency(PF_BASIC_LIMIT)} Basic` : "Toggle controls employee PF choice"}</small>
-                                    <button
-                                      type="button"
-                                      className={row.pfOptIn ? "toggle-on" : "toggle-off"}
-                                      disabled={isSpecial}
-                                      onClick={() => updateEmployee(row.id, "pfOptIn", !row.pfOptIn)}
-                                    >
-                                      {row.pfOptIn ? "Turn Off" : "Turn On"}
-                                    </button>
-                                  </div>
-                                  <div className="settings-column">
-                                    <span>ESI</span>
-                                    <strong>{row.esiOptIn ? "On" : "Off"}</strong>
-                                    {/* Clamped to two lines in CSS, so the full
-                                        over-limit wording (ADR-0011) is kept on
-                                        hover rather than truncated away. */}
-                                    <small
-                                      title={
-                                        esiOverLimit
-                                          ? row.esiOptIn
-                                            ? `Enabled by hand above ${currency(ESI_GROSS_LIMIT)} Total Salary — main-sheet Basic is held under ${currency(ESI_GROSS_LIMIT)} so the ESI applies`
-                                            : `Off by default above ${currency(ESI_GROSS_LIMIT)} Total Salary — turn it on here if this employee is covered`
-                                          : "Toggle controls employee ESI choice"
-                                      }
-                                    >
-                                      {esiOverLimit
-                                        ? row.esiOptIn
-                                          ? `Enabled by hand above ${currency(ESI_GROSS_LIMIT)} Total Salary — main-sheet Basic is held under ${currency(ESI_GROSS_LIMIT)} so the ESI applies`
-                                          : `Off by default above ${currency(ESI_GROSS_LIMIT)} Total Salary — turn it on here if this employee is covered`
-                                        : "Toggle controls employee ESI choice"}
-                                    </small>
-                                    <button
-                                      type="button"
-                                      className={row.esiOptIn ? "toggle-on" : "toggle-off"}
-                                      disabled={isSpecial}
-                                      onClick={() =>
-                                        esiOverLimit
-                                          ? updateEmployee(row.id, "esiOverLimitOptIn", !row.esiOptIn)
-                                          : updateEmployee(row.id, "esiOptIn", !row.esiOptIn)
-                                      }
-                                    >
-                                      {row.esiOptIn ? "Turn Off" : "Turn On"}
-                                    </button>
-                                  </div>
-                                  {/* Category used to be repeated here as read-only
-                                      text; it is already an editable dropdown in
-                                      the row itself, and its Special explanation
-                                      now lives on that dropdown's tooltip. */}
-                                  <div className="settings-column">
-                                    <span>Notes</span>
-                                    <button
-                                      type="button"
-                                      className="notes-toggle"
-                                      aria-expanded={notesOpen}
-                                      onClick={() => setNotesOpen((open) => !open)}
-                                    >
-                                      <ChevronDown size={13} className={notesOpen ? "rot" : undefined} />
-                                      {row.notes?.trim() ? "Edit notes" : "Add notes"}
-                                    </button>
-                                  </div>
-                                  {notesOpen ? (
-                                    <div className="settings-column settings-column--full">
-                                      <textarea
-                                        className="notes-input"
-                                        rows={3}
-                                        placeholder={"Increments and anything else worth keeping.\nApr-26 +500 allowance (now 1500)"}
-                                        value={row.notes ?? ""}
-                                        onChange={(event) => updateEmployee(row.id, "notes", event.target.value)}
-                                      />
-                                      <small>
-                                        Kept with the employee, not the month — the same notes show in every
-                                        month and never affect any calculation.
-                                      </small>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })}
-                    {!filteredRows.length ? (
-                      <tr className="empty-row">
-                        <td colSpan={15}>
-                          <div>
-                            {query ? <Search size={18} /> : <Users size={18} />}
-                            <strong>
-                              {query ? "No employees match this search." : "No employees in this month yet."}
-                            </strong>
-                            <span>
-                              {query
-                                ? "Clear the search or add a new employee to continue."
-                                : "Use “Add” above to start building this sheet."}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                  {/* Column totals, pinned to the foot of the scroll area. They
-                      follow the current filter, not the whole month — searching
-                      for one employee should total that employee — so the label
-                      always states how many rows are counted. */}
-                  {filteredRows.length ? (
-                    <tfoot>
-                      <tr className="totals-row">
-                        <th scope="row" colSpan={2}>
-                          Total — {filteredRows.length} of {salaryRows.length} shown
-                        </th>
-                        <td />
-                        <td>{num(sum(filteredRows, "earnedSalary"))}</td>
-                        <td>{num(sum(filteredRows, "basicSalary"))}</td>
-                        <td>{num(sum(filteredRows, "hra"))}</td>
-                        <td>{num(sum(filteredRows, "travelAllowance"))}</td>
-                        <td>{num(sum(filteredRows, "performanceBonus"))}</td>
-                        <td>{num(sum(filteredRows, "specialBonus"))}</td>
-                        <td>{num(sum(filteredRows, "employeePf"))}</td>
-                        <td>{num(sum(filteredRows, "esi"))}</td>
-                        <td>{num(sum(filteredRows, "professionalTax"))}</td>
-                        <td>{num(sum(filteredRows, "advance"))}</td>
-                        <td className="net-cell">{currency(sum(filteredRows, "netPayable"))}</td>
-                        <td />
-                      </tr>
-                    </tfoot>
-                  ) : null}
-                </table>
+                <ReferenceSheet
+                  sortedRows={sortedFilteredRows}
+                  filteredRows={filteredRows}
+                  allRowsCount={salaryRows.length}
+                  categories={CATEGORIES}
+                  query={query}
+                  sortField={refSortField}
+                  sortDirection={refSortDirection}
+                  openSettingsId={openSettingsId}
+                  rateMode={rateMode}
+                  notesOpen={notesOpen}
+                  effectiveMonthDays={effectiveMonthDays}
+                  onSort={handleRefSort}
+                  onUpdateEmployee={updateEmployee}
+                  onOpenSettings={(id) => {
+                    setRateMode(null);
+                    setNotesOpen(false);
+                    setOpenSettingsId((current) => (current === id ? null : id));
+                  }}
+                  onRemoveEmployee={removeEmployee}
+                  onToggleRateMode={(perDayInput) =>
+                    setRateMode(perDayInput ? "perMonth" : "perDay")
+                  }
+                  onToggleNotes={() => setNotesOpen((open) => !open)}
+                />
               ) : (
-                <table className="official-table">
-                  <thead>
-                    <tr>
-                      <th onClick={() => handleOfficialSort("name")} className="sortable-th">
-                        Name {officialSortField === "name" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("wageCategory")} className="sortable-th">
-                        Category {officialSortField === "wageCategory" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("attendance")} className="sortable-th">
-                        Attendance {officialSortField === "attendance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("extraDays")} className="sortable-th">
-                        Extra Days {officialSortField === "extraDays" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("monthlyBasic")} className="sortable-th">
-                        Official Basic {officialSortField === "monthlyBasic" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("monthlyHra")} className="sortable-th">
-                        HRA {officialSortField === "monthlyHra" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("monthlyTravelAllowance")} className="sortable-th">
-                        TA {officialSortField === "monthlyTravelAllowance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("bonus")} className="sortable-th">
-                        Bonus {officialSortField === "bonus" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("pf")} className="sortable-th">
-                        PF {officialSortField === "pf" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("esi")} className="sortable-th">
-                        ESI {officialSortField === "esi" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("professionalTax")} className="sortable-th">
-                        P-Tax {officialSortField === "professionalTax" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("advance")} className="sortable-th">
-                        Advance {officialSortField === "advance" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("netPayable")} className="sortable-th">
-                        Net Pay {officialSortField === "netPayable" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                      <th onClick={() => handleOfficialSort("referenceNetPayable")} className="sortable-th">
-                        Reference Net {officialSortField === "referenceNetPayable" && (officialSortDirection === "asc" ? " ↑" : " ↓")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedFilteredOfficialRows.map((row) => {
-                      const hasDiff =
-                        row.unpackable || Math.abs(row.netPayable - row.referenceNetPayable) > 5;
-                      const netDelta = roundMoney(row.netPayable - row.referenceNetPayable);
-                      return (
-                        <tr key={row.id} className={hasDiff ? "diff-row" : ""}>
-                          <td className="name-cell">
-                            {row.name}
-                            {row.unpackable ? (
-                              <span
-                                title={`Unpackable: Official net ${currency(row.netPayable)} ≠ Reference ${currency(row.referenceNetPayable)} (Δ ${currency(netDelta)}). Export blocked.`}
-                                style={{
-                                  marginLeft: 6,
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#b42318",
-                                  background: "#fef3f2",
-                                  border: "1px solid #fecdca",
-                                  borderRadius: 4,
-                                  padding: "1px 5px",
-                                  verticalAlign: "middle",
-                                }}
-                              >
-                                unpackable
-                              </span>
-                            ) : null}
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 600 }}>{row.wageCategory}</span>
-                            {row.sourceCategory !== row.wageCategory && (
-                              <div style={{ fontSize: "10px", color: "#667085", marginTop: "2px" }}>
-                                (from {row.sourceCategory})
-                              </div>
-                            )}
-                          </td>
-                          <td>{row.attendance}</td>
-                          <td>{row.extraDays}</td>
-                          <td>{num(row.monthlyBasic)}</td>
-                          <td>{num(row.monthlyHra)}</td>
-                          <td>{num(row.monthlyTravelAllowance)}</td>
-                          <td>{num(row.bonus)}</td>
-                          <td>{num(row.pf)}</td>
-                          <td>{num(row.esi)}</td>
-                          <td>{num(row.professionalTax)}</td>
-                          {/* Read-only here — the advance is typed on the reference
-                              sheet and already deducted from this net. */}
-                          <td>{num(Math.max(0, Number(row.advance) || 0))}</td>
-                          <td className="net-cell">{num(row.netPayable)}</td>
-                          <td>{num(row.referenceNetPayable)}</td>
-                        </tr>
-                      );
-                    })}
-                    {!filteredOfficialRows.length ? (
-                      <tr className="empty-row">
-                        <td colSpan={14}>
-                          <div>
-                            {query ? <Search size={18} /> : <Users size={18} />}
-                            <strong>
-                              {query ? "No official rows match this search." : "No employees in this month yet."}
-                            </strong>
-                            <span>
-                              {query
-                                ? "Clear the search to restore the main sheet."
-                                : "Add employees on the reference sheet to populate the main sheet."}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                  {filteredOfficialRows.length ? (
-                    <tfoot>
-                      <tr className="totals-row">
-                        <th scope="row" colSpan={2}>
-                          Total — {filteredOfficialRows.length} of {officialRows.length} shown
-                        </th>
-                        <td />
-                        <td>{num(officialSum("extraDays"))}</td>
-                        <td>{num(officialSum("monthlyBasic"))}</td>
-                        <td>{num(officialSum("monthlyHra"))}</td>
-                        <td>{num(officialSum("monthlyTravelAllowance"))}</td>
-                        <td>{num(officialSum("bonus"))}</td>
-                        <td>{num(officialSum("pf"))}</td>
-                        <td>{num(officialSum("esi"))}</td>
-                        <td>{num(officialSum("professionalTax"))}</td>
-                        <td>{num(officialSum("advance"))}</td>
-                        <td className="net-cell">{currency(officialSum("netPayable"))}</td>
-                        <td>{num(officialSum("referenceNetPayable"))}</td>
-                      </tr>
-                    </tfoot>
-                  ) : null}
-                </table>
+                <OfficialSheet
+                  sortedRows={sortedFilteredOfficialRows}
+                  filteredRows={filteredOfficialRows}
+                  allRowsCount={officialRows.length}
+                  query={query}
+                  sortField={officialSortField}
+                  sortDirection={officialSortDirection}
+                  onSort={handleOfficialSort}
+                />
               )}
             </div>
           </article>
@@ -1734,293 +1030,37 @@ function App() {
               panel was deleted — it was the fourth copy of Net Payable, which
               the totals strip and the sticky totals row now cover. The chart
               stays: it is the only thing here you cannot read off the table. */}
-          <aside className="side-stack">
-            <article className="panel">
-              <div className="panel-heading compact">
-                <div>
-                  <h2><BarChart3 size={18} /> Category Net Pay</h2>
-                  <p>Largest groups</p>
-                </div>
-              </div>
-              <div className="bar-list">
-                {categoryTotals.map((item) => {
-                  const width = totals.net ? Math.max(8, (item.total / totals.net) * 100) : 0;
-                  return (
-                    <div className="bar-row" key={item.category}>
-                      <div className="bar-label">
-                        <span>{item.category}</span>
-                        <strong>{currency(item.total)}</strong>
-                      </div>
-                      <div className="bar-track">
-                        <span style={{ width: `${width}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </article>
-          </aside>
+          <SidePanel categoryTotals={categoryTotals} netTotal={totals.net} />
         </section>
       </main>
 
       {isRulesOpen && (
-        <div className="modal-overlay" onClick={() => setIsRulesOpen(false)}>
-          <div
-            className="modal rules-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="rules-modal-head">
-              <div>
-                <span className="modal-eyebrow">Reference</span>
-                <h2>Calculation Rules</h2>
-              </div>
-              <button className="close-modal" type="button" onClick={() => setIsRulesOpen(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="rule-list">
-              <Rule label="Category" value="Chosen per employee — Unskilled, Semi-skilled, Skilled or Special. Never inferred from salary." />
-              <Rule label="Salary Anchor" value="Unskilled is anchored on salary/day; the rest on salary/month. Either can be typed — Settings has a Per Day / Per Month switch." />
-              <Rule label="Calendar Days" value={`${effectiveMonthDays} days for ${monthLabel || "selected month"}`} />
-              <Rule label="Earned Salary" value="Salary/Month / calendar days x Days Worked" />
-              <Rule label="Reference Basic" value="Earned Salary x Basic %" />
-              <Rule label="Main PF Attendance" value={`Starts at 26 - (${effectiveMonthDays} - Days Worked), then reduces if Basic plus Bonus is too high`} />
-              <Rule label="Official Basic" value="Attendance x category daily wage" />
-              <Rule label="Zone A Day Rate" value="Unskilled 400, Semi-skilled 440, Skilled 484" />
-              <Rule label="Days Worked" value="Entered manually per employee for the selected month" />
-              <Rule label="Extra Days" value="Entered manually; shown on both sheets and used for the Reference performance bonus" />
-              <Rule
-                label="HRA"
-                value={`${HRA_SHARE_OF_BALANCE * 100}% of prorated Total Salary minus Basic`}
-              />
-              <Rule
-                label="Travel Allowance"
-                value={`${TA_SHARE_OF_BALANCE * 100}% of prorated Total Salary minus Basic`}
-              />
-              <Rule
-                label="PF"
-                value={`${PF_RATE * 100}% on Basic (capped at ${currency(PF_BASIC_LIMIT)} Basic) when PF is enabled`}
-              />
-              <Rule label="ESI" value={`${ESI_RATE * 100}% on Earned Salary when ESI is enabled. Off by default above ${currency(ESI_GROSS_LIMIT)} Total Salary — enable it per employee in Settings, and the main-sheet Basic is held under ${currency(ESI_GROSS_LIMIT)} so it applies`} />
-              <Rule label="P-Tax" value="Based on Gross Payable (before PF/ESI) slab" />
-              <Rule label="Advance" value="Amount advanced to the employee, recovered from this month's net pay" />
-              <Rule label="Performance Bonus" value="(salary/day + bonus/day) x Extra Days" />
-              <Rule
-                label="Reference Sheet"
-                value="Category is set by hand, never guessed from salary. Earned is Salary/Month prorated by Days Worked. Basic is Earned x Basic %. HRA and TA split prorated Total Salary minus Basic in a 70% / 30% ratio."
-              />
-              <Rule
-                label="Main Sheet"
-                value={`For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - Days Worked), then reduces when needed so Basic always equals attendance x category daily wage and Main Bonus is at least the Reference Daily Bonus Amount. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
-              />
-            </div>
-          </div>
-        </div>
+        <RulesDialog
+          effectiveMonthDays={effectiveMonthDays}
+          monthLabel={monthLabel}
+          onClose={() => setIsRulesOpen(false)}
+        />
       )}
 
-       {showNoDataModal && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: "500px", height: "auto", padding: "28px" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <span className="modal-eyebrow">Database Notice</span>
-              <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "8px 0" }}>
-                Initialize {activeCompany} &middot; {noDataMonth}
-              </h2>
-              <p style={{ color: "#667085", fontSize: "14px", lineHeight: "1.5" }}>
-                No records exist for <strong>{companyName || activeCompany}</strong> in <strong>{noDataMonth}</strong> yet. How would you like to initialize this month?
-              </p>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
-              {allMonths.filter(m => m !== noDataMonth).length > 0 && (
-                <div style={{ padding: "14px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
-                  <label style={{ fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
-                    Copy Employees From:
-                  </label>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <select
-                      value={copySourceMonth}
-                      onChange={(e) => setCopySourceMonth(e.target.value)}
-                      style={{ flex: 1, padding: "8px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff", fontSize: "14px" }}
-                    >
-                      {allMonths.filter(m => m !== noDataMonth).map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="primary-button"
-                      onClick={() => handleCopyMonth(copySourceMonth)}
-                      style={{ padding: "0 14px", height: "38px", fontSize: "13px" }}
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {activeCompany === "NKPL" && (
-                <button
-                  className="ghost-button"
-                  onClick={handleCreateSampleMonth}
-                  style={{ justifyContent: "center", height: "42px", fontWeight: "600", color: "#2563eb", borderColor: "#2563eb", background: "rgba(37,99,235,0.04)" }}
-                >
-                  Use Default Sample Employees
-                </button>
-              )}
-
-              <button
-                className="quiet-button"
-                onClick={handleCreateBlankMonth}
-                style={{ justifyContent: "center", height: "42px", fontWeight: "500", border: "1px solid #cbd5e1" }}
-              >
-                Start with a Blank Sheet
-              </button>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                className="quiet-button"
-                onClick={handleCancelNoData}
-                style={{ color: "#ef4444", fontWeight: "600" }}
-              >
-                Cancel & Restore Previous Month
-              </button>
-            </div>
-          </div>
-        </div>
+      {showNoDataModal && (
+        <NoDataModal
+          activeCompany={activeCompany}
+          companyName={companyName}
+          noDataMonth={noDataMonth}
+          allMonths={allMonths}
+          copySourceMonth={copySourceMonth}
+          onCopySourceMonthChange={setCopySourceMonth}
+          onCopyMonth={handleCopyMonth}
+          onCreateSampleMonth={handleCreateSampleMonth}
+          onCreateBlankMonth={handleCreateBlankMonth}
+          onCancel={handleCancelNoData}
+        />
       )}
 
-      {isDbModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsDbModalOpen(false)}>
-          <div
-            className="modal"
-            style={{ maxWidth: "600px", height: "auto", padding: "28px" }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <div>
-                <span className="modal-eyebrow">Database Settings</span>
-                <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "4px 0" }}>Database Sync & Backup</h2>
-              </div>
-              <button className="close-modal" onClick={() => setIsDbModalOpen(false)}>
-                <X size={18} />
-              </button>
-            </div>
+      {isDbModalOpen && <DatabaseModal onClose={() => setIsDbModalOpen(false)} />}
 
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ marginBottom: "20px", padding: "16px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "10px", color: "#065f46", fontSize: "14px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
-                <Cloud size={20} style={{ color: "#059669", flexShrink: 0, marginTop: "2px" }} />
-                <div>
-                  <strong style={{ display: "block", marginBottom: "4px", fontSize: "15px" }}>Redis Sync Active</strong>
-                  Payroll is stored in Redis and is the single source of truth. Every month record and the shared rate card load and sync automatically by company and month for everyone who opens the app &mdash; NKPL and APTUS data are kept completely separate.
-                </div>
-              </div>
-
-              <div style={{ marginBottom: "20px", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", color: "#64748b", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <Wifi size={18} style={{ color: "#2563eb", flexShrink: 0 }} />
-                <div>
-                  <strong>Local Caching Active:</strong> Local Storage caches the data locally in your browser to ensure offline support and maximum speed.
-                </div>
-              </div>
-
-              <div style={{ fontSize: "13px", color: "#64748b", background: "#f8fafc", padding: "14px", borderRadius: "8px", border: "1px solid #e2e8f0", lineHeight: "1.5" }}>
-                <strong>Keys in use:</strong>
-                <ul style={{ paddingLeft: "18px", marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", listStyleType: "disc" }}>
-                  <li><code>monthly_salary/&lt;company&gt;/&lt;month&gt;</code> &mdash; one record per company per month.</li>
-                  <li><code>employee_rates/&lt;company&gt;</code> &mdash; the shared rate card that carries across months.</li>
-                  <li>The connection string never reaches the browser; all reads and writes go through <code>/api/db</code> and <code>/api/rates</code>.</li>
-                </ul>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
-              <button
-                className="quiet-button"
-                onClick={() => setIsDbModalOpen(false)}
-                style={{ fontWeight: "600" }}
-              >
-                Close Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div
-          className={`custom-toast ${toast.type}`}
-          role="status"
-          aria-live="polite"
-          onClick={() => setToast(null)}
-        >
-          {toast.type === "success" ? <Check size={16} /> : <AlertTriangle size={16} />}
-          <span>{toast.message}</span>
-        </div>
-      )}
+      {toast && <Toast toast={toast} onDismiss={dismissToast} />}
     </>
-  );
-}
-
-function NumberInput({
-   value,
-  onChange,
-  className = "number-input",
-  min,
-  max,
-  allowBlank = false,
-  disabled = false,
-  dataCell,
-  title,
-}: {
-  value: number | undefined | "";
-  onChange: (value: number | undefined) => void;
-  className?: string;
-  min?: number;
-  max?: number;
-  allowBlank?: boolean;
-  disabled?: boolean;
-  // Opts this input into arrow-key column navigation — see handleGridKey.
-  dataCell?: string;
-  title?: string;
-}) {
-  const canonical =
-    allowBlank && (value === undefined || value === "") ? "" : Number.isFinite(value) ? value : 0;
-  // While the field is focused we show exactly what was typed. The model still
-  // updates on every keystroke, but a value that comes back rounded or derived
-  // (Salary per Month for Unskilled, Allowance) must not overwrite the digits
-  // mid-word — that made the box snap to 0 or refuse the number entered.
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <input
-      className={className}
-      type="number"
-      min={min}
-      max={max}
-      value={draft ?? canonical}
-      disabled={disabled}
-      data-cell={dataCell}
-      title={title}
-      onFocus={(event) => setDraft(event.target.value)}
-      onBlur={() => setDraft(null)}
-      onChange={(event) => {
-        const val = event.target.value;
-        setDraft(val);
-        if (val === "") {
-          onChange(allowBlank ? undefined : 0);
-        } else {
-          onChange(numberValue(val));
-        }
-      }}
-    />
-  );
-}
-
-function Rule({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rule-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
