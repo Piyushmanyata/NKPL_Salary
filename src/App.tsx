@@ -134,7 +134,6 @@ function App() {
     copyMonth,
   } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays);
   const saveError = lifecycle.saveError;
-  const setSaveRetryToken = retry;
   const noDataMonth = monthLabel;
   const prevMonthRef = useRef(monthLabel);
   const prevCompanyRef = useRef(activeCompany);
@@ -398,7 +397,7 @@ function App() {
 
   return (
     <>
-      {saveError && <LifecycleErrorBanner error={saveError} onRetry={setSaveRetryToken} />}
+      {saveError && <LifecycleErrorBanner error={saveError} onRetry={retry} />}
       <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px

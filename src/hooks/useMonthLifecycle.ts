@@ -208,6 +208,9 @@ export function useMonthLifecycle(
     ],
   );
 
+  // The one load path. A retry re-runs it by bumping loadRetryToken rather than
+  // running a second effect, so a scope change after a retry cannot start two
+  // concurrent loads for the same scope.
   useEffect(() => {
     let cancelled = false;
     setEmployees([]);
@@ -224,24 +227,6 @@ export function useMonthLifecycle(
     return () => {
       cancelled = true;
       copyGenerationRef.current += 1;
-    };
-  }, [activeCompany, loadScope, scopeMonthLabel]);
-
-  useEffect(() => {
-    if (loadRetryToken === 0) return;
-    let cancelled = false;
-    dispatchLifecycle({
-      type: "SELECT_SCOPE",
-      company: activeCompany,
-      monthLabel: scopeMonthLabel,
-    });
-    void loadScope(() => cancelled).catch((error: unknown) => {
-      if (!cancelled) {
-        dispatchLifecycle({ type: "LOAD_ERROR", error: errorMessage(error) });
-      }
-    });
-    return () => {
-      cancelled = true;
     };
   }, [activeCompany, loadRetryToken, loadScope, scopeMonthLabel]);
 

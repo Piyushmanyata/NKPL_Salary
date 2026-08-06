@@ -139,6 +139,22 @@ describe("monthLifecycleReducer write gate", () => {
     expect(requestMonth(state, "month-1").status).toBe("saving");
   });
 
+  it("drops a write failure that outlived its scope", () => {
+    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    expect(state.status).toBe("saving");
+
+    state = monthLifecycleReducer(state, {
+      type: "SELECT_SCOPE",
+      company: "APTUS",
+      monthLabel: SCOPE.monthLabel,
+    });
+    const before = state;
+
+    expect(
+      monthLifecycleReducer(state, { type: "SAVE_ERROR", error: "offline" }),
+    ).toEqual(before);
+  });
+
   it("blocks writes after a load error and lets retry return to loading", () => {
     let state = monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
       type: "LOAD_ERROR",

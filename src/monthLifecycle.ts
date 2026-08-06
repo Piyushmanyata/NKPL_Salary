@@ -215,6 +215,10 @@ export function monthLifecycleReducer(
     }
 
     case "SAVE_ERROR":
+      // A write that outlived its scope reports back after SELECT_SCOPE has
+      // already cleared the pending write. Dropping it keeps a stale failure
+      // from putting the freshly loaded scope into `error` and blocking it.
+      if (!state.pendingWrite) return state;
       return {
         ...state,
         status: "error",

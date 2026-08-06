@@ -27,11 +27,16 @@ export function calculateMonthTotals(
   officialRows: OfficialRow[],
 ): MonthTotals {
   if (sheetMode === "main") {
+    // Reconciliation summary excludes unpackable rows (TICKET-09); sheet still lists them.
     const packable = officialRows.filter((row) => !row.unpackable);
     const unpackableCount = officialRows.length - packable.length;
     const gross = packable.reduce((total, row) => total + row.grossPayable, 0);
     const net = packable.reduce((total, row) => total + row.netPayable, 0);
     const pf = packable.reduce((total, row) => total + row.pf, 0);
+    // Employer PF mirrors employee PF in this model (both 12% of basic, capped
+    // at PF_BASIC_LIMIT) -- see calculateSalary. Reusing `pf` here (instead of
+    // recomputing from monthlyBasic without the cap) keeps this in sync with
+    // that formula and avoids overstating employer cost for high-basic rows.
     const employerPf = pf;
     const esi = packable.reduce((total, row) => total + row.esi, 0);
     const professionalTax = packable.reduce((total, row) => total + row.professionalTax, 0);
