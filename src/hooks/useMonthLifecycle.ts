@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -84,6 +85,7 @@ export function useMonthLifecycle(
   const [allMonths, setAllMonths] = useState<string[]>([]);
   const [copySourceMonth, setCopySourceMonth] = useState("");
   const [loadRetryToken, setLoadRetryToken] = useState(0);
+  const copyGenerationRef = useRef(0);
   const [lifecycle, dispatchLifecycle] = useReducer(
     monthLifecycleReducer,
     monthLabel,
@@ -221,6 +223,7 @@ export function useMonthLifecycle(
     });
     return () => {
       cancelled = true;
+      copyGenerationRef.current += 1;
     };
   }, [activeCompany, loadScope, scopeMonthLabel]);
 
@@ -345,6 +348,7 @@ export function useMonthLifecycle(
   }, [lifecycle.loadedScope]);
 
   const cancelNoData = useCallback(() => {
+    copyGenerationRef.current += 1;
     dispatchLifecycle({ type: "CANCEL_CHOICE" });
   }, []);
 
@@ -374,7 +378,15 @@ export function useMonthLifecycle(
   }, [activeCompany, effectiveMonthDays, employeeRates, scopeMonthLabel]);
 
   const copyMonth = useCallback(
-    (source: string) => carryMonthInto(source, scopeMonthLabel, employeeRates),
+    async (source: string) => {
+      const generation = copyGenerationRef.current;
+      return carryMonthInto(
+        source,
+        scopeMonthLabel,
+        employeeRates,
+        () => copyGenerationRef.current !== generation,
+      );
+    },
     [carryMonthInto, employeeRates, scopeMonthLabel],
   );
 

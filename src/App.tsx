@@ -334,6 +334,8 @@ function App() {
       showToast(`Carried ${source} forward to ${noDataMonth} (${targetDays} days, manual days reset)`);
     } else if (result === "unavailable") {
       showToast("Unable to read the source month", "error");
+    } else if (result === "cancelled") {
+      return;
     } else {
       showToast(`Failed to copy: source month ${source} has no data`, "error");
     }
