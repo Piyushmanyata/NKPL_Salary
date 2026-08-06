@@ -3,6 +3,16 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+export function normalizeMonthLabel(value: string): string {
+  const trimmed = value.trim();
+  const text = trimmed.toLowerCase();
+  const monthIndex = MONTH_NAMES.findIndex((month) => text.includes(month.slice(0, 3).toLowerCase()));
+  const year = Number(text.match(/\b(20\d{2}|19\d{2})\b/)?.[1] ?? new Date().getFullYear());
+
+  if (monthIndex < 0 || !Number.isFinite(year)) return trimmed;
+  return `${MONTH_NAMES[monthIndex]} ${year}`;
+}
+
 export function parseMonthYearString(str: string) {
   if (!str) return null;
   const yearMatch = str.match(/\b\d{4}\b/);

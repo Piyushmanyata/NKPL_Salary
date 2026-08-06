@@ -1,0 +1,23 @@
+.rule-row {
+  display: grid;
+  gap: 5px;
+  padding: var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid #e0e6ef;
+  border-radius: var(--radius-md);
+}
+
+.rule-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.rule-row strong {
+  font-size: 13.5px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--text-primary);
+}

@@ -1,4 +1,10 @@
 import type { EmployeeInput } from "./types";
+import {
+  legacyStorageKeys,
+  readStorage,
+  storageKeys,
+  writeStorage,
+} from "./storageKeys";
 
 export interface MonthRecord {
   id: string;
@@ -9,22 +15,85 @@ export interface MonthRecord {
   updatedAt: string;
 }
 
-const STORE_KEY_PREFIX = "NKPL_Salary_cache::";
+export type MonthDataResult =
+  | { kind: "found"; record: MonthRecord }
+  | { kind: "empty" }
+  | { kind: "unavailable"; error: string };
+
+export type MonthLabelsResult =
+  | { kind: "found"; labels: string[] }
+  | { kind: "unavailable"; error: string };
 
 function recordId(company: string, monthLabel: string) {
   return `${company}::${monthLabel}`;
 }
 
-function recordKey(company: string, monthLabel: string) {
-  return `${STORE_KEY_PREFIX}${company}::${monthLabel}`;
+function localPutRecord(record: MonthRecord): void {
+  writeStorage(
+    storageKeys.monthCache(record.company, record.monthLabel),
+    JSON.stringify(record),
+  );
 }
 
-// Write (upsert) a month record into the local localStorage cache.
-function localPutRecord(record: MonthRecord): void {
+function localGetRecord(company: string, monthLabel: string): MonthRecord | null {
+  const cached = readStorage(
+    storageKeys.monthCache(company, monthLabel),
+    legacyStorageKeys.monthCache(company, monthLabel),
+  );
+  if (!cached) return null;
   try {
-    localStorage.setItem(recordKey(record.company, record.monthLabel), JSON.stringify(record));
-  } catch (err) {
-    console.error("Failed to save to local storage cache:", err);
+    return JSON.parse(cached) as MonthRecord;
+  } catch {
+    return null;
+  }
+}
+
+type FetchResult =
+  | { ok: true; data: unknown }
+  | { ok: false; kind: "not-found" | "unavailable"; error: string };
+
+async function fetchJson(url: string): Promise<FetchResult> {
+  try {
+    const response = await fetch(url);
+    if (response.status === 404) {
+      return { ok: false, kind: "not-found", error: "Not found" };
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        kind: "unavailable",
+        error: (await response.text()) || `Request failed with status ${response.status}`,
+      };
+    }
+    return { ok: true, data: await response.json() };
+  } catch (error) {
+    return {
+      ok: false,
+      kind: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function postJson(
+  url: string,
+  body: unknown,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("POST failed:", error);
+      return { ok: false, error };
+    }
+    return { ok: true };
+  } catch (error: any) {
+    console.error("POST error:", error);
+    return { ok: false, error: error?.message || String(error) };
   }
 }
 
@@ -42,100 +111,70 @@ export async function saveMonthData(
     employees,
     updatedAt: new Date().toISOString(),
   };
-
-  // 1. Save to local cache
   localPutRecord(record);
-
-  // 2. Sync to cloud database via serverless API
-  try {
-    const response = await fetch("/api/db", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(record),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Cloud database sync failed:", error);
-      return { ok: false, error };
-    }
-    return { ok: true };
-  } catch (error: any) {
-    console.error("Error syncing to cloud database:", error);
-    return { ok: false, error: error?.message || String(error) };
-  }
+  return postJson("/api/db", record);
 }
 
-export async function getMonthData(company: string, monthLabel: string): Promise<MonthRecord | null> {
-  // 1. Try Redis (via the serverless API) first — it is the source of truth.
-  try {
-    const response = await fetch(
-      `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`,
-    );
-    if (response.ok) {
-      const data = await response.json();
-      if (data) {
-        const record: MonthRecord = {
-          id: recordId(company, monthLabel),
-          company,
-          monthLabel: data.monthLabel,
-          days: data.days,
-          employees: data.employees || [],
-          updatedAt: data.updatedAt || new Date().toISOString(),
-        };
-        // Cache locally
-        localPutRecord(record);
-        return record;
-      }
-    }
-  } catch (error) {
-    console.error("Error fetching from cloud database:", error);
+export async function getMonthData(
+  company: string,
+  monthLabel: string,
+): Promise<MonthDataResult> {
+  const result = await fetchJson(
+    `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`,
+  );
+  const cached = localGetRecord(company, monthLabel);
+  if (result.ok && result.data) {
+    const data = result.data as Partial<MonthRecord>;
+    const record: MonthRecord = {
+      id: recordId(company, monthLabel),
+      company,
+      monthLabel: data.monthLabel ?? monthLabel,
+      days: data.days ?? 0,
+      employees: data.employees || [],
+      updatedAt: data.updatedAt || new Date().toISOString(),
+    };
+    localPutRecord(record);
+    return { kind: "found", record };
   }
-
-  // 2. Fallback to local storage cache
-  try {
-    const cached = localStorage.getItem(recordKey(company, monthLabel));
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (err) {
-    console.error("Failed to read from local storage cache:", err);
+  if (cached) return { kind: "found", record: cached };
+  if (!result.ok && result.kind === "unavailable") {
+    return { kind: "unavailable", error: result.error };
   }
-
-  return null;
+  return { kind: "empty" };
 }
 
-export async function getAllMonthLabels(company: string): Promise<string[]> {
-  try {
-    const response = await fetch(`/api/db?company=${encodeURIComponent(company)}&t=${Date.now()}`);
-    if (response.ok) {
-      const months = await response.json();
-      if (Array.isArray(months)) {
-        return months;
-      }
-    }
-  } catch (error) {
-    console.error("Error listing months from cloud database:", error);
+export async function getAllMonthLabels(company: string): Promise<MonthLabelsResult> {
+  const result = await fetchJson(
+    `/api/db?company=${encodeURIComponent(company)}&t=${Date.now()}`,
+  );
+  if (result.ok && Array.isArray(result.data)) {
+    return { kind: "found", labels: Array.from(new Set(result.data as string[])) };
   }
 
-  // Fallback to local storage cache keys
   const keys: string[] = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(STORE_KEY_PREFIX)) {
-        const parts = key.slice(STORE_KEY_PREFIX.length).split("::");
-        if (parts.length === 2 && parts[0] === company) {
-          keys.push(parts[1]);
+  if (typeof localStorage !== "undefined") {
+    try {
+      const newPrefix = storageKeys.monthCachePrefix + company + "::";
+      const oldPrefix = legacyStorageKeys.monthCachePrefix + company + "::";
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith(newPrefix)) {
+          keys.push(key.slice(newPrefix.length));
+        } else if (key.startsWith(oldPrefix)) {
+          keys.push(key.slice(oldPrefix.length));
         }
       }
+    } catch {
+      // A non-browser caller has no local fallback to consult.
     }
-  } catch (err) {
-    console.error("Failed to read from local storage keys:", err);
   }
-  return keys;
+  const labels = Array.from(new Set(keys));
+  if (labels.length) return { kind: "found", labels };
+  if (!result.ok && result.kind === "unavailable") {
+    return { kind: "unavailable", error: result.error };
+  }
+  return { kind: "found", labels: [] };
 }
 
 export interface EmployeeRate {
@@ -143,79 +182,40 @@ export interface EmployeeRate {
   name: string;
   salaryPerDay: number;
   bonusPerDay: number;
-  /**
-   * Standing package for the fixed-monthly categories, the way salaryPerDay is
-   * the standing rate for Unskilled. Optional so pre-existing records still load.
-   */
   monthlySalary?: number;
   totalSalary?: number;
-  /** Free-text log for this employee (increments, remarks). See EmployeeInput. */
   notes?: string;
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;
 
-const employeeRatesCacheKey = (company: string) => `salary-sheet-employee-rates-${company}-v1`;
-
-// Employee per-day rates are the one thing that must stay identical for every
-// visitor and consistent across every month, so they live in a single small
-// Redis key per company (see api/rates.ts) instead of being duplicated --
-// and able to drift -- inside every month's record.
 export async function getEmployeeRates(company: string): Promise<EmployeeRateMap> {
-  try {
-    const response = await fetch(`/api/rates?company=${encodeURIComponent(company)}&t=${Date.now()}`);
-    if (response.ok) {
-      const data = await response.json();
-      if (data && typeof data === "object") {
-        try {
-          localStorage.setItem(employeeRatesCacheKey(company), JSON.stringify(data));
-        } catch {
-          // ignore storage failures
-        }
-        return data;
-      }
-    }
-  } catch (error) {
-    console.error("Error fetching employee rates:", error);
+  const result = await fetchJson(
+    `/api/rates?company=${encodeURIComponent(company)}&t=${Date.now()}`,
+  );
+  if (result.ok && result.data && typeof result.data === "object") {
+    writeStorage(storageKeys.employeeRates(company), JSON.stringify(result.data));
+    return result.data as EmployeeRateMap;
   }
 
-  // Offline fallback: last-known rates cached on this device.
-  try {
-    const cached = localStorage.getItem(employeeRatesCacheKey(company));
-    if (cached) {
-      return JSON.parse(cached);
+  const cached = readStorage(
+    storageKeys.employeeRates(company),
+    legacyStorageKeys.employeeRates(company),
+  );
+  if (cached) {
+    try {
+      return JSON.parse(cached) as EmployeeRateMap;
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
   return {};
 }
 
 export async function saveEmployeeRates(
   company: string,
-  rates: EmployeeRateMap
+  rates: EmployeeRateMap,
 ): Promise<{ ok: boolean; error?: string }> {
-  try {
-    localStorage.setItem(employeeRatesCacheKey(company), JSON.stringify(rates));
-  } catch {
-    // ignore storage failures
-  }
-
-  try {
-    const response = await fetch("/api/rates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company, rates }),
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Failed to save employee rates:", error);
-      return { ok: false, error };
-    }
-    return { ok: true };
-  } catch (error: any) {
-    console.error("Error saving employee rates:", error);
-    return { ok: false, error: error?.message || String(error) };
-  }
+  writeStorage(storageKeys.employeeRates(company), JSON.stringify(rates));
+  return postJson("/api/rates", { company, rates });
 }
-

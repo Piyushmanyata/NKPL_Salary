@@ -1,0 +1,130 @@
+/* AppBar */
+.appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.appbar-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.title-input {
+  width: clamp(120px, 18ch, 260px);
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.title-input:hover:not(:focus) {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+}
+
+.title-suffix {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-left: -4px;
+}
+
+.month-input {
+  width: clamp(110px, 14ch, 190px);
+  min-height: 36px;
+  margin-left: var(--space-2);
+  font-weight: 700;
+}
+
+.days-chip {
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  border: 1px solid var(--color-primary-border);
+  color: var(--color-primary-strong);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.company-switch {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  margin-bottom: var(--space-3);
+  background: #eef1f6;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+}
+
+.company-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 7px 14px;
+  min-height: 32px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.company-tab:hover {
+  color: #1f2937;
+}
+
+.company-tab.active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.company-tab:active {
+  transform: scale(0.98);
+}
+
+@media (max-width: 720px) {
+  .appbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .appbar-actions {
+    width: 100%;
+  }
+
+  .appbar-actions button {
+    flex: 1;
+  }
+}
+
+@media print {
+  .appbar-actions,
+  .company-switch {
+    display: none !important;
+  }
+}

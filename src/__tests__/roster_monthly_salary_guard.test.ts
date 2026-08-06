@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { juneEmployees } from "../juneEmployees";
-import { sampleEmployees } from "../sampleEmployees";
+import { sampleEmployees } from "./sampleEmployees";
 import type { EmployeeInput } from "../types";
 
 /**
