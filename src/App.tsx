@@ -600,11 +600,6 @@ function App() {
     if (normalized !== monthLabel) return;
     // Never write a roster into a scope it was not loaded for (company switch).
     if (!canSaveForScope(lifecycle, activeCompany, normalized)) return;
-    dispatchLifecycle({
-      type: "SAVE_REQUEST",
-      company: activeCompany,
-      monthLabel: normalized,
-    });
 
     const payload = JSON.stringify({
       company: activeCompany,
@@ -613,6 +608,13 @@ function App() {
       employees,
     });
     if (payload === lastMonthPayloadRef.current) return;
+
+    // Only enter "saving" when a real write is scheduled (after payload check).
+    dispatchLifecycle({
+      type: "SAVE_REQUEST",
+      company: activeCompany,
+      monthLabel: normalized,
+    });
 
     const delayDebounce = setTimeout(async () => {
       try {

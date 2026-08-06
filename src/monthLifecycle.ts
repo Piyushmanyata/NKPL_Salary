@@ -136,13 +136,6 @@ export function monthLifecycleReducer(
       if (!scopesEqual(state.loadedScope, requested)) {
         return state;
       }
-      if (state.status !== "dirty" && state.status !== "error" && state.status !== "saved") {
-        // Allow re-save from dirty/error; also from saved if caller re-requests.
-        if (state.status !== "loaded") {
-          // still allow saving loaded→saving if payload changed externally
-        }
-      }
-      if (!state.loadedScope) return state;
       return {
         ...state,
         status: "saving",
