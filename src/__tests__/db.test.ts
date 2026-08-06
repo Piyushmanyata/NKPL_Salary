@@ -51,6 +51,20 @@ describe("client month persistence results", () => {
       }),
     );
 
-    await expect(getAllMonthLabels("NKPL")).resolves.toEqual(["June 2026", "July 2026"]);
+    await expect(getAllMonthLabels("NKPL")).resolves.toEqual({
+      kind: "found",
+      labels: ["June 2026", "July 2026"],
+    });
+  });
+
+  it("reports an unavailable month list when no local fallback exists", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("redis offline", { status: 503 }),
+    );
+
+    await expect(getAllMonthLabels("APTUS")).resolves.toEqual({
+      kind: "unavailable",
+      error: "redis offline",
+    });
   });
 });

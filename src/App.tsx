@@ -296,14 +296,15 @@ function App() {
     writeStorage(storageKeys.companyLabel(activeCompany), companyName);
   }, [companyName, activeCompany]);
 
-  // Update previous active month/company tracker when data is loaded successfully
+  // Track the last scope the lifecycle actually loaded, not the selection that
+  // briefly renders before its async load has started.
   useEffect(() => {
-    const normalized = normalizeMonthLabel(monthLabel);
-    if (normalized === monthLabel && !showNoDataModal && !dbLoading) {
-      prevMonthRef.current = monthLabel;
-      prevCompanyRef.current = activeCompany;
+    if (!lifecycle.loadedScope || lifecycle.awaitingChoice || lifecycle.status === "loading") {
+      return;
     }
-  }, [monthLabel, activeCompany, showNoDataModal, dbLoading]);
+    prevMonthRef.current = lifecycle.loadedScope.monthLabel;
+    prevCompanyRef.current = lifecycle.loadedScope.company as CompanyCode;
+  }, [lifecycle.loadedScope, lifecycle.awaitingChoice, lifecycle.status]);
 
   // Remember the last-viewed month per company so switching companies restores it
   useEffect(() => {

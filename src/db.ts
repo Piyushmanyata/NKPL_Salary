@@ -20,6 +20,10 @@ export type MonthDataResult =
   | { kind: "empty" }
   | { kind: "unavailable"; error: string };
 
+export type MonthLabelsResult =
+  | { kind: "found"; labels: string[] }
+  | { kind: "unavailable"; error: string };
+
 function recordId(company: string, monthLabel: string) {
   return `${company}::${monthLabel}`;
 }
@@ -139,31 +143,38 @@ export async function getMonthData(
   return { kind: "empty" };
 }
 
-export async function getAllMonthLabels(company: string): Promise<string[]> {
+export async function getAllMonthLabels(company: string): Promise<MonthLabelsResult> {
   const result = await fetchJson(
     `/api/db?company=${encodeURIComponent(company)}&t=${Date.now()}`,
   );
   if (result.ok && Array.isArray(result.data)) {
-    return Array.from(new Set(result.data as string[]));
+    return { kind: "found", labels: Array.from(new Set(result.data as string[])) };
   }
 
   const keys: string[] = [];
-  try {
-    const newPrefix = storageKeys.monthCachePrefix + company + "::";
-    const oldPrefix = legacyStorageKeys.monthCachePrefix + company + "::";
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key.startsWith(newPrefix)) {
-        keys.push(key.slice(newPrefix.length));
-      } else if (key.startsWith(oldPrefix)) {
-        keys.push(key.slice(oldPrefix.length));
+  if (typeof localStorage !== "undefined") {
+    try {
+      const newPrefix = storageKeys.monthCachePrefix + company + "::";
+      const oldPrefix = legacyStorageKeys.monthCachePrefix + company + "::";
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith(newPrefix)) {
+          keys.push(key.slice(newPrefix.length));
+        } else if (key.startsWith(oldPrefix)) {
+          keys.push(key.slice(oldPrefix.length));
+        }
       }
+    } catch {
+      // A non-browser caller has no local fallback to consult.
     }
-  } catch (err) {
-    console.error("Failed to read from local storage keys:", err);
   }
-  return Array.from(new Set(keys));
+  const labels = Array.from(new Set(keys));
+  if (labels.length) return { kind: "found", labels };
+  if (!result.ok && result.kind === "unavailable") {
+    return { kind: "unavailable", error: result.error };
+  }
+  return { kind: "found", labels: [] };
 }
 
 export interface EmployeeRate {

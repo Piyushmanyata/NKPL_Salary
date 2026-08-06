@@ -33,7 +33,7 @@ import {
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
-type CarryResult = "copied" | "missing" | "unavailable";
+type CarryResult = "copied" | "missing" | "unavailable" | "cancelled";
 
 export type MonthLifecycleApi = {
   lifecycle: MonthLifecycleState;
@@ -100,8 +100,14 @@ export function useMonthLifecycle(
   const nextRatesSignature = useMemo(() => ratesSignature(nextRates), [nextRates]);
 
   const carryMonthInto = useCallback(
-    async (source: string, target: string, rates: EmployeeRateMap): Promise<CarryResult> => {
+    async (
+      source: string,
+      target: string,
+      rates: EmployeeRateMap,
+      isCancelled?: () => boolean,
+    ): Promise<CarryResult> => {
       const sourceResult = await getMonthData(activeCompany, source);
+      if (isCancelled?.()) return "cancelled";
       if (sourceResult.kind === "unavailable") return "unavailable";
       if (sourceResult.kind === "empty") return "missing";
 
@@ -109,6 +115,7 @@ export function useMonthLifecycle(
       const carried = hydrateRoster(sourceResult.record.employees, targetDays, rates).map((employee) =>
         carryForwardEmployee(employee, targetDays),
       );
+      if (isCancelled?.()) return "cancelled";
       setEmployees(carried);
       dispatchLifecycle({
         type: "LOAD_SUCCESS",
@@ -163,16 +170,22 @@ export function useMonthLifecycle(
         return;
       }
 
-      const months = sortMonthsChronologically(await getAllMonthLabels(activeCompany));
+      const monthLabels = await getAllMonthLabels(activeCompany);
       if (isCancelled()) return;
+      if (monthLabels.kind === "unavailable") {
+        dispatchLifecycle({ type: "LOAD_ERROR", error: monthLabels.error });
+        return;
+      }
+      const months = sortMonthsChronologically(monthLabels.labels);
       setAllMonths(months);
       const source = pickCarrySource(months, scopeMonthLabel);
       setCopySourceMonth(source);
       const carryResult = source
-        ? await carryMonthInto(source, scopeMonthLabel, rates)
+        ? await carryMonthInto(source, scopeMonthLabel, rates, isCancelled)
         : "missing";
       if (isCancelled()) return;
       if (carryResult === "copied") return;
+      if (carryResult === "cancelled") return;
       if (carryResult === "unavailable") {
         dispatchLifecycle({ type: "LOAD_ERROR", error: "Unable to read the carry-forward month." });
         return;
