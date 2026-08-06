@@ -49,22 +49,31 @@ import {
   alignReferenceEsi,
   calculateSalary,
   clampBasicPercent,
-  clampDays,
-  clampMonthDays,
   currency,
   isSpecialCategory,
   numberValue,
-  repairRates,
   roundMoney,
-  uid,
 } from "./salary";
 import type {
   Category,
   EmployeeInput,
   SalaryRow,
 } from "./types";
-import { buildOfficialRow, normalizeCategory } from "./officialSheet";
+import { buildOfficialRow } from "./officialSheet";
 import { applyEmployeeEdit, type EditableField } from "./editEmployee";
+import {
+  applyEmployeeRates,
+  blankEmployee,
+  buildRateMap,
+  carryForwardEmployee,
+  sanitizeEmployee,
+} from "./roster";
+import {
+  buildOfficialExportRows,
+  buildReferenceExportRows,
+  serializeCsv,
+  serializeSpreadsheetHtml,
+} from "./exportSheet";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
@@ -82,23 +91,6 @@ const COMPANIES = [
 
 type CompanyCode = (typeof COMPANIES)[number]["code"];
 
-const blankEmployee = (monthDays: number): EmployeeInput => ({
-  id: uid(),
-  name: "New Employee",
-  category: "Skilled",
-  monthlySalary: 0,
-  salaryPerDay: 0,
-  bonusPerDay: 0,
-  daysWorked: monthDays,
-  extraDays: 0,
-  basicPercent: 70,
-  pfOptIn: true,
-  esiOptIn: true,
-  advance: undefined,
-  otherDeduction: 0,
-  specialBonus: undefined,
-});
-
 const sum = (rows: SalaryRow[], key: keyof SalaryRow) =>
   rows.reduce((total, row) => total + numberValue(row[key]), 0);
 
@@ -113,17 +105,6 @@ const legacyMonthConfigStorageKey = "salary-sheet-month-config";
 const activeCompanyStorageKey = "salary-sheet-active-company";
 const monthConfigStorageKey = (company: string) => `salary-sheet-month-config-${company}`;
 const companyLabelStorageKey = (company: string) => `salary-sheet-company-label-${company}`;
-const csvEscape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
-const htmlEscape = (value: string | number) =>
-  String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-// Neutralize spreadsheet formula injection: a free-text name starting with
-// =, +, -, or @ would otherwise execute as a formula when the exported
-// CSV/Excel file is opened. Prefixing with an apostrophe forces text.
-const sanitizeSpreadsheetCell = (value: string) => (/^[=+\-@]/.test(value) ? `'${value}` : value);
 
 const monthNames = [
   "january",
@@ -194,84 +175,6 @@ function normalizeMonthLabel(value: string) {
   return `${monthNames[monthIndex][0].toUpperCase()}${monthNames[monthIndex].slice(1)} ${year}`;
 }
 
-const sanitizeEmployee = (value: unknown, index: number, monthDays: number): EmployeeInput | null => {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const row = value as Partial<EmployeeInput> & { isSpecial?: boolean };
-  const name = String(row.name ?? "").trim();
-  const rawMonthlySalary = Math.max(0, numberValue(row.monthlySalary));
-  const hasSalaryPerDay =
-    row.salaryPerDay !== undefined && row.salaryPerDay !== null && String(row.salaryPerDay).trim() !== "";
-
-  // One-release shim: migrate legacy isSpecial flag → Category "Special" (TICKET-01).
-  let category = normalizeCategory(row.category);
-  if (row.isSpecial === true) {
-    category = "Special";
-  }
-  if (category === null) {
-    // Unrecognizable strings fall back visibly to Unskilled rather than salary-band guessing.
-    category = "Unskilled";
-  }
-  const isSpecial = category === "Special";
-  const days = clampMonthDays(monthDays);
-  const rawSalaryPerDay = hasSalaryPerDay ? Math.max(0, numberValue(row.salaryPerDay)) : 0;
-  const rawBonusPerDay = Math.max(0, numberValue(row.bonusPerDay));
-  // One-time rate repair at load (SPEC §2.2.1 / TICKET-04). Persisted after this.
-  const repaired = repairRates(category, rawMonthlySalary, rawSalaryPerDay, rawBonusPerDay, days);
-  const monthlySalary = repaired.monthlySalary;
-  const salaryPerDay = repaired.salaryPerDay;
-  const bonusPerDay = repaired.bonusPerDay;
-
-  if (!name && monthlySalary <= 0 && salaryPerDay <= 0) {
-    return null;
-  }
-
-  return {
-    id: String(row.id || `emp-${Date.now()}-${index}`),
-    name,
-    category,
-    monthlySalary,
-    // Typed package anchor for the fixed-monthly categories; never below M, and
-    // never stored for Unskilled (whose total stays derived from r and b).
-    totalSalary:
-      category === "Unskilled"
-        ? undefined
-        : Math.max(0, numberValue(row.totalSalary)) > monthlySalary
-          ? Math.max(0, numberValue(row.totalSalary))
-          : undefined,
-    salaryPerDay,
-    bonusPerDay,
-    daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
-    // Extra Days are a manual payroll input; only Special has none at all.
-    extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
-    basicPercent: clampBasicPercent(row.basicPercent),
-    pfOptIn: isSpecial ? false : row.pfOptIn !== false,
-    esiOptIn: isSpecial ? false : row.esiOptIn !== false,
-    // Absent stays absent: this one must default to "no consent", never to true
-    // the way esiOptIn does (ADR-0011).
-    esiOverLimitOptIn: !isSpecial && row.esiOverLimitOptIn === true ? true : undefined,
-    // Positive advance = recovered from net. Negatives (legacy UI convention) clamp to absent.
-    advance: row.advance !== undefined && row.advance !== null && String(row.advance).trim() !== "" && numberValue(row.advance) > 0 ? numberValue(row.advance) : undefined,
-    otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
-    // performanceBonus / officialAttendance / officialBonus are not inputs (TICKET-10).
-    // Legacy stored keys are ignored on read and drop out on next save.
-    specialBonus: row.specialBonus !== undefined && row.specialBonus !== null && String(row.specialBonus).trim() !== "" ? numberValue(row.specialBonus) : undefined,
-  };
-};
-
-// A new month inherits the roster and every standing rate from the month
-// before it — salary, allowance, category, PF/ESI choices and TDS all carry.
-  // Reset manual per-month pay inputs so last month's absences are not billed twice.
-const carryForwardEmployee = (employee: EmployeeInput, monthDays: number): EmployeeInput => ({
-  ...employee,
-  daysWorked: clampMonthDays(monthDays),
-  extraDays: 0,
-  advance: undefined,
-  specialBonus: undefined,
-});
-
 // NKPL is the only company with bundled sample/demo data; a newly added
 // company like APTUS starts blank until real employees are entered. Loaded on
 // demand so ~30 kB of seed roster stays out of the initial bundle — it is only
@@ -287,50 +190,6 @@ const defaultEmployeesForCompany = async (
   // sampleEmployees list (May-sourced) omitted people still present in the
   // current payroll roster (e.g. UTTAM DAS, PRIYOJIT GHOSH).
   return (await import("./juneEmployees")).juneEmployees;
-};
-
-// Salary/day and bonus/day are shared across every month for a given
-// employee (see api/rates.ts) -- overlay the shared rate on top of whatever
-// per-month snapshot was loaded so every month always reflects the latest
-// rate, and every employee not yet in the shared store keeps its own value.
-const applyEmployeeRates = (list: EmployeeInput[], rates: EmployeeRateMap): EmployeeInput[] =>
-  list.map((employee) => {
-    const rate = rates[employee.id];
-    if (!rate) {
-      return employee;
-    }
-    const monthlySalary = Math.max(0, numberValue(rate.monthlySalary));
-    const totalSalary = Math.max(0, numberValue(rate.totalSalary));
-    return {
-      ...employee,
-      salaryPerDay: Math.max(0, numberValue(rate.salaryPerDay)),
-      bonusPerDay: Math.max(0, numberValue(rate.bonusPerDay)),
-      // Only overlay a package that was actually stored — a legacy rate blob has
-      // neither field, and a 0 there must never wipe a good monthly salary.
-      ...(monthlySalary > 0 ? { monthlySalary } : {}),
-      ...(totalSalary > monthlySalary ? { totalSalary } : {}),
-      // Notes are per employee, not per month — the shared record owns them.
-      ...(rate.notes ? { notes: rate.notes } : {}),
-    };
-  });
-
-const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
-  const map: EmployeeRateMap = {};
-  list.forEach((employee) => {
-    if (!employee.name.trim()) {
-      return;
-    }
-    map[employee.id] = {
-      id: employee.id,
-      name: employee.name,
-      salaryPerDay: Math.max(0, numberValue(employee.salaryPerDay)),
-      bonusPerDay: Math.max(0, numberValue(employee.bonusPerDay)),
-      monthlySalary: Math.max(0, numberValue(employee.monthlySalary)),
-      totalSalary: Math.max(0, numberValue(employee.totalSalary)),
-      ...(employee.notes?.trim() ? { notes: employee.notes } : {}),
-    };
-  });
-  return map;
 };
 
 function App() {
@@ -1017,61 +876,8 @@ function App() {
 
   const exportRows =
     sheetMode === "main"
-      ? officialRows.map((row, index) => ({
-          "Sl No": index + 1,
-          "Employee Name": sanitizeSpreadsheetCell(row.name),
-          "Source Category": row.sourceCategory,
-          "Wage Category": row.wageCategory,
-          "Employee Types": row.employeeTypes,
-          "Allowed Basic": roundMoney(row.allowedBasic),
-          "Official Basic": roundMoney(row.monthlyBasic),
-          HRA: roundMoney(row.monthlyHra),
-          "Travel Allowance": roundMoney(row.monthlyTravelAllowance),
-          Attendance: row.attendance,
-          "Extra Days": row.extraDays,
-          Bonus: roundMoney(row.bonus),
-          PF: roundMoney(row.pf),
-          ESI: roundMoney(row.esi),
-          "P-Tax": roundMoney(row.professionalTax),
-          // Display sign: negative means recovered (engine stores positive).
-          Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
-          "Other Deduction": roundMoney(row.otherDeduction),
-          "Net Payable": roundMoney(row.netPayable),
-          "Reference Net Payable": roundMoney(row.referenceNetPayable),
-        }))
-      : salaryRows.map((row, index) => ({
-          "Sl No": index + 1,
-          "Employee Name": sanitizeSpreadsheetCell(row.name),
-          Category: row.category,
-          "Basic Percent": row.basicPercent,
-          "Salary Per Day": roundMoney(row.salaryPerDay),
-          "Bonus Per Day": roundMoney(row.bonusPerDay),
-          "Salary Per Month": roundMoney(row.monthlySalary),
-          "Total Salary": roundMoney(row.totalSalary),
-          "Days Worked": row.daysWorked,
-          "Extra Days": row.extraDays,
-          "Absent Days": row.absentDays,
-          "PF Opt In": row.pfOptIn ? "Yes" : "No",
-          "ESI Opt In": row.esiOptIn ? "Yes" : "No",
-          "Absent Deduction": roundMoney(row.absentDeduction),
-          "Earned Salary": roundMoney(row.earnedSalary),
-          "Basic Salary": roundMoney(row.basicSalary),
-           HRA: roundMoney(row.hra),
-          "Travel Allowance": roundMoney(row.travelAllowance),
-          "Performance Bonus": roundMoney(row.performanceBonus),
-          "Special Bonus": roundMoney(row.specialBonus),
-          "Daily Bonus Amount": roundMoney(row.dailyBonus),
-          "Employee PF Deduction": roundMoney(row.employeePf),
-          "Employer PF Contribution": roundMoney(row.employerPf),
-          "ESI Deduction": roundMoney(row.esi),
-          "Employer ESI Contribution": roundMoney(row.employerEsi),
-          "P-Tax": roundMoney(row.professionalTax),
-          // Display sign: negative means recovered (engine stores positive).
-          Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
-          "Other Deduction": roundMoney(row.otherDeduction),
-          "Net Payable": roundMoney(row.netPayable),
-          "Employer Total Cost": roundMoney(row.totalCost),
-        }));
+      ? buildOfficialExportRows(officialRows)
+      : buildReferenceExportRows(salaryRows);
 
   /** Block Official export when any row cannot pack net equality (TICKET-09). */
   const assertOfficialExportAllowed = (): boolean => {
@@ -1088,20 +894,8 @@ function App() {
 
   const exportWorkbook = () => {
     if (!assertOfficialExportAllowed()) return;
-    const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
-    const body = exportRows
-      .map(
-        (row) =>
-          `<tr>${headers
-            .map((header) => `<td>${htmlEscape(row[header as keyof typeof row] ?? "")}</td>`)
-            .join("")}</tr>`,
-      )
-      .join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table><thead><tr>${headers
-      .map((header) => `<th>${htmlEscape(header)}</th>`)
-      .join("")}</tr></thead><tbody>${body}</tbody></table></body></html>`;
     downloadBlob(
-      html,
+      serializeSpreadsheetHtml(exportRows),
       `${companyName || "Company"} ${sheetMode === "main" ? "Official Main Sheet" : "Reference Salary Sheet"} ${monthLabel}.xls`,
       "application/vnd.ms-excel;charset=utf-8;",
     );
@@ -1109,14 +903,11 @@ function App() {
 
   const exportCsv = () => {
     if (!assertOfficialExportAllowed()) return;
-    const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
-    const csv = [
-      headers.map(csvEscape).join(","),
-      ...exportRows.map((row) =>
-        headers.map((header) => csvEscape(row[header as keyof typeof row] ?? "")).join(","),
-      ),
-    ].join("\n");
-    downloadBlob(csv, `${companyName || "Company"} ${sheetMode === "main" ? "Official Main Sheet" : "Reference Salary Sheet"} ${monthLabel}.csv`, "text/csv;charset=utf-8;");
+    downloadBlob(
+      serializeCsv(exportRows),
+      `${companyName || "Company"} ${sheetMode === "main" ? "Official Main Sheet" : "Reference Salary Sheet"} ${monthLabel}.csv`,
+      "text/csv;charset=utf-8;",
+    );
   };
 
   const downloadBlob = (content: string, fileName: string, type: string) => {
