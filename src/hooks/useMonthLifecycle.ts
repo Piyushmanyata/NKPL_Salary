@@ -65,6 +65,10 @@ function ratesSignature(rates: EmployeeRateMap): string {
   return JSON.stringify(rates);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function defaultEmployeesForCompany(company: string): Promise<EmployeeInput[]> {
   if (company !== "NKPL") return [];
   return (await import("../juneEmployees")).juneEmployees;
@@ -197,7 +201,11 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
     });
-    void loadScope(() => cancelled);
+    void loadScope(() => cancelled).catch((error: unknown) => {
+      if (!cancelled) {
+        dispatchLifecycle({ type: "LOAD_ERROR", error: errorMessage(error) });
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -211,7 +219,11 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
     });
-    void loadScope(() => cancelled);
+    void loadScope(() => cancelled).catch((error: unknown) => {
+      if (!cancelled) {
+        dispatchLifecycle({ type: "LOAD_ERROR", error: errorMessage(error) });
+      }
+    });
     return () => {
       cancelled = true;
     };
