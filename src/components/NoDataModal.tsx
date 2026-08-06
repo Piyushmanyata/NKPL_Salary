@@ -1,3 +1,4 @@
+import "./NoDataModal.module.css";
 export function NoDataModal({
   activeCompany,
   companyName,

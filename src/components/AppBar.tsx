@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   RefreshCw,
 } from "lucide-react";
+import styles from "./AppBar.module.css";
 
 export type CompanyOption = { code: string; label: string };
 
@@ -41,16 +42,16 @@ export function AppBar({
   onExportWorkbook: () => void;
 }) {
   return (
-    <section className="appbar">
-      <div className="appbar-identity">
-        <div className="company-switch" role="tablist" aria-label="Select company">
+    <section className={styles.appbar}>
+      <div className={styles.appbarIdentity}>
+        <div className={styles.companySwitch} role="tablist" aria-label="Select company">
           {companies.map((company) => (
             <button
               key={company.code}
               type="button"
               role="tab"
               aria-selected={activeCompany === company.code}
-              className={`company-tab ${activeCompany === company.code ? "active" : ""}`}
+              className={`${styles.companyTab} ${activeCompany === company.code ? styles.active : ""}`}
               onClick={() => onSwitchCompany(company.code)}
             >
               <Building2 size={14} />
@@ -59,15 +60,15 @@ export function AppBar({
           ))}
         </div>
         <input
-          className="title-input"
+          className={styles.titleInput}
           value={companyName}
           aria-label="Company name"
           title="Company name"
           onChange={(event) => onCompanyNameChange(event.target.value)}
         />
-        <span className="title-suffix">Payroll</span>
+        <span className={styles.titleSuffix}>Payroll</span>
         <input
-          className="month-input"
+          className={styles.monthInput}
           value={monthLabel}
           aria-label="Month"
           title="Month"
@@ -75,13 +76,13 @@ export function AppBar({
           onChange={(event) => onMonthLabelChange(event.target.value)}
         />
         <span
-          className="days-chip"
+          className={styles.daysChip}
           title="Calendar days, derived from the month label (not editable)"
         >
           {effectiveMonthDays} days
         </span>
       </div>
-      <div className="appbar-actions">
+      <div className={styles.appbarActions}>
         <button
           className="ghost-button"
           type="button"

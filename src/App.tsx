@@ -72,6 +72,7 @@ import { TotalsStrip } from "./components/TotalsStrip";
 import { useGridNavigation } from "./hooks/useGridNavigation";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
+import styles from "./App.module.css";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 
@@ -897,7 +898,7 @@ function App() {
           </button>
         </div>
       )}
-      <main className="app-shell">
+      <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
             of permanent scroll depth, so the company and month became inline
@@ -924,19 +925,19 @@ function App() {
             row at the foot of the table is its filtered counterpart. */}
         <TotalsStrip totals={totals} />
 
-        <section className="workspace-grid">
-          <article className="panel table-panel">
+        <section className={styles.workspaceGrid}>
+          <article className={`panel ${styles.tablePanel}`}>
             {/* Tabs, not a label-flipping toggle. The old button read "Show Main
                 Sheet" while you were on Reference, so the control announced the
                 opposite of the current state — and the two sheets differ in
                 columns, ESI treatment and whether export is allowed. */}
             <div className="panel-heading">
-              <div className="sheet-tabs" role="tablist" aria-label="Select sheet">
+              <div className={styles.sheetTabs} role="tablist" aria-label="Select sheet">
                 <button
                   type="button"
                   role="tab"
                   aria-selected={sheetMode === "reference"}
-                  className={`sheet-tab ${sheetMode === "reference" ? "active" : ""}`}
+                  className={`${styles.sheetTab} ${sheetMode === "reference" ? styles.active : ""}`}
                   onClick={() => setSheetMode("reference")}
                 >
                   <Calculator size={15} />
@@ -946,14 +947,14 @@ function App() {
                   type="button"
                   role="tab"
                   aria-selected={sheetMode === "main"}
-                  className={`sheet-tab ${sheetMode === "main" ? "active" : ""}`}
+                  className={`${styles.sheetTab} ${sheetMode === "main" ? styles.active : ""}`}
                   onClick={() => setSheetMode("main")}
                 >
                   <FileSpreadsheet size={15} />
                   Main Sheet
                   {totals.unpackableCount > 0 ? (
                     <span
-                      className="tab-badge"
+                      className={styles.tabBadge}
                       title={`${totals.unpackableCount} unpackable row(s) — Excel export is blocked`}
                     >
                       {totals.unpackableCount}
@@ -962,7 +963,7 @@ function App() {
                 </button>
               </div>
               <div className="panel-actions">
-                <span className="search-box">
+                <span className={styles.searchBox}>
                   <Search size={16} />
                   <input
                     value={query}
@@ -984,7 +985,7 @@ function App() {
             <div
               ref={tableWrapRef}
               onKeyDown={handleGridKey}
-              className={`table-wrap ${sheetMode === "main" ? "table-wrap--official" : ""}`}
+              className={`${styles.tableWrap} ${sheetMode === "main" ? styles.tableWrapOfficial : ""}`}
             >
               {sheetMode === "reference" ? (
                 <ReferenceSheet

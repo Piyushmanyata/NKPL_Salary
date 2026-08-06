@@ -1,5 +1,6 @@
 import { BarChart3 } from "lucide-react";
 import { currency } from "../salary";
+import styles from "./SidePanel.module.css";
 
 export type CategoryTotal = { category: string; total: number };
 
@@ -11,7 +12,7 @@ export function SidePanel({
   netTotal: number;
 }) {
   return (
-    <aside className="side-stack">
+    <aside className={styles.sideStack}>
       <article className="panel">
         <div className="panel-heading compact">
           <div>
@@ -19,16 +20,16 @@ export function SidePanel({
             <p>Largest groups</p>
           </div>
         </div>
-        <div className="bar-list">
+        <div className={styles.barList}>
           {categoryTotals.map((item) => {
             const width = netTotal ? Math.max(8, (item.total / netTotal) * 100) : 0;
             return (
-              <div className="bar-row" key={item.category}>
-                <div className="bar-label">
+              <div className={styles.barRow} key={item.category}>
+                <div className={styles.barLabel}>
                   <span>{item.category}</span>
                   <strong>{currency(item.total)}</strong>
                 </div>
-                <div className="bar-track">
+                <div className={styles.barTrack}>
                   <span style={{ width: `${width}%` }} />
                 </div>
               </div>

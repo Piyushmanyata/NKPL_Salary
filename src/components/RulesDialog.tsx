@@ -9,6 +9,7 @@ import {
   TA_SHARE_OF_BALANCE,
 } from "../salary";
 import { Rule } from "./Rule";
+import styles from "./RulesDialog.module.css";
 
 export function RulesDialog({
   effectiveMonthDays,
@@ -22,10 +23,10 @@ export function RulesDialog({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal rules-modal"
+        className={`modal ${styles.rulesModal}`}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="rules-modal-head">
+        <div className={styles.rulesModalHead}>
           <div>
             <span className="modal-eyebrow">Reference</span>
             <h2>Calculation Rules</h2>
@@ -34,7 +35,7 @@ export function RulesDialog({
             <X size={18} />
           </button>
         </div>
-        <div className="rule-list">
+        <div className={styles.ruleList}>
           <Rule label="Category" value="Chosen per employee — Unskilled, Semi-skilled, Skilled or Special. Never inferred from salary." />
           <Rule label="Salary Anchor" value="Unskilled is anchored on salary/day; the rest on salary/month. Either can be typed — Settings has a Per Day / Per Month switch." />
           <Rule label="Calendar Days" value={`${effectiveMonthDays} days for ${monthLabel || "selected month"}`} />

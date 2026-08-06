@@ -1,0 +1,35 @@
+/* Rules dialog extras on top of shared modal chrome */
+.rules-modal {
+  width: min(100% - 32px, 900px);
+  height: auto;
+  max-height: min(100% - 32px, 760px);
+  padding: var(--space-5);
+}
+
+.rules-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.rule-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.rules-modal .rule-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-5);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .rules-modal .rule-list {
+    grid-template-columns: 1fr;
+  }
+}

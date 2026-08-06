@@ -1,4 +1,5 @@
 import { Cloud, Wifi, X } from "lucide-react";
+import "./DatabaseModal.module.css";
 
 export function DatabaseModal({ onClose }: { onClose: () => void }) {
   return (

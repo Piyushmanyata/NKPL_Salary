@@ -10,6 +10,7 @@ import {
 import type { Category, SalaryRow } from "../types";
 import { EmployeeSettingsPanel } from "./EmployeeSettingsPanel";
 import { NumberInput } from "./NumberInput";
+import styles from "./ReferenceSheet.module.css";
 
 const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 const num = (value: number) => numberFormat.format(Number.isFinite(value) ? value : 0);
@@ -58,7 +59,7 @@ export function ReferenceSheet({
     sortField === field ? (sortDirection === "asc" ? " ↑" : " ↓") : "";
 
   return (
-    <table>
+    <table className={styles.referenceTable}>
       <thead>
         <tr>
           <th onClick={() => onSort("name")} className="sortable-th">

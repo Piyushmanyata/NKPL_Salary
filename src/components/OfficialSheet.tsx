@@ -1,6 +1,7 @@
 import { Search, Users } from "lucide-react";
 import type { OfficialRow } from "../officialSheet";
 import { currency, numberValue, roundMoney } from "../salary";
+import styles from "./OfficialSheet.module.css";
 
 const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 const num = (value: number) => numberFormat.format(Number.isFinite(value) ? value : 0);
@@ -33,7 +34,7 @@ export function OfficialSheet({
     }, 0);
 
   return (
-    <table className="official-table">
+    <table className={styles.officialTable}>
       <thead>
         <tr>
           <th onClick={() => onSort("name")} className="sortable-th">

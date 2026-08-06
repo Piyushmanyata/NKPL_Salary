@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { numberValue } from "../salary";
+import "./NumberInput.module.css";
 
 export function NumberInput({
   value,

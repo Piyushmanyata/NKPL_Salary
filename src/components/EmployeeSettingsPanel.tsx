@@ -11,6 +11,7 @@ import {
 } from "../salary";
 import type { SalaryRow } from "../types";
 import { NumberInput } from "./NumberInput";
+import styles from "./EmployeeSettingsPanel.module.css";
 
 export function EmployeeSettingsPanel({
   row,
@@ -36,18 +37,18 @@ export function EmployeeSettingsPanel({
   return (
     <tr className="settings-row">
       <td colSpan={15}>
-        <div className="settings-panel">
+        <div className={styles.settingsPanel}>
           {/* Salary can be typed either way round — the button
               switches the input mode and converts (M = D × r).
               The stored anchor still follows Category (SPEC §2.2):
               Unskilled keeps the day rate, the rest keep the
               monthly package. Special has no day rate at all. */}
           {!isSpecial ? (
-            <div className="settings-column">
+            <div className={styles.settingsColumn}>
               <span>Salary Input</span>
               <button
                 type="button"
-                className="rate-mode-toggle"
+                className={styles.rateModeToggle}
                 aria-pressed={perDayInput}
                 title="Switch between typing salary per day and per month"
                 onClick={onToggleRateMode}
@@ -63,7 +64,7 @@ export function EmployeeSettingsPanel({
           ) : null}
           {perDayInput ? (
             <>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Salary per Day</span>
                 <NumberInput
                   value={row.salaryPerDay}
@@ -72,7 +73,7 @@ export function EmployeeSettingsPanel({
                 />
                 <small>Applies to every month for this employee</small>
               </div>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Bonus per Day</span>
                 <NumberInput
                   value={row.bonusPerDay}
@@ -81,12 +82,12 @@ export function EmployeeSettingsPanel({
                 />
                 <small>Applies to every month for this employee</small>
               </div>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Salary per Month</span>
                 <strong>{currency(row.monthlySalary)}</strong>
                 <small>{effectiveMonthDays} days &times; {currency(row.salaryPerDay)}</small>
               </div>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Total Salary</span>
                 <strong>{currency(row.totalSalary)}</strong>
                 <small>{effectiveMonthDays} days &times; ({currency(row.salaryPerDay)} + {currency(row.bonusPerDay)})</small>
@@ -94,7 +95,7 @@ export function EmployeeSettingsPanel({
             </>
           ) : (
             <>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Salary per Month</span>
                 <NumberInput
                   value={row.monthlySalary}
@@ -107,7 +108,7 @@ export function EmployeeSettingsPanel({
                     : `Day rate ${currency(row.salaryPerDay)} is derived from it`}
                 </small>
               </div>
-              <div className="settings-column">
+              <div className={styles.settingsColumn}>
                 <span>Allowance / Month</span>
                 <NumberInput
                   value={Math.max(0, roundMoney(row.totalSalary - row.monthlySalary))}
@@ -123,7 +124,7 @@ export function EmployeeSettingsPanel({
               </div>
             </>
           )}
-          <div className="settings-column">
+          <div className={styles.settingsColumn}>
             <span>TDS</span>
             <NumberInput
               value={row.otherDeduction}
@@ -131,11 +132,11 @@ export function EmployeeSettingsPanel({
               onChange={(value) => onUpdate("otherDeduction", value)}
             />
           </div>
-          <div className="settings-column">
+          <div className={styles.settingsColumn}>
             <span>Basic %</span>
             <strong>{row.basicPercent}%</strong>
             <input
-              className="basic-slider"
+              className={styles.basicSlider}
               type="range"
               min={MIN_BASIC_PERCENT}
               max={MAX_BASIC_PERCENT}
@@ -146,20 +147,20 @@ export function EmployeeSettingsPanel({
               }
             />
           </div>
-          <div className="settings-column">
+          <div className={styles.settingsColumn}>
             <span>PF</span>
             <strong>{row.pfOptIn ? "On" : "Off"}</strong>
             <small>{row.monthlySalary * (row.basicPercent / 100) > PF_BASIC_LIMIT ? `PF is off automatically above ${currency(PF_BASIC_LIMIT)} Basic` : "Toggle controls employee PF choice"}</small>
             <button
               type="button"
-              className={row.pfOptIn ? "toggle-on" : "toggle-off"}
+              className={row.pfOptIn ? styles.toggleOn : styles.toggleOff}
               disabled={isSpecial}
               onClick={() => onUpdate("pfOptIn", !row.pfOptIn)}
             >
               {row.pfOptIn ? "Turn Off" : "Turn On"}
             </button>
           </div>
-          <div className="settings-column">
+          <div className={styles.settingsColumn}>
             <span>ESI</span>
             <strong>{row.esiOptIn ? "On" : "Off"}</strong>
             {/* Clamped to two lines in CSS, so the full
@@ -182,7 +183,7 @@ export function EmployeeSettingsPanel({
             </small>
             <button
               type="button"
-              className={row.esiOptIn ? "toggle-on" : "toggle-off"}
+              className={row.esiOptIn ? styles.toggleOn : styles.toggleOff}
               disabled={isSpecial}
               onClick={() =>
                 esiOverLimit
@@ -197,22 +198,22 @@ export function EmployeeSettingsPanel({
               text; it is already an editable dropdown in
               the row itself, and its Special explanation
               now lives on that dropdown's tooltip. */}
-          <div className="settings-column">
+          <div className={styles.settingsColumn}>
             <span>Notes</span>
             <button
               type="button"
-              className="notes-toggle"
+              className={styles.notesToggle}
               aria-expanded={notesOpen}
               onClick={onToggleNotes}
             >
-              <ChevronDown size={13} className={notesOpen ? "rot" : undefined} />
+              <ChevronDown size={13} className={notesOpen ? styles.rot : undefined} />
               {row.notes?.trim() ? "Edit notes" : "Add notes"}
             </button>
           </div>
           {notesOpen ? (
-            <div className="settings-column settings-column--full">
+            <div className={`${styles.settingsColumn} ${styles.settingsColumnFull}`}>
               <textarea
-                className="notes-input"
+                className={styles.notesInput}
                 rows={3}
                 placeholder={"Increments and anything else worth keeping.\nApr-26 +500 allowance (now 1500)"}
                 value={row.notes ?? ""}

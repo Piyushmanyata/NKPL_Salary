@@ -1,4 +1,5 @@
 import { AlertTriangle, Check } from "lucide-react";
+import styles from "./Toast.module.css";
 
 export type ToastState = { message: string; type: "success" | "error" } | null;
 
@@ -11,7 +12,7 @@ export function Toast({
 }) {
   return (
     <div
-      className={`custom-toast ${toast.type}`}
+      className={`${styles.customToast} ${styles[toast.type]}`}
       role="status"
       aria-live="polite"
       onClick={onDismiss}

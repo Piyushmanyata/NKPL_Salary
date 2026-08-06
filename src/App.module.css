@@ -1,0 +1,149 @@
+/* App shell */
+.app-shell {
+  width: min(100%, 1680px);
+  margin: 0 auto;
+  padding: var(--space-4) 14px 24px;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.table-panel {
+  overflow: hidden;
+}
+
+.sheet-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: #eef1f6;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+}
+
+.sheet-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 6px 14px;
+  min-height: 30px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-muted);
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.sheet-tab:hover {
+  color: #1f2937;
+}
+
+.sheet-tab.active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.tab-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger-strong);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.search-box {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  width: clamp(160px, 24ch, 260px);
+  min-height: 34px;
+  padding: 0 10px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--color-primary);
+  background: var(--surface-raised);
+  box-shadow: var(--ring);
+}
+
+.search-box svg {
+  color: var(--text-faint);
+}
+
+.search-box input,
+.search-box input:focus {
+  border: 0;
+  padding: 0;
+  min-height: 30px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 205px);
+  min-height: 260px;
+  overscroll-behavior: contain;
+}
+
+.table-wrap table {
+  min-width: 1080px;
+}
+
+.table-wrap--official {
+  /* Marker class retained for parity with prior markup; no extra rules. */
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100% - 16px, 1680px);
+    padding: var(--space-3) var(--space-2) 24px;
+  }
+
+  .table-wrap {
+    max-height: none;
+  }
+}
+
+@media print {
+  .panel-actions,
+  .sheet-tabs {
+    display: none !important;
+  }
+
+  .app-shell {
+    width: 100%;
+    padding: 0;
+  }
+
+  .workspace-grid {
+    display: block;
+  }
+
+  .table-wrap {
+    overflow: visible;
+    max-height: none;
+  }
+}

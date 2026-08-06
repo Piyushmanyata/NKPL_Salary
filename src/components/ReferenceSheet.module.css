@@ -1,0 +1,58 @@
+/* Reference sheet column layout + row markers */
+.reference-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+}
+
+/* Reference sheet, 15 columns after merging Days+Extra and the two action buttons. */
+.reference-table th:nth-child(1),
+.reference-table td:nth-child(1) {
+  width: 15%;
+}
+
+.reference-table th:nth-child(2),
+.reference-table td:nth-child(2) {
+  width: 9%;
+}
+
+.reference-table th:nth-child(3),
+.reference-table td:nth-child(3) {
+  width: 8.5%;
+}
+
+.reference-table th:nth-child(4),
+.reference-table td:nth-child(4),
+.reference-table th:nth-child(5),
+.reference-table td:nth-child(5),
+.reference-table th:nth-child(6),
+.reference-table td:nth-child(6),
+.reference-table th:nth-child(7),
+.reference-table td:nth-child(7),
+.reference-table th:nth-child(8),
+.reference-table td:nth-child(8),
+.reference-table th:nth-child(9),
+.reference-table td:nth-child(9),
+.reference-table th:nth-child(10),
+.reference-table td:nth-child(10),
+.reference-table th:nth-child(11),
+.reference-table td:nth-child(11),
+.reference-table th:nth-child(12),
+.reference-table td:nth-child(12),
+.reference-table th:nth-child(13),
+.reference-table td:nth-child(13) {
+  width: 5.8%;
+}
+
+.reference-table th:nth-child(14),
+.reference-table td:nth-child(14) {
+  width: 7.5%;
+}
+
+.reference-table th:nth-child(15),
+.reference-table td:nth-child(15) {
+  width: 6%;
+}
