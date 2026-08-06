@@ -1,3 +1,7 @@
+<!-- Issue #26 note: This repository is a single-app payroll tool. Prefer
+     docs/HANDOFF.md + docs/SPEC-payroll.md + docs/adr over the full multi-agent
+     ceremony below unless the task is Substantial (money, migrations, multi-file
+     architecture). Trivial and Standard work: inspect → smallest change → test. -->
 # AGENTS.md — Planning-First Multi-Agent Execution Protocol
 
 ## Agent skills
@@ -1130,3 +1134,4 @@ Replanning is correct behavior, not failure.
 ## 25. Core Principle
 
 **Triage first. Understand deeply. Plan in proportion to risk. Delegate only when it pays. Execute in controlled batches. Verify with evidence. Prove completion.**
+

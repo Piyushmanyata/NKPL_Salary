@@ -13,8 +13,7 @@
     "ioredis": "^5.11.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.16",
@@ -23,7 +22,8 @@
     "@vitejs/plugin-react": "^5.2.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.1",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.62.2"
