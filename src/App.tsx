@@ -53,7 +53,6 @@ import {
   clampMonthDays,
   currency,
   isSpecialCategory,
-  monthlyFromDaily,
   numberValue,
   repairRates,
   roundMoney,
@@ -65,6 +64,7 @@ import type {
   SalaryRow,
 } from "./types";
 import { buildOfficialRow, normalizeCategory } from "./officialSheet";
+import { applyEmployeeEdit, type EditableField } from "./editEmployee";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 import {
@@ -120,8 +120,6 @@ const htmlEscape = (value: string | number) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-const booleanValue = (value: unknown) =>
-  value === true || value === "true" || value === "yes" || value === "on" || value === 1;
 // Neutralize spreadsheet formula injection: a free-text name starting with
 // =, +, -, or @ would otherwise execute as a formula when the exported
 // CSV/Excel file is opened. Prefixing with an apostrophe forces text.
@@ -668,168 +666,19 @@ function App() {
 
   const updateEmployee = (
     id: string,
-    field: keyof EmployeeInput | "allowance",
+    field: EditableField,
     value: string | number | boolean | undefined,
   ) => {
     if (id === newlyAddedId && field === "name") {
       setNewlyAddedId(null);
     }
-    setEmployees((current) => {
-      const next = current.map((employee) => {
-        if (employee.id !== id) {
-          return employee;
-        }
-
-        if (field === "name") {
-          const nameStr = String(value);
-          if (isSpecialCategory(employee.category)) {
-            return {
-              ...employee,
-              name: nameStr,
-              daysWorked: effectiveMonthDays,
-              pfOptIn: false,
-              esiOptIn: false,
-            };
-          }
-          return { ...employee, name: nameStr };
-        }
-
-        // Free text — must never reach the numeric fallthrough at the bottom.
-        if (field === "notes") {
-          const notes = String(value ?? "");
-          return { ...employee, notes: notes.trim() ? notes : undefined };
-        }
-
-        if (field === "category") {
-          const next = normalizeCategory(value) ?? employee.category;
-          if (next === "Special") {
-            return {
-              ...employee,
-              category: next,
-              salaryPerDay: 0,
-              bonusPerDay: 0,
-              extraDays: 0,
-              daysWorked: effectiveMonthDays,
-              pfOptIn: false,
-              esiOptIn: false,
-            };
-          }
-          return { ...employee, category: next };
-        }
-
-        if (field === "pfOptIn" || field === "esiOptIn" || field === "esiOverLimitOptIn") {
-          if (isSpecialCategory(employee.category)) {
-            return { ...employee, pfOptIn: false, esiOptIn: false, esiOverLimitOptIn: undefined };
-          }
-          if (field === "esiOverLimitOptIn") {
-            // Only ever stored as an explicit true; off is the absence of consent.
-            // esiOptIn moves with it so the two can never contradict each other
-            // if the package later drops back under the limit.
-            const on = booleanValue(value);
-            return {
-              ...employee,
-              esiOverLimitOptIn: on ? true : undefined,
-              esiOptIn: on,
-            };
-          }
-          return {
-            ...employee,
-            [field]: booleanValue(value),
-          };
-        }
-
-        // M and the Monthly Allowance are what the user types for the fixed-monthly
-        // categories; T = M + allowance is the stored anchor and b is derived from it.
-        // Editing M holds the allowance and carries T along; editing the allowance
-        // leaves M alone. T at or below M means "no allowance".
-        if (field === "monthlySalary" || field === "totalSalary" || field === "allowance") {
-          const D = effectiveMonthDays;
-          const oldM = Math.max(0, numberValue(employee.monthlySalary));
-          const oldT = Math.max(0, numberValue(employee.totalSalary));
-          const bonus = oldT > oldM ? (oldT - oldM) / D : Math.max(0, numberValue(employee.bonusPerDay));
-          const typed = Math.max(0, numberValue(value));
-          const monthlySalary = field === "monthlySalary" ? typed : oldM;
-          // Unskilled stays anchored on the day rate (SPEC §2.2): a monthly figure
-          // typed through the Per Month toggle is stored as M / D, and its monthly
-          // allowance as allowance / D. Nothing else changes shape.
-          if (employee.category === "Unskilled") {
-            // Full precision on the way in: rounding r to paise meant a typed
-            // 12,000 came back as D × 387.10 = 11,999.10, i.e. the box refused
-            // the number entered. M = D × r now round-trips exactly.
-            return {
-              ...employee,
-              monthlySalary,
-              salaryPerDay: monthlySalary / D,
-              bonusPerDay: field === "allowance" ? typed / D : employee.bonusPerDay,
-            };
-          }
-          const total =
-            field === "totalSalary"
-              ? typed
-              : field === "allowance"
-                ? monthlySalary + typed
-                : monthlySalary + D * bonus;
-          return {
-            ...employee,
-            monthlySalary,
-            totalSalary: total > monthlySalary ? roundMoney(total) : undefined,
-          };
-        }
-
-        // Mirror of the branch above for the Per Day input mode. Unskilled already
-        // anchors on r; for the fixed-monthly categories a typed day rate sets the
-        // package M = D × r and keeps whatever allowance was already on the row.
-        if (field === "salaryPerDay" && employee.category !== "Unskilled") {
-          const salaryPerDay = Math.max(0, numberValue(value));
-          const monthlySalary = monthlyFromDaily(salaryPerDay, effectiveMonthDays);
-          const allowance = Math.max(
-            0,
-            Math.max(0, numberValue(employee.totalSalary)) -
-              Math.max(0, numberValue(employee.monthlySalary)),
-          );
-          return {
-            ...employee,
-            salaryPerDay,
-            monthlySalary,
-            totalSalary: allowance > 0 ? roundMoney(monthlySalary + allowance) : undefined,
-          };
-        }
-
-        if (field === "basicPercent") {
-          const basicPercent = clampBasicPercent(value);
-          return {
-            ...employee,
-            basicPercent,
-          };
-        }
-
-        if (field === "advance") {
-          const val = value === undefined || value === "" ? undefined : Number(value);
-          // Reject negatives: advance is stored positive and always subtracted (TICKET-06).
-          if (val !== undefined && (Number.isNaN(val) || val < 0)) {
-            return { ...employee, advance: undefined };
-          }
-          return {
-            ...employee,
-            advance: val === 0 || val === undefined ? undefined : val,
-          };
-        }
-
-        if (field === "specialBonus") {
-          const val = value === undefined || value === "" ? undefined : Number(value);
-          return {
-            ...employee,
-            specialBonus: val,
-          };
-        }
-
-        const numericValue = numberValue(value);
-        const updated = { ...employee, [field]: numericValue };
-
-        return updated;
-      });
-      return next;
-    });
+    setEmployees((current) =>
+      current.map((employee) =>
+        employee.id !== id
+          ? employee
+          : applyEmployeeEdit(employee, field, value, effectiveMonthDays),
+      ),
+    );
   };
 
   const addEmployee = () => {
