@@ -1,5 +1,3 @@
-import type { EmployeeInput } from "./types";
-
 export type LifecycleStatus =
   | "loading"
   | "loaded"
@@ -9,53 +7,52 @@ export type LifecycleStatus =
   | "error";
 
 export type Scope = { company: string; monthLabel: string };
+export type WriteKind = "month" | "rates";
+
+export type PendingWrite = Scope & {
+  kind: WriteKind;
+  signature: string;
+};
 
 export type MonthLifecycleState = {
   status: LifecycleStatus;
-  /** What `roster` actually belongs to. Saves must target this, never a different selection. */
+  /** What the live roster belongs to. Saves must target this, never a different selection. */
   loadedScope: Scope | null;
-  roster: EmployeeInput[];
-  /** Currently selected month label (may differ from loadedScope during a switch). */
-  monthLabel: string;
-  allMonths: string[];
+  /** A no-data modal is open; no write is legal until the user makes a choice. */
+  awaitingChoice: boolean;
+  /** The first save intent after hydration is consumed without writing. */
+  suppressNextSave: boolean;
+  /** Identity of the last month payload successfully written. */
+  lastMonthSignature: string | null;
+  /** Identity of the last shared Rate Card successfully written. */
+  lastRatesSignature: string | null;
   saveError: string | null;
   retryToken: number;
+  pendingWrite: PendingWrite | null;
 };
 
 export type MonthLifecycleAction =
   | { type: "SELECT_SCOPE"; company: string; monthLabel: string }
-  | {
-      type: "LOAD_SUCCESS";
-      company: string;
-      monthLabel: string;
-      roster: EmployeeInput[];
-      allMonths?: string[];
-    }
-  | {
-      type: "LOAD_EMPTY";
-      company: string;
-      monthLabel: string;
-      allMonths: string[];
-    }
+  | { type: "LOAD_SUCCESS"; company: string; monthLabel: string }
+  | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
   | { type: "LOAD_ERROR"; error: string }
-  | { type: "EDIT_ROSTER"; roster: EmployeeInput[] }
-  | { type: "SAVE_REQUEST"; company: string; monthLabel: string }
-  | { type: "SAVE_SUCCESS" }
+  | { type: "SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
+  | { type: "RATES_SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
+  | { type: "SAVE_SUCCESS"; kind?: WriteKind; signature?: string }
   | { type: "SAVE_ERROR"; error: string }
-  | { type: "RETRY" }
-  | { type: "SET_ALL_MONTHS"; allMonths: string[] }
-  | { type: "REMEMBER_MONTH"; monthLabel: string }
-  | { type: "SET_MONTH_LABEL"; monthLabel: string };
+  | { type: "RETRY" };
 
-export function initialLifecycleState(monthLabel: string): MonthLifecycleState {
+export function initialLifecycleState(_monthLabel: string): MonthLifecycleState {
   return {
     status: "loading",
     loadedScope: null,
-    roster: [],
-    monthLabel,
-    allMonths: [],
+    awaitingChoice: false,
+    suppressNextSave: false,
+    lastMonthSignature: null,
+    lastRatesSignature: null,
     saveError: null,
     retryToken: 0,
+    pendingWrite: null,
   };
 }
 
@@ -63,11 +60,58 @@ function scopesEqual(a: Scope | null, b: Scope): boolean {
   return Boolean(a && a.company === b.company && a.monthLabel === b.monthLabel);
 }
 
+function canStartWrite(state: MonthLifecycleState, scope: Scope): boolean {
+  return Boolean(
+    scopesEqual(state.loadedScope, scope) &&
+      state.status !== "loading" &&
+      state.status !== "saving" &&
+      state.status !== "error" &&
+      !state.awaitingChoice &&
+      !state.suppressNextSave &&
+      !state.pendingWrite,
+  );
+}
+
+function lastSignatureFor(state: MonthLifecycleState, kind: WriteKind): string | null {
+  return kind === "month" ? state.lastMonthSignature : state.lastRatesSignature;
+}
+
+function requestWrite(
+  state: MonthLifecycleState,
+  kind: WriteKind,
+  scope: Scope,
+  signature: string,
+): MonthLifecycleState {
+  if (!scopesEqual(state.loadedScope, scope)) return state;
+  if (
+    state.status === "loading" ||
+    state.status === "saving" ||
+    state.status === "error" ||
+    state.awaitingChoice ||
+    state.pendingWrite
+  ) {
+    return state;
+  }
+
+  if (state.suppressNextSave) {
+    return { ...state, suppressNextSave: false };
+  }
+
+  if (lastSignatureFor(state, kind) === signature) return state;
+
+  return {
+    ...state,
+    status: "saving",
+    saveError: null,
+    pendingWrite: { kind, ...scope, signature },
+  };
+}
+
 /**
  * Pure month lifecycle reducer.
- * Scope Guard: a SAVE_REQUEST whose company/month is not loadedScope is rejected
- * (status stays; no transition to saving). That makes cross-Company writes
- * structurally impossible rather than comment-enforced.
+ *
+ * The Scope Guard and every write gate live here. Effects may dispatch intents
+ * and perform the pending I/O, but they cannot bypass this state machine.
  */
 export function monthLifecycleReducer(
   state: MonthLifecycleState,
@@ -78,11 +122,13 @@ export function monthLifecycleReducer(
       return {
         ...state,
         status: "loading",
-        // Clear loaded scope immediately so no save can fire for the previous roster
-        // under the newly selected company/month.
         loadedScope: null,
-        monthLabel: action.monthLabel,
+        awaitingChoice: false,
+        suppressNextSave: true,
+        lastMonthSignature: null,
+        lastRatesSignature: null,
         saveError: null,
+        pendingWrite: null,
       };
 
     case "LOAD_SUCCESS":
@@ -90,22 +136,25 @@ export function monthLifecycleReducer(
         ...state,
         status: "loaded",
         loadedScope: { company: action.company, monthLabel: action.monthLabel },
-        roster: action.roster,
-        monthLabel: action.monthLabel,
-        allMonths: action.allMonths ?? state.allMonths,
+        awaitingChoice: false,
+        suppressNextSave: true,
+        lastMonthSignature: null,
+        lastRatesSignature: null,
         saveError: null,
+        pendingWrite: null,
       };
 
     case "LOAD_EMPTY":
       return {
         ...state,
         status: "loaded",
-        // Empty intentional scope still "belongs" so blank/sample create can save.
-        loadedScope: { company: action.company, monthLabel: action.monthLabel },
-        roster: [],
-        monthLabel: action.monthLabel,
-        allMonths: action.allMonths,
+        loadedScope: null,
+        awaitingChoice: true,
+        suppressNextSave: true,
+        lastMonthSignature: null,
+        lastRatesSignature: null,
         saveError: null,
+        pendingWrite: null,
       };
 
     case "LOAD_ERROR":
@@ -113,81 +162,81 @@ export function monthLifecycleReducer(
         ...state,
         status: "error",
         loadedScope: null,
+        awaitingChoice: false,
+        suppressNextSave: false,
+        pendingWrite: null,
         saveError: action.error,
       };
 
-    case "EDIT_ROSTER":
-      if (!state.loadedScope) {
-        // No scope loaded — ignore edits (stale UI during switch).
-        return state;
-      }
-      return {
-        ...state,
-        status: state.status === "loading" ? state.status : "dirty",
-        roster: action.roster,
-      };
+    case "SAVE_REQUEST":
+      return requestWrite(
+        state,
+        "month",
+        { company: action.company, monthLabel: action.monthLabel },
+        action.signature,
+      );
 
-    case "SAVE_REQUEST": {
-      const requested: Scope = {
-        company: action.company,
-        monthLabel: action.monthLabel,
-      };
-      // Scope Guard — the whole point of this reducer.
-      if (!scopesEqual(state.loadedScope, requested)) {
-        return state;
-      }
-      return {
-        ...state,
-        status: "saving",
-        saveError: null,
-      };
-    }
+    case "RATES_SAVE_REQUEST":
+      return requestWrite(
+        state,
+        "rates",
+        { company: action.company, monthLabel: action.monthLabel },
+        action.signature,
+      );
 
-    case "SAVE_SUCCESS":
+    case "SAVE_SUCCESS": {
+      if (!state.pendingWrite) return state;
+      const kind = action.kind ?? state.pendingWrite.kind;
+      const signature = action.signature ?? state.pendingWrite.signature;
       return {
         ...state,
         status: "saved",
         saveError: null,
+        pendingWrite: null,
+        ...(kind === "month"
+          ? { lastMonthSignature: signature }
+          : { lastRatesSignature: signature }),
       };
+    }
 
     case "SAVE_ERROR":
       return {
         ...state,
         status: "error",
         saveError: action.error,
+        pendingWrite: null,
       };
 
     case "RETRY":
       return {
         ...state,
-        retryToken: state.retryToken + 1,
+        status: state.loadedScope ? "dirty" : "loading",
+        suppressNextSave: false,
         saveError: null,
-        status: state.loadedScope ? "dirty" : state.status,
+        pendingWrite: null,
+        retryToken: state.retryToken + 1,
       };
-
-    case "SET_ALL_MONTHS":
-      return { ...state, allMonths: action.allMonths };
-
-    case "REMEMBER_MONTH":
-      if (state.allMonths.includes(action.monthLabel)) return state;
-      return {
-        ...state,
-        allMonths: [...state.allMonths, action.monthLabel],
-      };
-
-    case "SET_MONTH_LABEL":
-      return { ...state, monthLabel: action.monthLabel };
 
     default:
       return state;
   }
 }
 
-/** True when a save may be emitted for this scope. */
+/** True when a loaded scope is eligible for a write before signature checks. */
 export function canSaveForScope(
   state: MonthLifecycleState,
   company: string,
   monthLabel: string,
 ): boolean {
-  return scopesEqual(state.loadedScope, { company, monthLabel });
+  return canStartWrite(state, { company, monthLabel });
+}
+
+/** True when this scope and payload signature would be accepted by the reducer. */
+export function canWriteForScope(
+  state: MonthLifecycleState,
+  kind: WriteKind,
+  scope: Scope,
+  signature: string,
+): boolean {
+  return canStartWrite(state, scope) && lastSignatureFor(state, kind) !== signature;
 }

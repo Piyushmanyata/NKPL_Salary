@@ -1,163 +1,171 @@
 import { describe, expect, it } from "vitest";
 import {
   canSaveForScope,
+  canWriteForScope,
   initialLifecycleState,
   monthLifecycleReducer,
   type MonthLifecycleState,
 } from "../monthLifecycle";
-import type { EmployeeInput } from "../types";
 
-const emp = (id: string): EmployeeInput => ({
-  id,
-  name: id,
-  category: "Skilled",
-  monthlySalary: 10000,
-  daysWorked: 30,
-  extraDays: 0,
-  otherDeduction: 0,
-});
+const SCOPE = { company: "NKPL", monthLabel: "June 2026" };
 
 function loaded(): MonthLifecycleState {
-  let s = initialLifecycleState("June 2026");
-  s = monthLifecycleReducer(s, {
+  return monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
     type: "LOAD_SUCCESS",
-    company: "NKPL",
-    monthLabel: "June 2026",
-    roster: [emp("a")],
+    ...SCOPE,
   });
-  return s;
 }
 
-describe("monthLifecycleReducer Scope Guard", () => {
-  it("starts loading with null loadedScope", () => {
-    const s = initialLifecycleState("June 2026");
-    expect(s.status).toBe("loading");
-    expect(s.loadedScope).toBeNull();
-    expect(canSaveForScope(s, "NKPL", "June 2026")).toBe(false);
+function requestMonth(
+  state: MonthLifecycleState,
+  signature = "month-1",
+): MonthLifecycleState {
+  return monthLifecycleReducer(state, {
+    type: "SAVE_REQUEST",
+    ...SCOPE,
+    signature,
+  });
+}
+
+function requestRates(
+  state: MonthLifecycleState,
+  signature = "rates-1",
+): MonthLifecycleState {
+  return monthLifecycleReducer(state, {
+    type: "RATES_SAVE_REQUEST",
+    ...SCOPE,
+    signature,
+  });
+}
+
+describe("monthLifecycleReducer write gate", () => {
+  it("starts loading with no writable scope", () => {
+    const state = initialLifecycleState(SCOPE.monthLabel);
+
+    expect(state.status).toBe("loading");
+    expect(state.loadedScope).toBeNull();
+    expect(canSaveForScope(state, SCOPE.company, SCOPE.monthLabel)).toBe(false);
+    expect(canWriteForScope(state, "month", SCOPE, "month-1")).toBe(false);
   });
 
-  it("LOAD_SUCCESS sets loadedScope and roster", () => {
-    const s = loaded();
-    expect(s.status).toBe("loaded");
-    expect(s.loadedScope).toEqual({ company: "NKPL", monthLabel: "June 2026" });
-    expect(s.roster).toHaveLength(1);
-    expect(canSaveForScope(s, "NKPL", "June 2026")).toBe(true);
+  it("loads a scope without carrying a second roster or month-list state", () => {
+    const state = loaded();
+
+    expect(state.status).toBe("loaded");
+    expect(state.loadedScope).toEqual(SCOPE);
+    expect(state.awaitingChoice).toBe(false);
+    expect(state.suppressNextSave).toBe(true);
+    expect(state.lastMonthSignature).toBeNull();
+    expect(state.lastRatesSignature).toBeNull();
   });
 
-  it("SELECT_SCOPE clears loadedScope so no save can target the old roster", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, {
+  it("refuses writes while a no-data choice is open", () => {
+    const state = monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
+      type: "LOAD_EMPTY",
+      ...SCOPE,
+    });
+
+    expect(state.awaitingChoice).toBe(true);
+    expect(state.loadedScope).toBeNull();
+    expect(requestMonth(state)).toEqual(state);
+  });
+
+  it("consumes the one post-load suppression without entering saving", () => {
+    const state = requestMonth(loaded());
+
+    expect(state.status).toBe("loaded");
+    expect(state.suppressNextSave).toBe(false);
+    expect(state.pendingWrite).toBeNull();
+  });
+
+  it("accepts a changed month payload after suppression is consumed", () => {
+    const state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+
+    expect(state.status).toBe("saving");
+    expect(state.pendingWrite).toEqual({
+      kind: "month",
+      company: SCOPE.company,
+      monthLabel: SCOPE.monthLabel,
+      signature: "month-1",
+    });
+  });
+
+  it("rejects a month payload whose signature was already written", () => {
+    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
+    const before = state;
+
+    expect(requestMonth(state, "month-1")).toEqual(before);
+  });
+
+  it("uses the same signature gate for the Rate Card", () => {
+    let state = requestRates(requestMonth(requestMonth(loaded(), "month-0"), "month-1"), "rates-1");
+    state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
+    state = requestRates(state, "rates-2");
+    expect(state.pendingWrite?.kind).toBe("rates");
+    state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
+    expect(requestRates(state, "rates-2")).toEqual(state);
+  });
+
+  it("rejects a scope mismatch before any signature check", () => {
+    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    const before = state;
+
+    state = monthLifecycleReducer(state, {
+      type: "SAVE_REQUEST",
+      company: "APTUS",
+      monthLabel: SCOPE.monthLabel,
+      signature: "new-payload",
+    });
+
+    expect(state).toEqual(before);
+    expect(canWriteForScope(state, "month", {
+      company: "APTUS",
+      monthLabel: SCOPE.monthLabel,
+    }, "new-payload")).toBe(false);
+  });
+
+  it("reports a failed write without recording its signature, then retries", () => {
+    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    state = monthLifecycleReducer(state, { type: "SAVE_ERROR", error: "offline" });
+    expect(state.status).toBe("error");
+    expect(state.lastMonthSignature).toBeNull();
+    expect(state.pendingWrite).toBeNull();
+
+    state = monthLifecycleReducer(state, { type: "RETRY" });
+    expect(state.status).toBe("dirty");
+    expect(state.saveError).toBeNull();
+    expect(state.retryToken).toBe(1);
+    expect(requestMonth(state, "month-1").status).toBe("saving");
+  });
+
+  it("blocks writes after a load error and lets retry return to loading", () => {
+    let state = monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
+      type: "LOAD_ERROR",
+      error: "datastore unavailable",
+    });
+    expect(state.status).toBe("error");
+    expect(state.loadedScope).toBeNull();
+    expect(requestMonth(state)).toEqual(state);
+
+    state = monthLifecycleReducer(state, { type: "RETRY" });
+    expect(state.status).toBe("loading");
+    expect(state.retryToken).toBe(1);
+  });
+
+  it("clears the loaded scope before a company switch can write", () => {
+    const state = monthLifecycleReducer(loaded(), {
       type: "SELECT_SCOPE",
       company: "APTUS",
       monthLabel: "July 2026",
     });
-    expect(s.status).toBe("loading");
-    expect(s.loadedScope).toBeNull();
-    expect(canSaveForScope(s, "APTUS", "July 2026")).toBe(false);
-    expect(canSaveForScope(s, "NKPL", "June 2026")).toBe(false);
-  });
 
-  it("SAVE_REQUEST for a different company is rejected (Scope Guard)", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("a"), emp("b")] });
-    expect(s.status).toBe("dirty");
-    const before = s;
-    s = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "APTUS",
-      monthLabel: "June 2026",
-    });
-    // Rejected: still dirty, never saving
-    expect(s.status).toBe("dirty");
-    expect(s).toEqual(before);
-  });
-
-  it("SAVE_REQUEST for a different month is rejected", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("x")] });
-    s = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "NKPL",
-      monthLabel: "July 2026",
-    });
-    expect(s.status).toBe("dirty");
-  });
-
-  it("SAVE_REQUEST for loadedScope transitions to saving", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("a"), emp("b")] });
-    s = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "NKPL",
-      monthLabel: "June 2026",
-    });
-    expect(s.status).toBe("saving");
-  });
-
-  it("SAVE_SUCCESS and SAVE_ERROR update status", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("a")] });
-    s = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "NKPL",
-      monthLabel: "June 2026",
-    });
-    s = monthLifecycleReducer(s, { type: "SAVE_SUCCESS" });
-    expect(s.status).toBe("saved");
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("a"), emp("b")] });
-    s = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "NKPL",
-      monthLabel: "June 2026",
-    });
-    s = monthLifecycleReducer(s, { type: "SAVE_ERROR", error: "boom" });
-    expect(s.status).toBe("error");
-    expect(s.saveError).toBe("boom");
-  });
-
-  it("RETRY bumps token and returns dirty when scope loaded", () => {
-    let s = loaded();
-    s = monthLifecycleReducer(s, { type: "SAVE_ERROR", error: "x" });
-    s = monthLifecycleReducer(s, { type: "RETRY" });
-    expect(s.retryToken).toBe(1);
-    expect(s.status).toBe("dirty");
-    expect(s.saveError).toBeNull();
-  });
-
-  it("EDIT_ROSTER ignored when no loadedScope", () => {
-    let s = initialLifecycleState("June 2026");
-    s = monthLifecycleReducer(s, { type: "EDIT_ROSTER", roster: [emp("z")] });
-    expect(s.roster).toEqual([]);
-  });
-
-  it("company switch mid-edit cannot save old roster under new key", () => {
-    // Reproduces the APTUS contamination scenario in reducer terms.
-    let s = loaded();
-    s = monthLifecycleReducer(s, {
-      type: "EDIT_ROSTER",
-      roster: Array.from({ length: 51 }, (_, i) => emp(`nkpl-${i}`)),
-    });
-    expect(s.roster).toHaveLength(51);
-    s = monthLifecycleReducer(s, {
-      type: "SELECT_SCOPE",
+    expect(state.status).toBe("loading");
+    expect(state.loadedScope).toBeNull();
+    expect(state.pendingWrite).toBeNull();
+    expect(canWriteForScope(state, "month", {
       company: "APTUS",
       monthLabel: "July 2026",
-    });
-    // Even if a stale effect fires SAVE_REQUEST for APTUS with the old roster:
-    const rejected = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "APTUS",
-      monthLabel: "July 2026",
-    });
-    expect(rejected.status).toBe("loading");
-    expect(canSaveForScope(rejected, "APTUS", "July 2026")).toBe(false);
-    // And if somehow requested under old company after select — also blocked
-    // because loadedScope is null.
-    const rejected2 = monthLifecycleReducer(s, {
-      type: "SAVE_REQUEST",
-      company: "NKPL",
-      monthLabel: "June 2026",
-    });
-    expect(rejected2.status).toBe("loading");
+    }, "month-1")).toBe(false);
   });
 });

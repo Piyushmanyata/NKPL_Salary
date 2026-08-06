@@ -51,7 +51,6 @@ import {
 } from "./exportSheet";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
 import {
-  canSaveForScope,
   initialLifecycleState,
   monthLifecycleReducer,
 } from "./monthLifecycle";
@@ -551,7 +550,6 @@ function App() {
             type: "LOAD_SUCCESS",
             company: activeCompany,
             monthLabel: normalized,
-            roster,
           });
         } else {
           // No data saved for this company + month yet. The roster and every
@@ -599,8 +597,6 @@ function App() {
     const normalized = normalizeMonthLabel(monthLabel);
     if (normalized !== monthLabel) return;
     // Never write a roster into a scope it was not loaded for (company switch).
-    if (!canSaveForScope(lifecycle, activeCompany, normalized)) return;
-
     const payload = JSON.stringify({
       company: activeCompany,
       monthLabel: normalized,
@@ -614,6 +610,7 @@ function App() {
       type: "SAVE_REQUEST",
       company: activeCompany,
       monthLabel: normalized,
+      signature: payload,
     });
 
     const delayDebounce = setTimeout(async () => {
@@ -651,9 +648,6 @@ function App() {
   // deductions, etc.) don't trigger redundant writes.
   useEffect(() => {
     if (dbLoading || showNoDataModal) return;
-    // Same scope guard as the month save: a company switch must not push the
-    // previous company's people into the new company's shared rate card.
-    if (!canSaveForScope(lifecycle, activeCompany, normalizeMonthLabel(monthLabel))) return;
     const nextRates = buildRateMap(employees);
     const signature = JSON.stringify(nextRates);
     if (signature === ratesSignatureRef.current) return;
@@ -697,7 +691,6 @@ function App() {
       type: "LOAD_SUCCESS",
       company: activeCompany,
       monthLabel: noDataMonth,
-      roster: [],
     });
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, []);
@@ -721,7 +714,6 @@ function App() {
       type: "LOAD_SUCCESS",
       company: activeCompany,
       monthLabel: noDataMonth,
-      roster: sanitized,
     });
     try {
       await saveMonthData(activeCompany, noDataMonth, effectiveMonthDays, sanitized);
@@ -756,7 +748,6 @@ function App() {
       type: "LOAD_SUCCESS",
       company: activeCompany,
       monthLabel: target,
-      roster: carried,
     });
     await saveMonthData(activeCompany, target, targetDays, carried);
     rememberMonth(target);
