@@ -158,6 +158,12 @@ const handlers: Partial<Record<EditableField, FieldHandler>> = {
     return { ...employee, basicPercent: clampBasicPercent(value) };
   },
 
+  // Blank or 0 clears the pin and hands the row back to the §6.3 formula.
+  fullAttendanceBasic(employee, value) {
+    const pin = Math.max(0, numberValue(value));
+    return { ...employee, fullAttendanceBasic: pin > 0 ? roundMoney(pin) : undefined };
+  },
+
   advance(employee, value) {
     const val = value === undefined || value === "" ? undefined : Number(value);
     if (val !== undefined && (Number.isNaN(val) || val < 0)) {

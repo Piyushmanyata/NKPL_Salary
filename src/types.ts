@@ -20,6 +20,14 @@ export type EmployeeInput = {
    * calculation; it travels with the shared rate record so every month shows it.
    */
   notes?: string;
+  /**
+   * Standing Official Monthly Basic for this employee, expressed as the figure
+   * that prints at full attendance (A = 26) and prorated below that. Overrides
+   * BOTH §6.3 branches — the wage board when PF is on, and the opt-out floor
+   * when it is off. Absent or 0 means no pin and the formula applies unchanged.
+   * Never touches Reference: net equality packing absorbs it. Issue #29.
+   */
+  fullAttendanceBasic?: number;
   daysWorked: number;
   extraDays: number;
   basicPercent?: number;

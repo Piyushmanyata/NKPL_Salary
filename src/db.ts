@@ -185,6 +185,8 @@ export interface EmployeeRate {
   monthlySalary?: number;
   totalSalary?: number;
   notes?: string;
+  /** Standing Official basic pin at full attendance. SPEC §6.3 / issue #29. */
+  fullAttendanceBasic?: number;
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;

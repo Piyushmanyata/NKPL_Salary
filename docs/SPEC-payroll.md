@@ -282,12 +282,35 @@ Anupam Mahesh, SAGAR CHANDRA MAJHI and S K SAJAMAL on the real June sheet.)*
 
 ```
 officialBasic(A) =
-    pfEligible                → A × wageBoardDaily[wageCategory]
+    fullAttendanceBasic > 0   → (fullAttendanceBasic / 26) × A
+    else if pfEligible        → A × wageBoardDaily[wageCategory]
     else if !esiEligible      → (max(21100, 0.51 × totalSalary) / 26) × A
     else                      → (max(15100, 0.51 × totalSalary) / 26) × A
 ```
 
-Two rules, both changed:
+Three rules:
+
+0. **A Full Attendance Basic pin wins over everything below it.** It is a standing
+   per-employee figure on the Rate Card, expressed as the basic that prints at full
+   attendance (`A = 26`) and prorated on the same 26-day frame below that. It beats the
+   wage board when PF is on and the opt-out floor when PF is off, because an explicit
+   per-person instruction outranks a general formula (issue #29 / ADR-0012). Absent, `0`
+   or negative means no pin and the rules below apply unchanged.
+
+   The pin never moves Net Payable — net equality packing absorbs it into HRA / TA /
+   Bonus — but it **does** move Official PF, since PF is `0.12 × min(basic, 15000)`.
+
+   Two consequences worth stating, both deliberate:
+   - **The packer still walks `A` down.** A pin larger than the row's target gross is
+     *rescued* by a lower attendance rather than blocked, so the printed basic is below
+     the pinned figure whenever the row lacks headroom. A row only goes `unpackable` when
+     the pin exceeds **26 × targetGross**, since `A_min` is 1 for anyone who worked.
+   - **The pin can suppress ESI.** Above ₹21,000 basic `officialEsi` returns 0, so a pin
+     that clears that ceiling costs an otherwise-eligible employee their ESI. The pin
+     still wins, but the row is flagged `esiSuppressedByPin` rather than failing quietly
+     — ADR-0011 exists to stop exactly that silence.
+
+Two further rules, both changed:
 
 1. **The wage board wins whenever PF is on.** The opt-out elevation applies only when PF is
    off. *(Replaces `officialSheet.ts:206-211` and `:236-242`, where a PF-on / ESI-off employee
@@ -303,6 +326,10 @@ officialPf(A)  = pfEligible ? 0.12 × min(officialBasic(A), 15000) : 0
 
 officialEsi(A) = (Category !== "Special" && esiOptIn !== false && officialBasic(A) ≤ 21000)
                  ? 0.0075 × officialBasic(A) : 0                    // base is BASIC — ADR-0002
+
+esiSuppressedByPin = fullAttendanceBasic > 0
+                     && officialEsi(A) == 0
+                     && officialEsi(A) would be > 0 without the pin  // issue #29
 ```
 
 Official ESI is **never** forced on merely because PF is on.

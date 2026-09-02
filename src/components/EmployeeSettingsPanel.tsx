@@ -125,6 +125,19 @@ export function EmployeeSettingsPanel({
             </>
           )}
           <div className={styles.settingsColumn}>
+            <span>Main Basic</span>
+            <NumberInput
+              value={row.fullAttendanceBasic ?? 0}
+              min={0}
+              onChange={(value) => onUpdate("fullAttendanceBasic", value)}
+            />
+            <small>
+              {row.fullAttendanceBasic
+                ? `Main-sheet Basic at 26 days — prorates below that. Overrides the wage board and the 51% floor.`
+                : "0 = automatic. Set it to pin this employee's Main-sheet Basic at full attendance."}
+            </small>
+          </div>
+          <div className={styles.settingsColumn}>
             <span>TDS</span>
             <NumberInput
               value={row.otherDeduction}
