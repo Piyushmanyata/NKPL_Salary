@@ -92,6 +92,11 @@ export const sanitizeEmployee = (
         ? numberValue(row.advance)
         : undefined,
     otherDeduction: Math.max(0, numberValue(row.otherDeduction)),
+    // Absent / 0 / negative all mean "no pin" — the §6.3 formula applies. Issue #29.
+    fullAttendanceBasic:
+      Math.max(0, numberValue(row.fullAttendanceBasic)) > 0
+        ? Math.max(0, numberValue(row.fullAttendanceBasic))
+        : undefined,
     specialBonus:
       row.specialBonus !== undefined &&
       row.specialBonus !== null &&
@@ -129,6 +134,7 @@ export const applyEmployeeRates = (
     }
     const monthlySalary = Math.max(0, numberValue(rate.monthlySalary));
     const totalSalary = Math.max(0, numberValue(rate.totalSalary));
+    const fullAttendanceBasic = Math.max(0, numberValue(rate.fullAttendanceBasic));
     return {
       ...employee,
       salaryPerDay: Math.max(0, numberValue(rate.salaryPerDay)),
@@ -136,6 +142,9 @@ export const applyEmployeeRates = (
       ...(monthlySalary > 0 ? { monthlySalary } : {}),
       ...(totalSalary > monthlySalary ? { totalSalary } : {}),
       ...(rate.notes ? { notes: rate.notes } : {}),
+      // The pin is standing rate data: clearing it in the card clears it
+      // everywhere, so an explicit 0 must erase the month snapshot's value.
+      fullAttendanceBasic: fullAttendanceBasic > 0 ? fullAttendanceBasic : undefined,
     };
   });
 
@@ -153,6 +162,7 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
       monthlySalary: Math.max(0, numberValue(employee.monthlySalary)),
       totalSalary: Math.max(0, numberValue(employee.totalSalary)),
       ...(employee.notes?.trim() ? { notes: employee.notes } : {}),
+      fullAttendanceBasic: Math.max(0, numberValue(employee.fullAttendanceBasic)),
     };
   });
   return map;

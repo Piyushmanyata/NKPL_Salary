@@ -147,6 +147,10 @@ _Avoid_: Absent deduction (that is a gross-side proration concept); storing a ne
 Statutory Official daily basic rates: Unskilled ₹400, Semi-skilled ₹440, Skilled ₹484, over a 26-day month (allowed full basics 10400 / 11440 / 12584). Used for Official basic whenever PF is on (for the employee's wage category). Special has no wage-board basic; display uses the Skilled row.
 _Avoid_: Reference salary per day
 
+**Full Attendance Basic**:
+Standing per-employee Official **Monthly Basic**, expressed as the figure that prints at **full attendance** (`A = 26`) and prorated on the same 26-day frame below that. Lives on the **Rate Card**, so it is standing package data rather than a monthly input, and it applies to every month the card reaches. It **overrides both** the **Wage-Board Daily** basic (when PF is on) and the **Opt-Out Basic** (when PF is off): an explicit per-person figure outranks a general formula. Absent, `0` or negative means no pin. Never moves **Net Payable** — **Net Equality Packing** absorbs it into HRA/TA/bonus — but it does move Official PF, and it can suppress **ESI (Official)** by lifting basic past ₹21,000, which flags the row rather than failing silently (ADR-0012).
+_Avoid_: Reference basic, Basic Share, a per-month override, a name list in code, treating it as a cap rather than an anchor
+
 **Opt-Out Basic**:
 Elevated Official basic used **only when PF is off**. When PF is on, Official basic is the wage-board daily rate × Official attendance, **uncapped** (no ₹15,000 cap on the displayed basic). When PF is off: if ESI is also off, max(₹21,100, 51% of total salary) attendance-prorated on the Official frame; if ESI is on (and PF off), max(₹15,100, 51% of total salary) attendance-prorated. Special always uses this path (PF forced off).
 _Avoid_: Applying opt-out elevation when PF is on; capping displayed basic at ₹15,000
@@ -168,8 +172,8 @@ _Avoid_: Different rule engines per company without an explicit decision
 ### Month lifecycle
 
 **Rate Card** (`employee_rates/<COMPANY>`):
-Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary** and **Total Salary**, saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward; it is deliberately **not** re-applied to a month that already has its own saved data, so a raise entered today cannot retroactively rewrite a filed month. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
-_Avoid_: Treating it as a per-month record; overlaying it onto closed months
+Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary** and **Total Salary**, saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward **and is overlaid onto every month as it loads**, including months that already have their own saved data — so editing a standing figure today rewrites how every stored month renders, filed ones included. That is what makes a **Full Attendance Basic** reach the months whose accounting is already done, and equally what makes a mistyped raise reach them. Per-month inputs (Days Worked, Extra Days, advance, special bonus) are never overlaid and stay as saved. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
+_Avoid_: Treating it as a per-month record; assuming a filed month is insulated from a later rate edit
 
 **Month Carry-Forward**:
 Opening a month with no saved data automatically copies the roster from the nearest earlier month for that company — every employee, salary, allowance, category, PF/ESI choice and TDS carries over. Only the per-month inputs reset: **Days Worked** to Calendar Days, **Extra Days** to 0, and advance and special bonus cleared. Existing month records are left untouched; the user enters the new month's day values manually.

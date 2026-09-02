@@ -37,6 +37,13 @@ export type OfficialRow = {
   referenceNetPayable: number;
   /** True when no attendance A packs targetGross ≥ basic. SPEC §6.5 / TICKET-09. */
   unpackable: boolean;
+  /**
+   * True when a Full Attendance Basic pin lifted this row's basic past the
+   * ₹21,000 ESI ceiling and so zeroed an ESI the employee was otherwise
+   * eligible for. The pin still wins — this says the charge was lost, because
+   * ADR-0011 exists to stop exactly this happening silently. Issue #29.
+   */
+  esiSuppressedByPin: boolean;
 };
 export const OFFICIAL_WAGE_DAYS = 26;
 
@@ -119,6 +126,10 @@ function displayFor(category: Category | string): { employeeTypes: string; allow
 /**
  * Official monthly basic for attendance A. SPEC §6.3 / TICKET-08 / TICKET-12.
  *
+ * A Full Attendance Basic pin wins over BOTH branches: it is an explicit
+ * per-person instruction and beats a general formula. Issue #29.
+ *
+ * - pinned  → (fullAttendanceBasic / 26) × A.
  * - PF on  → wage board daily × A (Special cannot have PF — throws).
  * - PF off + ESI off → elevated floor max(21100, 0.51 × totalSalary) prorated on 26.
  * - PF off + ESI on  → 0.51 × totalSalary held inside (15,000, 21,000]: above the
@@ -128,6 +139,11 @@ function displayFor(category: Category | string): { employeeTypes: string; allow
  */
 export function officialBasic(row: SalaryRow, wageCategory: WageCategory, A: number): number {
   if (A <= 0) return 0;
+
+  const pin = Math.max(0, Number(row.fullAttendanceBasic) || 0);
+  if (pin > 0) {
+    return roundMoney((pin / OFFICIAL_WAGE_DAYS) * A);
+  }
 
   if (row.pfOptIn) {
     if (row.category === "Special") {
@@ -158,6 +174,25 @@ export function officialEsi(row: SalaryRow, basic: number): number {
   if (!row.esiOptIn) return 0;
   if (basic > ESI_GROSS_LIMIT) return 0;
   return roundMoney(basic * ESI_RATE);
+}
+
+/**
+ * Would this row have been charged ESI if the pin had not raised its basic?
+ * Compares the pinned basic against the basic §6.3 would have produced at the
+ * same attendance, so the flag fires only when the pin is what lost the charge
+ * — not when the employee was ineligible anyway. Issue #29.
+ */
+export function esiSuppressedByPin(
+  row: SalaryRow,
+  wageCategory: WageCategory,
+  A: number,
+  pinnedBasic: number,
+): boolean {
+  const pin = Math.max(0, Number(row.fullAttendanceBasic) || 0);
+  if (pin <= 0) return false;
+  if (officialEsi(row, pinnedBasic) > 0) return false;
+  const unpinned = officialBasic({ ...row, fullAttendanceBasic: undefined }, wageCategory, A);
+  return officialEsi(row, unpinned) > 0;
 }
 
 /** Official employer ESI follows the same Official-basic eligibility as employee ESI. */
@@ -247,6 +282,7 @@ export function assembleOfficialRow(
   const { monthlyBasic, pf, monthlyHra, monthlyTravelAllowance } = components;
   const esiValue = officialEsi(row, monthlyBasic);
   const employerEsi = officialEmployerEsi(row, monthlyBasic);
+  const pinSuppressedEsi = esiSuppressedByPin(row, wageCategory, attendance, monthlyBasic);
   const adv = advanceAmount(row);
   const bonus = unpackable
     ? 0
@@ -279,6 +315,7 @@ export function assembleOfficialRow(
     netPayable,
     referenceNetPayable: roundMoney(row.netPayable + row.esi - esiValue),
     unpackable,
+    esiSuppressedByPin: pinSuppressedEsi,
   };
 }
 

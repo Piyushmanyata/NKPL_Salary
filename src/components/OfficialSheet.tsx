@@ -1,6 +1,6 @@
 import { Search, Users } from "lucide-react";
 import type { OfficialRow } from "../officialSheet";
-import { currency, numberValue, roundMoney } from "../salary";
+import { currency, ESI_GROSS_LIMIT, numberValue, roundMoney } from "../salary";
 import styles from "./OfficialSheet.module.css";
 
 const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -106,6 +106,24 @@ export function OfficialSheet({
                     }}
                   >
                     unpackable
+                  </span>
+                ) : null}
+                {row.esiSuppressedByPin ? (
+                  <span
+                    title={`Main Basic pin of ${currency(row.monthlyBasic)} is above the ${currency(ESI_GROSS_LIMIT)} ESI ceiling, so this employee's ESI is not charged. Clear the pin to restore it.`}
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#b54708",
+                      background: "#fffaeb",
+                      border: "1px solid #fedf89",
+                      borderRadius: 4,
+                      padding: "1px 5px",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    ESI off (pin)
                   </span>
                 ) : null}
               </td>
