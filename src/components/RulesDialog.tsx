@@ -41,7 +41,7 @@ export function RulesDialog({
           <Rule label="Calendar Days" value={`${effectiveMonthDays} days for ${monthLabel || "selected month"}`} />
           <Rule label="Earned Salary" value="Salary/Month / calendar days x Days Worked" />
           <Rule label="Reference Basic" value="Earned Salary x Basic %" />
-          <Rule label="Main PF Attendance" value={`Starts at 26 - (${effectiveMonthDays} - Days Worked), then reduces if Basic plus Bonus is too high`} />
+          <Rule label="Main PF Attendance" value={`Starts at Days Worked / ${effectiveMonthDays} x 26, rounded to a whole day, then reduces if Basic plus Bonus is too high`} />
           <Rule label="Official Basic" value="Attendance x category daily wage" />
           <Rule label="Zone A Day Rate" value="Unskilled 400, Semi-skilled 440, Skilled 484" />
           <Rule label="Days Worked" value="Entered manually per employee for the selected month" />
@@ -68,7 +68,7 @@ export function RulesDialog({
           />
           <Rule
             label="Main Sheet"
-            value={`For PF-on rows, main-sheet attendance starts at 26 - (${effectiveMonthDays} calendar days - Days Worked), then reduces when needed so Basic always equals attendance x category daily wage and Main Bonus is at least the Reference Daily Bonus Amount. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
+            value={`For PF-on rows, main-sheet attendance starts at Days Worked / ${effectiveMonthDays} calendar days x 26, rounded to a whole day, then reduces when needed so Basic always equals attendance x category daily wage and Main Bonus is at least the Reference Daily Bonus Amount. HRA/travel allowance are Days-Worked-prorated, and any excess target gross is shown as Bonus so net pay matches the reference sheet. PF-off rows stay aligned with the reference sheet.`}
           />
         </div>
       </div>
