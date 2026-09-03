@@ -1,4 +1,4 @@
-import { ESI_EMPLOYER_RATE, numberValue, roundMoney } from "./salary";
+import { numberValue } from "./salary";
 import type { OfficialRow } from "./officialSheet";
 import type { SalaryRow } from "./types";
 
@@ -29,31 +29,23 @@ export function calculateMonthTotals(
   if (sheetMode === "main") {
     // Reconciliation summary excludes unpackable rows (TICKET-09); sheet still lists them.
     const packable = officialRows.filter((row) => !row.unpackable);
-    const unpackableCount = officialRows.length - packable.length;
-    const gross = packable.reduce((total, row) => total + row.grossPayable, 0);
-    const net = packable.reduce((total, row) => total + row.netPayable, 0);
-    const pf = packable.reduce((total, row) => total + row.pf, 0);
+    const gross = sum(packable, "grossPayable");
+    const pf = sum(packable, "pf");
     // Employer PF mirrors employee PF in this model (both 12% of basic, capped
     // at PF_BASIC_LIMIT) -- see calculateSalary. Reusing `pf` here (instead of
     // recomputing from monthlyBasic without the cap) keeps this in sync with
     // that formula and avoids overstating employer cost for high-basic rows.
     const employerPf = pf;
-    const esi = packable.reduce((total, row) => total + row.esi, 0);
-    const professionalTax = packable.reduce((total, row) => total + row.professionalTax, 0);
-    const employerEsi = packable.reduce(
-      (total, row) => total + (row.esi > 0 ? roundMoney(row.monthlyBasic * ESI_EMPLOYER_RATE) : 0),
-      0,
-    );
+    const esi = sum(packable, "esi");
+    const employerEsi = sum(packable, "employerEsi");
+    const professionalTax = sum(packable, "professionalTax");
     const deductions =
-      pf +
-      esi +
-      professionalTax +
-      packable.reduce((total, row) => total + (row.advance || 0) + row.otherDeduction, 0);
+      pf + esi + professionalTax + sum(packable, "advance") + sum(packable, "otherDeduction");
     return {
       employees: officialRows.length,
-      unpackableCount,
+      unpackableCount: officialRows.length - packable.length,
       gross,
-      net,
+      net: sum(packable, "netPayable"),
       pf,
       employerPf,
       employerEsi,
