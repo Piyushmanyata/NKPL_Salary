@@ -43,6 +43,12 @@ describe("officialAttendanceMax", () => {
     expect(officialAttendanceMax(10, 0)).toBe(0);
   });
 
+  it("never returns NaN for a malformed input", () => {
+    expect(officialAttendanceMax(Number.NaN, 30)).toBe(0);
+    expect(officialAttendanceMax(10, Number.NaN)).toBe(0);
+    expect(officialAttendanceMax(10, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
   it("never hands the packer an empty range for someone who worked", () => {
     // 5 / 31 × 26 = 4.19 → 4; the old rule gave 26 − 26 = 0 against an A_min of 1.
     expect(officialAttendanceMax(5, 31)).toBe(4);

@@ -325,9 +325,9 @@ export function assembleOfficialRow(
  * Full attendance still prints 26; a zero-day month still prints 0.
  */
 export function officialAttendanceMax(daysWorked: number, monthDays: number): number {
-  const D = Math.max(0, monthDays);
+  const D = Number.isFinite(monthDays) ? Math.max(0, monthDays) : 0;
   if (D <= 0) return 0;
-  const Dw = Math.max(0, Math.min(D, daysWorked));
+  const Dw = Number.isFinite(daysWorked) ? Math.max(0, Math.min(D, daysWorked)) : 0;
   const scaled = Math.round((Dw / D) * OFFICIAL_WAGE_DAYS);
   return Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, scaled));
 }
