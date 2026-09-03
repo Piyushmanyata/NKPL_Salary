@@ -177,8 +177,8 @@ describe("pipeline characterization (#26)", () => {
     // Byte-level export locks
     expect(result.refCsv).toContain('"Ravi Kumar"');
     expect(result.refCsv).toContain('"-750"'); // display sign: recovered
-    expect(result.offCsv).toContain('"Source Category"');
-    expect(result.refHtml).toContain("<table>");
+    expect(result.offCsv).toContain('"Wage Category"');
+    expect(result.refHtml).toContain('<table border="1"');
     expect(result.offHtml).toContain("Official Basic");
 
     // Full byte hashes via length + content fingerprint

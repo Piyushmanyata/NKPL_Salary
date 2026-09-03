@@ -109,17 +109,17 @@ export function EmployeeSettingsPanel({
                 </small>
               </div>
               <div className={styles.settingsColumn}>
-                <span>Allowance / Month</span>
+                <span>Travelling / Month</span>
                 <NumberInput
                   value={Math.max(0, roundMoney(row.totalSalary - row.monthlySalary))}
                   min={0}
                   onChange={(value) => onUpdate("allowance", value)}
                 />
                 <small>
-                  Total Salary <strong>{currency(row.totalSalary)}</strong> = monthly + allowance
+                  Total Salary <strong>{currency(row.totalSalary)}</strong> = monthly + travelling
                   {row.totalSalary > row.monthlySalary
                     ? ` — sets bonus/day ${currency(row.bonusPerDay)} and the Official 51% basic floor`
-                    : " — 0 means no allowance"}
+                    : " — 0 means none"}
                 </small>
               </div>
             </>

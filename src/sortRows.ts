@@ -3,8 +3,14 @@ export type SortDirection = "asc" | "desc";
 function compareValues(a: unknown, b: unknown): number {
   const left = a === undefined || a === null ? 0 : a;
   const right = b === undefined || b === null ? 0 : b;
-  if (typeof left === "string") return left.localeCompare(String(right));
-  return Number(left) - Number(right);
+  // Either side being a string forces a string comparison; comparing a string
+  // numerically yields NaN, which makes the comparator non-total and leaves
+  // the sort order undefined.
+  if (typeof left === "string" || typeof right === "string") {
+    return String(left).localeCompare(String(right));
+  }
+  const difference = Number(left) - Number(right);
+  return Number.isNaN(difference) ? 0 : difference;
 }
 
 export function sortRows<T extends { id: string }>(
