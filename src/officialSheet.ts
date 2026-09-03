@@ -320,14 +320,26 @@ export function assembleOfficialRow(
 }
 
 /**
+ * Official attendance ceiling: days worked scaled from the calendar frame into
+ * the 26-day wage-board frame, rounded to a whole day. SPEC §6.2 / ADR-0013.
+ * Full attendance still prints 26; a zero-day month still prints 0.
+ */
+export function officialAttendanceMax(daysWorked: number, monthDays: number): number {
+  const D = Number.isFinite(monthDays) ? Math.max(0, monthDays) : 0;
+  if (D <= 0) return 0;
+  const Dw = Number.isFinite(daysWorked) ? Math.max(0, Math.min(D, daysWorked)) : 0;
+  const scaled = Math.round((Dw / D) * OFFICIAL_WAGE_DAYS);
+  return Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, scaled));
+}
+
+/**
  * Single Official path for every employee. Attendance uses the 26-day wage-board
  * frame regardless of PF. SPEC §6.2 / TICKET-07 + packing/net from TICKET-09.
  */
 export function buildOfficialRow(row: SalaryRow, monthDays: number): OfficialRow {
   const wageCategory = wageBoardCategory(row.category);
 
-  const absentDays = Math.max(0, monthDays - row.daysWorked);
-  const aMax = Math.max(0, Math.min(OFFICIAL_WAGE_DAYS, OFFICIAL_WAGE_DAYS - absentDays));
+  const aMax = officialAttendanceMax(row.daysWorked, monthDays);
   const aMin = row.daysWorked > 0 ? 1 : 0;
 
   const { attendance, unpackable } = pickPackableAttendance(row, wageCategory, aMax, aMin);

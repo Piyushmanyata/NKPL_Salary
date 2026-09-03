@@ -168,9 +168,11 @@ describe("pipeline characterization (#26)", () => {
 
     const result = runPipeline(roster);
 
-    // Characterization lock from current build (2026-08-06).
-    expect(result.nets).toEqual([16862.25, 11399, 19870]);
-    expect(result.officialNets).toEqual([16862.25, 11399, 19870]);
+    // Characterization lock from current build (2026-08-06); e2 re-locked
+    // 11,399 → 11,396 by ratio-based Official attendance (ADR-0013), which
+    // raises that row's Official basic and so its 0.75% ESI charge.
+    expect(result.nets).toEqual([16862.25, 11396, 19870]);
+    expect(result.officialNets).toEqual([16862.25, 11396, 19870]);
 
     // Byte-level export locks
     expect(result.refCsv).toContain('"Ravi Kumar"');

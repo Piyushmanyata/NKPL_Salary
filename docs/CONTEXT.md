@@ -66,7 +66,7 @@ Number of days in the pay month (28–31). **Derived from the selected month lab
 _Avoid_: Official attendance, working days (ambiguous), editable days-in-month field
 
 **Official Attendance**:
-Computed wage-sheet field on the Official Sheet. Derived as `clamp(26 − calendar absences, 0, 26)` for **every** employee regardless of PF status (and may be reduced further only to keep net equality packable, down to a minimum of 1 if Days Worked > 0, else 0).
+Computed wage-sheet field on the Official Sheet. Derived as `clamp(round((Days Worked / calendar days) × 26), 0, 26)` for **every** employee regardless of PF status (ADR-0013; it was `clamp(26 − calendar absences, 0, 26)` before 2026-09-03) (and may be reduced further only to keep net equality packable, down to a minimum of 1 if Days Worked > 0, else 0).
 _Avoid_: Days worked (Reference), present days raw, using Reference `Dw` uncapped when PF is off
 
 **Days Worked**:

@@ -13,6 +13,9 @@ Verified 2026-07-26: 0 violations of I1-I10 over 149,940 computed cases.
 import random, sys
 
 R = lambda v: round(v * 100) / 100
+# JS Math.round semantics (half away from zero on positives), for the
+# whole-day attendance rounding of SPEC 6.2 / ADR-0013.
+R26 = lambda v: int(v + 0.5)
 PF_RATE, ESI_RATE, PF_LIMIT, ESI_LIMIT, HRA_SHARE = .12, .0075, 15000, 21000, .70
 WAGE_BOARD = {'Unskilled': 400, 'Semi-skilled': 440, 'Skilled': 484}
 OFFICIAL_WAGE_DAYS = 26
@@ -93,8 +96,10 @@ def official_basic(row, A):
 
 def official(row):
     """SPEC 6.2, 6.5, 6.6."""
-    absent = max(0, row['D'] - row['Dw'])
-    a_max = max(0, min(OFFICIAL_WAGE_DAYS, OFFICIAL_WAGE_DAYS - absent))
+    # ADR-0013: days worked scaled into the 26-day frame, rounded to a whole day.
+    Dw = max(0, min(row['D'], row['Dw']))
+    a_max = 0 if row['D'] <= 0 else max(
+        0, min(OFFICIAL_WAGE_DAYS, R26(Dw / row['D'] * OFFICIAL_WAGE_DAYS)))
     a_min = 1 if row['Dw'] > 0 else 0
 
     def statutory(basic):

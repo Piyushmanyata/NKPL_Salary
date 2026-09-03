@@ -269,14 +269,22 @@ reclassify an employee whose Category string did not match exactly.)*
 One frame for **every** employee, PF on or off:
 
 ```
-absentDays = max(0, D − Dw)                    // from the CALENDAR frame
-A_max      = clamp(26 − absentDays, 0, 26)
+A_max      = clamp(round((Dw / D) × 26), 0, 26)   // ratio of the CALENDAR frame
 A_min      = Dw > 0 ? 1 : 0
 ```
 
-*(Replaces `officialSheet.ts:149`, where the PF-off path set `attendance = row.daysWorked`
-uncapped — producing Official attendance of 30, 30, 29 and 27 for GURU PRASAD PATRA,
-Anupam Mahesh, SAGAR CHANDRA MAJHI and S K SAJAMAL on the real June sheet.)*
+`Dw` is clamped to `D` before scaling, so `A_max ≤ 26`; full attendance (`Dw = D`) still
+prints 26 and a zero-day month still prints 0. The result is rounded to a whole day
+because Attendance is filed as a day count.
+
+*(Replaces the subtractive frame `A_max = clamp(26 − max(0, D − Dw), 0, 26)`, which charged
+each absent day at a full day against a 26-day ceiling drawn from a 28–31 day calendar —
+so 10 days worked in a 30-day month printed 6, not 8.67. ADR-0013.)*
+
+*(That frame in turn replaced `officialSheet.ts:149`, where the PF-off path set
+`attendance = row.daysWorked` uncapped — producing Official attendance of 30, 30, 29 and 27
+for GURU PRASAD PATRA, Anupam Mahesh, SAGAR CHANDRA MAJHI and S K SAJAMAL on the real June
+sheet.)*
 
 ### 6.3 Official basic — as a function of `A`
 
@@ -441,7 +449,7 @@ Inputs: `Category = Skilled`, `M = 15,990`, `b = 257`, `p = 0.70`, `D = 30`, `Dw
 | `professionalTax` | 130.00 |
 | **`netPayable`** | **22,226.84** |
 
-**Official** — `absentDays = 0` → `A_max = 26`. PF is on, so the wage board applies.
+**Official** — `Dw = D` → `A_max = round((30/30) × 26) = 26`. PF is on, so the wage board applies.
 
 | | Current build | **Per this spec** |
 |---|---|---|
@@ -501,6 +509,11 @@ Input space: `D ∈ {28,29,30,31}`, all four Categories, `r ∈ {0, 150…3000}`
 
 The 8.47% `unpackable` rate reflects deliberately absurd fuzz combinations (e.g. ₹20,000
 advance plus ₹15,000 other-deduction against a ₹6,000 salary). Real rosters produce zero.
+
+*(Updated 2026-09-03: on the same seed the ratio frame of ADR-0013 drops that rate to
+**0.24%**. The difference is not extra packing room — it is the degenerate range the
+subtractive frame produced, where heavy absence gave `A_max = 0` against an `A_min` of 1 and
+the packer had no `A` to try at all. `Dw ≥ 1` now always yields `A_max ≥ 1`.)*
 
 Reproduce with `python3 scripts/reference-oracle.py` (seed 7). That script is the executable
 form of this document; where the two disagree, the discrepancy is a bug in one of them and
