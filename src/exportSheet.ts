@@ -58,7 +58,6 @@ export function buildOfficialExportRows(rows: OfficialRow[]): ExportRow[] {
   return rows.map((row, index) => ({
     "Sl No": index + 1,
     "Employee Name": sanitizeSpreadsheetCell(row.name),
-    "Source Category": row.sourceCategory,
     "Wage Category": row.wageCategory,
     "Employee Types": row.employeeTypes,
     "Allowed Basic": roundMoney(row.allowedBasic),
@@ -74,7 +73,6 @@ export function buildOfficialExportRows(rows: OfficialRow[]): ExportRow[] {
     Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
     "Other Deduction": roundMoney(row.otherDeduction),
     "Net Payable": roundMoney(row.netPayable),
-    "Reference Net Payable": roundMoney(row.referenceNetPayable),
   }));
 }
 
@@ -88,13 +86,19 @@ export function serializeCsv(exportRows: ExportRow[]): string {
 
 export function serializeSpreadsheetHtml(exportRows: ExportRow[]): string {
   const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
+  // Excel drops a <style> block on import but honours the border attribute and
+  // inline cell styles, so every cell carries its own rule (ADR-0014).
+  const cellStyle = "border:1px solid #000000;padding:4px";
+  const headStyle = `${cellStyle};font-weight:bold;background:#f2f2f2`;
   const body = exportRows
     .map(
       (row) =>
-        `<tr>${headers.map((header) => `<td>${htmlEscape(row[header] ?? "")}</td>`).join("")}</tr>`,
+        `<tr>${headers
+          .map((header) => `<td style="${cellStyle}">${htmlEscape(row[header] ?? "")}</td>`)
+          .join("")}</tr>`,
     )
     .join("");
-  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><table><thead><tr>${headers
-    .map((header) => `<th>${htmlEscape(header)}</th>`)
+  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><table border="1" style="border-collapse:collapse"><thead><tr>${headers
+    .map((header) => `<th style="${headStyle}">${htmlEscape(header)}</th>`)
     .join("")}</tr></thead><tbody>${body}</tbody></table></body></html>`;
 }

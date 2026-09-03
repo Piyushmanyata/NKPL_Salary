@@ -6,6 +6,23 @@ import styles from "./OfficialSheet.module.css";
 const numberFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 const num = (value: number) => numberFormat.format(Number.isFinite(value) ? value : 0);
 
+// One source of truth for column order, labels and widths, so a removed column
+// cannot strand its width on a neighbour (ADR-0014).
+const COLUMNS = [
+  { field: "name", label: "Name", width: "19%" },
+  { field: "attendance", label: "Attendance", width: "6.5%" },
+  { field: "extraDays", label: "Extra Days", width: "6.5%" },
+  { field: "monthlyBasic", label: "Official Basic", width: "8%" },
+  { field: "monthlyHra", label: "HRA", width: "8%" },
+  { field: "monthlyTravelAllowance", label: "TA", width: "8%" },
+  { field: "bonus", label: "Bonus", width: "8%" },
+  { field: "pf", label: "PF", width: "7%" },
+  { field: "esi", label: "ESI", width: "7%" },
+  { field: "professionalTax", label: "P-Tax", width: "7%" },
+  { field: "advance", label: "Advance", width: "7%" },
+  { field: "netPayable", label: "Net Pay", width: "8%" },
+] as const;
+
 export function OfficialSheet({
   sortedRows,
   filteredRows,
@@ -35,59 +52,26 @@ export function OfficialSheet({
 
   return (
     <table className={styles.officialTable}>
+      <colgroup>
+        {COLUMNS.map((column) => (
+          <col key={column.field} style={{ width: column.width }} />
+        ))}
+      </colgroup>
       <thead>
         <tr>
-          <th onClick={() => onSort("name")} className="sortable-th">
-            Name{sortMark("name")}
-          </th>
-          <th onClick={() => onSort("wageCategory")} className="sortable-th">
-            Category{sortMark("wageCategory")}
-          </th>
-          <th onClick={() => onSort("attendance")} className="sortable-th">
-            Attendance{sortMark("attendance")}
-          </th>
-          <th onClick={() => onSort("extraDays")} className="sortable-th">
-            Extra Days{sortMark("extraDays")}
-          </th>
-          <th onClick={() => onSort("monthlyBasic")} className="sortable-th">
-            Official Basic{sortMark("monthlyBasic")}
-          </th>
-          <th onClick={() => onSort("monthlyHra")} className="sortable-th">
-            HRA{sortMark("monthlyHra")}
-          </th>
-          <th onClick={() => onSort("monthlyTravelAllowance")} className="sortable-th">
-            TA{sortMark("monthlyTravelAllowance")}
-          </th>
-          <th onClick={() => onSort("bonus")} className="sortable-th">
-            Bonus{sortMark("bonus")}
-          </th>
-          <th onClick={() => onSort("pf")} className="sortable-th">
-            PF{sortMark("pf")}
-          </th>
-          <th onClick={() => onSort("esi")} className="sortable-th">
-            ESI{sortMark("esi")}
-          </th>
-          <th onClick={() => onSort("professionalTax")} className="sortable-th">
-            P-Tax{sortMark("professionalTax")}
-          </th>
-          <th onClick={() => onSort("advance")} className="sortable-th">
-            Advance{sortMark("advance")}
-          </th>
-          <th onClick={() => onSort("netPayable")} className="sortable-th">
-            Net Pay{sortMark("netPayable")}
-          </th>
-          <th onClick={() => onSort("referenceNetPayable")} className="sortable-th">
-            Reference Net{sortMark("referenceNetPayable")}
-          </th>
+          {COLUMNS.map((column) => (
+            <th key={column.field} onClick={() => onSort(column.field)} className="sortable-th">
+              {column.label}
+              {sortMark(column.field)}
+            </th>
+          ))}
         </tr>
       </thead>
       <tbody>
         {sortedRows.map((row) => {
-          const hasDiff =
-            row.unpackable || Math.abs(row.netPayable - row.referenceNetPayable) > 5;
           const netDelta = roundMoney(row.netPayable - row.referenceNetPayable);
           return (
-            <tr key={row.id} className={hasDiff ? "diff-row" : ""}>
+            <tr key={row.id} className={row.unpackable ? "diff-row" : ""}>
               <td className="name-cell">
                 {row.name}
                 {row.unpackable ? (
@@ -127,14 +111,6 @@ export function OfficialSheet({
                   </span>
                 ) : null}
               </td>
-              <td>
-                <span style={{ fontWeight: 600 }}>{row.wageCategory}</span>
-                {row.sourceCategory !== row.wageCategory && (
-                  <div style={{ fontSize: "10px", color: "#667085", marginTop: "2px" }}>
-                    (from {row.sourceCategory})
-                  </div>
-                )}
-              </td>
               <td>{row.attendance}</td>
               <td>{row.extraDays}</td>
               <td>{num(row.monthlyBasic)}</td>
@@ -148,13 +124,12 @@ export function OfficialSheet({
                   sheet and already deducted from this net. */}
               <td>{num(Math.max(0, Number(row.advance) || 0))}</td>
               <td className="net-cell">{num(row.netPayable)}</td>
-              <td>{num(row.referenceNetPayable)}</td>
             </tr>
           );
         })}
         {!filteredRows.length ? (
           <tr className="empty-row">
-            <td colSpan={14}>
+            <td colSpan={COLUMNS.length}>
               <div>
                 {query ? <Search size={18} /> : <Users size={18} />}
                 <strong>
@@ -173,7 +148,7 @@ export function OfficialSheet({
       {filteredRows.length ? (
         <tfoot>
           <tr className="totals-row">
-            <th scope="row" colSpan={2}>
+            <th scope="row">
               Total — {filteredRows.length} of {allRowsCount} shown
             </th>
             <td />
@@ -187,7 +162,6 @@ export function OfficialSheet({
             <td>{num(officialSum("professionalTax"))}</td>
             <td>{num(officialSum("advance"))}</td>
             <td className="net-cell">{currency(officialSum("netPayable"))}</td>
-            <td>{num(officialSum("referenceNetPayable"))}</td>
           </tr>
         </tfoot>
       ) : null}

@@ -1,60 +1,35 @@
 /* Official / main sheet */
 .official-table {
-  min-width: 1040px;
+  min-width: 900px;
   width: 100%;
   font-size: 11.5px;
 }
 
-.official-table th:nth-child(1),
-.official-table td:nth-child(1) {
-  width: 13%;
+/* Column two is Category on the reference sheet but Attendance here, and the
+   shared chrome left-aligns it. */
+.official-table th:nth-child(2) {
+  text-align: right;
 }
 
-.official-table th:nth-child(2),
-.official-table td:nth-child(2) {
-  width: 8.5%;
-}
-
-.official-table th:nth-child(3),
-.official-table td:nth-child(3) {
-  width: 6.5%;
-}
-
-.official-table th:nth-child(4),
-.official-table td:nth-child(4),
-.official-table th:nth-child(5),
-.official-table td:nth-child(5),
-.official-table th:nth-child(6),
-.official-table td:nth-child(6),
-.official-table th:nth-child(7),
-.official-table td:nth-child(7),
-.official-table th:nth-child(8),
-.official-table td:nth-child(8),
-.official-table th:nth-child(9),
-.official-table td:nth-child(9),
-.official-table th:nth-child(10),
-.official-table td:nth-child(10),
-.official-table th:nth-child(11),
-.official-table td:nth-child(11) {
-  width: 6.5%;
-}
-
-.official-table th:nth-child(12),
-.official-table td:nth-child(12) {
-  width: 8%;
-}
-
-.official-table th:nth-child(13),
-.official-table td:nth-child(13),
-.official-table th:nth-child(14),
-.official-table td:nth-child(14) {
-  width: 8%;
-}
-
+/* Every row is ruled so a line can be tracked across while keying into Tally
+   (ADR-0014). Borders are per-cell rather than border-collapse because the
+   header and totals rows are position:sticky, and collapsed borders are not
+   painted on sticky cells. */
 .official-table th,
 .official-table td {
   padding-left: 4px;
   padding-right: 4px;
+  border-right: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.official-table th:first-child,
+.official-table td:first-child {
+  border-left: 1px solid var(--border-default);
+}
+
+.official-table thead th {
+  border-top: 1px solid var(--border-default);
 }
 
 /* Rows where main-sheet net pay drifts from the reference sheet */
@@ -68,4 +43,13 @@
 
 :global(.diff-row) td {
   border-bottom: 1px solid #fecdd3 !important;
+}
+
+@media print {
+  .official-table th,
+  .official-table td {
+    border-color: #000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }
