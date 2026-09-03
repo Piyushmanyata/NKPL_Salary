@@ -87,12 +87,12 @@ _Avoid_: Official daily wage-board rate (400/440/484) as the Reference rate
 Fixed monthly package for Semi-skilled, Skilled, and Special; for Labour, calendar days × salary per day.
 _Avoid_: Gross payable, total salary including all bonuses
 
-**Monthly Allowance**:
-The Source Workbook's `Increase in Salary Amount` (col `N`). Equals **Total Salary − Monthly Salary**, and is earned pro-rata as **Bonus Per Day** × Days Worked. Typed directly in the settings panel for the fixed-monthly categories, where Total Salary is the computed readout (`J = K + N`). Zero, not blank, when an employee has no allowance. Never negative — Total Salary can never fall below Monthly Salary.
-_Avoid_: Special bonus, performance bonus, treating Total Salary as a second independently typed number
+**Travelling**:
+The Source Workbook's `Increase in Salary Amount` (col `N`). Equals **Total Salary − Monthly Salary**, and is earned pro-rata as **Bonus Per Day** × Days Worked. Typed directly in the settings panel for the fixed-monthly categories, where it is labelled `Travelling / Month` and Total Salary is the computed readout (`J = K + N`). Zero, not blank, when an employee has none. Never negative — Total Salary can never fall below Monthly Salary. Stored as the virtual edit field `allowance`: the UI label and this glossary term were renamed, the identifier deliberately was not.
+_Avoid_: **HRA / Travel Allowance** — that is the computed 30% share of the post-basic remainder and is entirely different money; special bonus, performance bonus, treating Total Salary as a second independently typed number
 
 **Total Salary**:
-Monthly Salary plus the **Monthly Allowance**. The persisted anchor (`totalSalary`), dropped when it does not exceed Monthly Salary. Sets Bonus Per Day, decides Reference **ESI (Reference)** eligibility, and feeds the Official 51% **Opt-Out Basic** floor.
+Monthly Salary plus **Travelling**. The persisted anchor (`totalSalary`), dropped when it does not exceed Monthly Salary. Sets Bonus Per Day, decides Reference **ESI (Reference)** eligibility, and feeds the Official 51% **Opt-Out Basic** floor.
 _Avoid_: Gross payable; a duplicate of Monthly Salary
 
 **Bonus Per Day**:
