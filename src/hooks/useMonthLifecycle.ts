@@ -20,6 +20,7 @@ import {
   carryForwardEmployee,
   buildRateMap,
   hydrateRoster,
+  hydrateSavedMonth,
 } from "../roster";
 import type { EmployeeInput } from "../types";
 import {
@@ -31,6 +32,8 @@ import {
 import {
   initialLifecycleState,
   monthLifecycleReducer,
+  ratesSaveDelay,
+  SAVE_DEBOUNCE_MS,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -151,9 +154,10 @@ export function useMonthLifecycle(
       }
 
       if (monthResult.kind === "found") {
-        const roster = hydrateRoster(
+        const roster = hydrateSavedMonth(
           monthResult.record.employees,
           calendarDaysForMonth(scopeMonthLabel),
+          rates,
         );
         setEmployees(roster);
         setCopySourceMonth("");
@@ -239,7 +243,7 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: monthPayloadSignature,
       });
-    }, 2000);
+    }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
@@ -289,14 +293,16 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: nextRatesSignature,
       });
-    }, 2000);
+    }, ratesSaveDelay(lifecycle, monthPayloadSignature));
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
     isCanonicalMonth,
+    lifecycle.lastMonthSignature,
     lifecycle.pendingWrite,
     lifecycle.retryToken,
     lifecycle.status,
+    monthPayloadSignature,
     nextRatesSignature,
     scopeMonthLabel,
   ]);

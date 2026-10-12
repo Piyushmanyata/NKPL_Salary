@@ -4,6 +4,7 @@ import {
   canWriteForScope,
   initialLifecycleState,
   monthLifecycleReducer,
+  ratesSaveDelay,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -183,5 +184,33 @@ describe("monthLifecycleReducer write gate", () => {
       company: "APTUS",
       monthLabel: "July 2026",
     }, "month-1")).toBe(false);
+  });
+});
+
+describe("ratesSaveDelay", () => {
+  function monthSaved(signature = "month-1"): MonthLifecycleState {
+    return monthLifecycleReducer(requestMonth(requestMonth(loaded()), signature), {
+      type: "SAVE_SUCCESS",
+      kind: "month",
+      signature,
+    });
+  }
+
+  it("sends the Rate Card straight after the month write for the same roster", () => {
+    expect(ratesSaveDelay(monthSaved(), "month-1")).toBe(0);
+  });
+
+  it("debounces while the roster has changed since the month write", () => {
+    expect(ratesSaveDelay(monthSaved(), "month-2")).toBe(2000);
+  });
+
+  it("debounces after a load, before anything was written", () => {
+    const state = monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
+      type: "LOAD_SUCCESS",
+      ...SCOPE,
+      monthSignature: "month-1",
+    });
+
+    expect(ratesSaveDelay(state, "month-1")).toBe(2000);
   });
 });

@@ -6,12 +6,13 @@ import {
   roundMoney,
 } from "./salary";
 import { normalizeCategory } from "./officialSheet";
-import type { EmployeeInput } from "./types";
+import { sanitizeIncrements } from "./increments";
+import type { EmployeeInput, Increment } from "./types";
 
 /** Fields the UI may edit. "allowance" is a virtual field (T − M), not on EmployeeInput. */
 export type EditableField = keyof EmployeeInput | "allowance";
 
-export type EditValue = string | number | boolean | undefined;
+export type EditValue = string | number | boolean | Increment[] | undefined;
 
 const booleanValue = (value: unknown) =>
   value === true || value === "true" || value === "yes" || value === "on" || value === 1;
@@ -78,6 +79,10 @@ const handlers: Partial<Record<EditableField, FieldHandler>> = {
   notes(employee, value) {
     const notes = String(value ?? "");
     return { ...employee, notes: notes.trim() ? notes : undefined };
+  },
+
+  increments(employee, value) {
+    return { ...employee, increments: sanitizeIncrements(value) };
   },
 
   category(employee, value, calendarDays) {

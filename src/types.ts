@@ -1,6 +1,12 @@
 /** Closed set — mutually exclusive. Special is a category, not a flag. SPEC §2.1 */
 export type Category = "Unskilled" | "Semi-skilled" | "Skilled" | "Special";
 
+export type Increment = {
+  month: string;
+  amount: number;
+  note?: string;
+};
+
 export type EmployeeInput = {
   id: string;
   name: string;
@@ -15,11 +21,12 @@ export type EmployeeInput = {
   salaryPerDay?: number;
   bonusPerDay?: number;
   /**
-   * Free-text log kept per employee, not per month — increments ("Apr-26 +500"),
-   * ID numbers, anything worth remembering about this person. Never read by any
-   * calculation; it travels with the shared rate record so every month shows it.
+   * Free-text log kept per employee, not per month — ID numbers, anything worth
+   * remembering about this person. Never read by any calculation; it travels
+   * with the shared rate record so every month shows it.
    */
   notes?: string;
+  increments?: Increment[];
   /**
    * Standing Official Monthly Basic for this employee, expressed as the figure
    * that prints at full attendance (A = 26) and prorated below that. Overrides

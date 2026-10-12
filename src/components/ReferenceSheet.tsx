@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Search, Settings2, Trash2, Users } from "lucide-react";
-import type { EditableField } from "../editEmployee";
+import type { EditableField, EditValue } from "../editEmployee";
+import { incrementsForMonth } from "../increments";
 import {
   currency,
   ESI_GROSS_LIMIT,
@@ -30,6 +31,7 @@ export function ReferenceSheet({
   rateMode,
   notesOpen,
   effectiveMonthDays,
+  monthLabel,
   onSort,
   onUpdateEmployee,
   onOpenSettings,
@@ -48,8 +50,9 @@ export function ReferenceSheet({
   rateMode: "perDay" | "perMonth" | null;
   notesOpen: boolean;
   effectiveMonthDays: number;
+  monthLabel: string;
   onSort: (field: string) => void;
-  onUpdateEmployee: (id: string, field: EditableField, value: string | number | boolean | undefined) => void;
+  onUpdateEmployee: (id: string, field: EditableField, value: EditValue) => void;
   onOpenSettings: (id: string) => void;
   onRemoveEmployee: (id: string) => void;
   onToggleRateMode: (perDayInput: boolean) => void;
@@ -126,6 +129,7 @@ export function ReferenceSheet({
           // switched on, and the click is recorded as esiOverLimitOptIn
           // so an untouched row is never mistaken for consent (ADR-0011).
           const esiOverLimit = !isSpecial && row.totalSalary > ESI_GROSS_LIMIT;
+          const increment = incrementsForMonth(row.increments, monthLabel);
           return (
             <Fragment key={row.id}>
               <tr className={missingRate ? "row-missing-rate" : undefined}>
@@ -138,6 +142,14 @@ export function ReferenceSheet({
                   {missingRate ? (
                     <span className="missing-rate-badge" title="No day rate or monthly salary — set a rate in Settings">
                       Missing rate
+                    </span>
+                  ) : null}
+                  {increment.total > 0 ? (
+                    <span
+                      className={styles.incrementBadge}
+                      title={["Increment this month", ...increment.notes].join("\n")}
+                    >
+                      ↑ {currency(increment.total)}
                     </span>
                   ) : null}
                 </td>
@@ -242,6 +254,7 @@ export function ReferenceSheet({
                   perDayInput={perDayInput}
                   esiOverLimit={esiOverLimit}
                   effectiveMonthDays={effectiveMonthDays}
+                  monthLabel={monthLabel}
                   notesOpen={notesOpen}
                   onToggleRateMode={() => onToggleRateMode(perDayInput)}
                   onToggleNotes={onToggleNotes}

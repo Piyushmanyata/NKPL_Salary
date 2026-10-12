@@ -21,7 +21,7 @@ import type {
   SalaryRow,
 } from "./types";
 import { buildOfficialRow } from "./officialSheet";
-import { applyEmployeeEdit, type EditableField } from "./editEmployee";
+import { applyEmployeeEdit, type EditableField, type EditValue } from "./editEmployee";
 import { blankEmployee } from "./roster";
 import { createExportDownload, downloadBlob } from "./exportActions";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
@@ -244,7 +244,7 @@ function App() {
   const updateEmployee = (
     id: string,
     field: EditableField,
-    value: string | number | boolean | undefined,
+    value: EditValue,
   ) => {
     if (id === newlyAddedId && field === "name") {
       setNewlyAddedId(null);
@@ -500,6 +500,7 @@ function App() {
                   rateMode={rateMode}
                   notesOpen={notesOpen}
                   effectiveMonthDays={effectiveMonthDays}
+                  monthLabel={monthLabel}
                   onSort={handleRefSort}
                   onUpdateEmployee={updateEmployee}
                   onOpenSettings={(id) => {

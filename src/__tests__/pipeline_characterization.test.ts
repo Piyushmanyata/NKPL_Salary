@@ -101,7 +101,7 @@ function runPipeline(list: EmployeeInput[]) {
   const aligned = salaryRows.map((row, i) =>
     alignReferenceEsi(row, officialRows[i]!.esi, officialRows[i]!.employerEsi),
   );
-  const refExport = buildReferenceExportRows(aligned);
+  const refExport = buildReferenceExportRows(aligned, "June 2026");
   const offExport = buildOfficialExportRows(officialRows);
   return {
     nets: aligned.map((r) => roundMoney(r.netPayable)),
