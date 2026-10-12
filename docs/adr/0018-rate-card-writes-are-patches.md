@@ -22,10 +22,13 @@ followed by the same full rewrite.
 
 - The rates write gate starts from the loaded roster's own card entries, so a load with no edit
   writes nothing.
-- A write sends a patch: per employee, only the fields that changed since the load or the last
-  write, with `null` removing a field (notes or increments cleared).
-- `POST /api/rates` accepts only `{ company, patch }`, reads the stored card, merges the patch and
-  writes the result. A whole-card body is rejected.
+- A write sends a patch: for each employee whose entry changed since the load or the last write,
+  the whole new entry and the names of the fields that changed (a cleared field is named but
+  absent from the entry).
+- `POST /api/rates` accepts only `{ company, patch }` and reads the stored card. For an employee
+  the card holds it replaces only the changed fields; for one it lacks it stores the whole entry,
+  so no entry is ever left without its rates. A whole-card body is rejected, and a stored card
+  that is not an object fails the write rather than being replaced.
 - No write removes an employee's entry. Removing someone from a month leaves their card entry,
   notes, pin and increments in place.
 
@@ -37,6 +40,10 @@ followed by the same full rewrite.
   local cache) can still replace a whole increments list when it edits that list.
 - The card keeps entries for employees who left. They are applied by id only, so they never show
   up in a month that does not list that employee.
+- An employee the card lost (the old bug deleted entries) gets their entry back, with the open
+  month's figures, the first time anything about them is edited — not on load.
+- The server's read-merge-write is not atomic: two saves for one company in the same instant
+  lose one. Acceptable for one operator; use `WATCH`/`MULTI` if that changes.
 - A browser tab running the old code gets a 400 on its next rates save until it reloads.
 
 ## Alternatives rejected
@@ -48,6 +55,12 @@ in an older month would still revert and delete the same entries.
 absent employees, but adding an increment in an older month would write that month's old salary
 back for the employee, and the merge base is whatever card the client read — `{}` after a failed
 read, or another device's edits lost.
+
+**Send only the changed fields** (a JSON merge patch). An employee the card lacks would get an
+entry holding just those fields, and `applyEmployeeRates` reads the missing day rates as 0.
+
+**Diff against the loaded card instead of the loaded roster.** Employees missing from the card
+would differ on load, so opening a month would write again.
 
 **Refuse rates writes after a failed card read.** Needed only while writes replace the card;
 with server-side patches it would block legitimate edits for no gain.

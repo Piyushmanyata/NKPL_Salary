@@ -48,13 +48,30 @@ describe("Rate Card patch", () => {
     expect(applyRateCardPatch({}, patch)).toEqual(buildRateMap([ravi()]));
   });
 
-  it("accepts only an object of per-employee field objects", () => {
+  it("an edit for an employee the card does not hold writes their whole entry", () => {
+    const loaded = [asha({ salaryPerDay: 400, bonusPerDay: 50 })];
+    const edited = [asha({ salaryPerDay: 400, bonusPerDay: 50, notes: "Joined 2019" })];
+
+    const stored = applyRateCardPatch({}, rateCardPatch(buildRateMap(loaded), buildRateMap(edited)));
+
+    expect(stored["emp-asha"]).toMatchObject({
+      name: "Asha Patil",
+      salaryPerDay: 400,
+      bonusPerDay: 50,
+      monthlySalary: 12000,
+      notes: "Joined 2019",
+    });
+  });
+
+  it("accepts only per-employee entries with the list of changed fields", () => {
     expect(isRateCardPatch({})).toBe(true);
-    expect(isRateCardPatch({ "emp-asha": { notes: null } })).toBe(true);
+    expect(isRateCardPatch({ "emp-asha": { entry: { name: "Asha" }, changed: ["notes"] } })).toBe(true);
     expect(isRateCardPatch(undefined)).toBe(false);
     expect(isRateCardPatch([])).toBe(false);
     expect(isRateCardPatch({ "emp-asha": null })).toBe(false);
-    expect(isRateCardPatch({ "emp-asha": [] })).toBe(false);
-    expect(isRateCardPatch({ "emp-asha": "12000" })).toBe(false);
+    expect(isRateCardPatch({ "emp-asha": { notes: "x" } })).toBe(false);
+    expect(isRateCardPatch({ "emp-asha": { entry: [], changed: [] } })).toBe(false);
+    expect(isRateCardPatch({ "emp-asha": { entry: {}, changed: "notes" } })).toBe(false);
+    expect(isRateCardPatch({ "emp-asha": { entry: {}, changed: [1] } })).toBe(false);
   });
 });

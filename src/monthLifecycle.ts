@@ -38,7 +38,7 @@ export type MonthLifecycleAction =
       company: string;
       monthLabel: string;
       monthSignature?: string;
-      ratesSignature?: string;
+      ratesSignature: string;
       suppressNextSave?: boolean;
     }
   | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
@@ -147,7 +147,7 @@ export function monthLifecycleReducer(
         awaitingChoice: false,
         suppressNextSave: action.suppressNextSave ?? true,
         lastMonthSignature: action.monthSignature ?? null,
-        lastRatesSignature: action.ratesSignature ?? null,
+        lastRatesSignature: action.ratesSignature,
         saveError: null,
         pendingWrite: null,
       };

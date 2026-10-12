@@ -14,6 +14,7 @@ function loaded(): MonthLifecycleState {
   return monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
     type: "LOAD_SUCCESS",
     ...SCOPE,
+    ratesSignature: "rates-0",
   });
 }
 
@@ -57,7 +58,7 @@ describe("monthLifecycleReducer write gate", () => {
     expect(state.awaitingChoice).toBe(false);
     expect(state.suppressNextSave).toBe(true);
     expect(state.lastMonthSignature).toBeNull();
-    expect(state.lastRatesSignature).toBeNull();
+    expect(state.lastRatesSignature).toBe("rates-0");
   });
 
   it("refuses writes while a no-data choice is open", () => {
@@ -209,6 +210,7 @@ describe("ratesSaveDelay", () => {
       type: "LOAD_SUCCESS",
       ...SCOPE,
       monthSignature: "month-1",
+      ratesSignature: "rates-0",
     });
 
     expect(ratesSaveDelay(state, "month-1")).toBe(2000);
