@@ -129,7 +129,7 @@ export function ReferenceSheet({
           // switched on, and the click is recorded as esiOverLimitOptIn
           // so an untouched row is never mistaken for consent (ADR-0011).
           const esiOverLimit = !isSpecial && row.totalSalary > ESI_GROSS_LIMIT;
-          const rise = incrementsForMonth(row.increments, monthLabel);
+          const increment = incrementsForMonth(row.increments, monthLabel);
           return (
             <Fragment key={row.id}>
               <tr className={missingRate ? "row-missing-rate" : undefined}>
@@ -144,12 +144,12 @@ export function ReferenceSheet({
                       Missing rate
                     </span>
                   ) : null}
-                  {rise.total > 0 ? (
+                  {increment.total > 0 ? (
                     <span
                       className={styles.incrementBadge}
-                      title={["Increment this month", ...rise.notes].join("\n")}
+                      title={["Increment this month", ...increment.notes].join("\n")}
                     >
-                      ↑ {currency(rise.total)}
+                      ↑ {currency(increment.total)}
                     </span>
                   ) : null}
                 </td>

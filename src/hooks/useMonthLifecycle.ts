@@ -33,6 +33,7 @@ import {
   initialLifecycleState,
   monthLifecycleReducer,
   ratesSaveDelay,
+  SAVE_DEBOUNCE_MS,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -242,7 +243,7 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: monthPayloadSignature,
       });
-    }, 2000);
+    }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,

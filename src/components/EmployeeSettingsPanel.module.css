@@ -295,7 +295,7 @@
 
 .increments .increment-error {
   flex-basis: 100%;
-  color: #b42318;
+  color: var(--color-danger-strong);
   font-size: 11px;
 }
 

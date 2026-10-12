@@ -13,6 +13,11 @@ The **Rate Card** holds one current figure per employee. It seeds every new mont
 Carry-Forward, and a saved month keeps the standing figures it was saved with. Nothing in the app
 records what an employee earned in a given month except the month records themselves.
 
+**Conflict:** the **Rate Card** entry in `docs/CONTEXT.md` and ADR-0012 point 4 say the card is
+overlaid onto every month, filed ones included. The code has never done that for saved months —
+they load without the overlay. This ADR describes the code. Reconciling the two is a separate
+change.
+
 ## Decision
 
 An **Increment** is a record only: the month it began, the rupee amount, an optional note. It is

@@ -241,9 +241,11 @@ export function monthLifecycleReducer(
   }
 }
 
+export const SAVE_DEBOUNCE_MS = 2000;
+
 /** The Rate Card follows a finished month write at once, so a quick month switch cannot strand it. */
 export function ratesSaveDelay(state: MonthLifecycleState, monthSignature: string): number {
-  return state.status === "saved" && state.lastMonthSignature === monthSignature ? 0 : 2000;
+  return state.status === "saved" && state.lastMonthSignature === monthSignature ? 0 : SAVE_DEBOUNCE_MS;
 }
 
 /** True when a loaded scope is eligible for a write before signature checks. */

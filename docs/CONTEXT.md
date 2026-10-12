@@ -172,7 +172,7 @@ _Avoid_: Different rule engines per company without an explicit decision
 ### Month lifecycle
 
 **Rate Card** (`employee_rates/<COMPANY>`):
-Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary** and **Total Salary**, saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward **and is overlaid onto every month as it loads**, including months that already have their own saved data — so editing a standing figure today rewrites how every stored month renders, filed ones included. That is what makes a **Full Attendance Basic** reach the months whose accounting is already done, and equally what makes a mistyped raise reach them. Per-month inputs (Days Worked, Extra Days, advance, special bonus) are never overlaid and stay as saved. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
+Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary** and **Total Salary**, and their **Increments** (ADR-0016), saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward **and is overlaid onto every month as it loads**, including months that already have their own saved data — so editing a standing figure today rewrites how every stored month renders, filed ones included. That is what makes a **Full Attendance Basic** reach the months whose accounting is already done, and equally what makes a mistyped raise reach them. Per-month inputs (Days Worked, Extra Days, advance, special bonus) are never overlaid and stay as saved. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
 _Avoid_: Treating it as a per-month record; assuming a filed month is insulated from a later rate edit
 
 **Month Carry-Forward**:
@@ -186,7 +186,7 @@ _Avoid_: Keying an auto-save on the active company alone
 ### Pay history
 
 **Increment**:
-A recorded rise in an employee's pay, kept as history: the month it began, the rupee amount of the rise, and an optional note. Almost always added to **Travelling**. Purely a record — recording one never changes pay, and the salary figures are edited separately; months may be recorded after the fact. Belongs to the employee, not to a month, like the employee's notes.
+A recorded rise in an employee's pay, kept as history: the month it began, the rupee amount of the rise, and an optional note. Almost always added to **Travelling**. Purely a record — recording one never changes pay, and the salary figures are edited separately; months may be recorded after the fact. Belongs to the employee, not to a month, like the employee's notes. See ADR-0016.
 _Avoid_: Tracking raises in free-text notes; treating an Increment as an effective-dated rate (the **Rate Card** still applies its latest figures to every month); raise, revision, hike
 
 ### Sources
