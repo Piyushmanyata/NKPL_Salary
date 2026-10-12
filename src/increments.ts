@@ -1,24 +1,26 @@
-import { MONTH_NAMES, parseMonthYearString } from "./months";
+import { MONTH_NAMES, monthKey, parseMonthYearString } from "./months";
 import { roundMoney } from "./salary";
 import type { Increment } from "./types";
 
-const monthKey = (label: string) => {
+export const isPositiveMoney = (amount: number) => Number.isFinite(amount) && amount > 0;
+
+export function incrementMonth(label: string): string | undefined {
   const parsed = parseMonthYearString(label);
-  return parsed ? parsed.year * 12 + parsed.monthIndex : Number.NaN;
-};
+  return parsed && parsed.year >= 1000 ? `${MONTH_NAMES[parsed.monthIndex]} ${parsed.year}` : undefined;
+}
 
 export function sanitizeIncrements(value: unknown): Increment[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const kept = value.flatMap((entry): Increment[] => {
     if (!entry || typeof entry !== "object") return [];
     const { month, amount, note } = entry as Record<string, unknown>;
-    const parsed = typeof month === "string" ? parseMonthYearString(month) : null;
+    const label = typeof month === "string" ? incrementMonth(month) : undefined;
     const rounded = typeof amount === "number" ? roundMoney(amount) : 0;
-    if (!parsed || !(rounded > 0)) return [];
+    if (!label || !isPositiveMoney(rounded)) return [];
     const trimmed = typeof note === "string" ? note.trim() : "";
     return [
       {
-        month: `${MONTH_NAMES[parsed.monthIndex]} ${parsed.year}`,
+        month: label,
         amount: rounded,
         ...(trimmed ? { note: trimmed } : {}),
       },

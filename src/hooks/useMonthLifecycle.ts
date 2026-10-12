@@ -32,6 +32,7 @@ import {
 import {
   initialLifecycleState,
   monthLifecycleReducer,
+  ratesSaveDelay,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -291,14 +292,16 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: nextRatesSignature,
       });
-    }, 2000);
+    }, ratesSaveDelay(lifecycle, monthPayloadSignature));
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
     isCanonicalMonth,
+    lifecycle.lastMonthSignature,
     lifecycle.pendingWrite,
     lifecycle.retryToken,
     lifecycle.status,
+    monthPayloadSignature,
     nextRatesSignature,
     scopeMonthLabel,
   ]);

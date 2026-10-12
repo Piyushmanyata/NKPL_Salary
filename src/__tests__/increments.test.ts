@@ -105,6 +105,8 @@ describe("Increments — Rate Card round trip", () => {
       { month: "Oct 2026", amount: -5 },
       { month: "Oct 2026", amount: "abc" },
       { month: "Oct 2026", amount: Number.POSITIVE_INFINITY },
+      { month: "Oct 2026", amount: 1e308 },
+      { month: "September 0202", amount: 500 },
       { month: "Oct 2026", amount: 1000.456 },
       "not an entry",
       null,
