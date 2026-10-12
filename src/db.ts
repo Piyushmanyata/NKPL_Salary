@@ -1,4 +1,4 @@
-import type { EmployeeInput } from "./types";
+import type { EmployeeInput, Increment } from "./types";
 import {
   legacyStorageKeys,
   readStorage,
@@ -187,6 +187,7 @@ export interface EmployeeRate {
   notes?: string;
   /** Standing Official basic pin at full attendance. SPEC §6.3 / issue #29. */
   fullAttendanceBasic?: number;
+  increments?: Increment[];
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;

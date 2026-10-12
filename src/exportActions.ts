@@ -41,7 +41,7 @@ export function createExportDownload({
 
   const rows = mode === "main"
     ? buildOfficialExportRows(officialRows)
-    : buildReferenceExportRows(salaryRows);
+    : buildReferenceExportRows(salaryRows, monthLabel);
   const sheetLabel = mode === "main" ? "Official Main Sheet" : "Reference Salary Sheet";
   const fileStem = `${companyName || "Company"} ${sheetLabel} ${monthLabel}`;
   return {
