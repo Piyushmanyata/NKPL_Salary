@@ -22,8 +22,9 @@ month erased every employee's notes from `employee_rates/<COMPANY>`.
 
 - `sanitizeEmployee` keeps `notes`.
 - `hydrateSavedMonth` loads a saved month without the rate overlay and takes only `notes` from the
-  card: the card's notes win, and the month record's notes are the fallback when the card has
-  none — the rule `applyEmployeeRates` already uses for new months.
+  card. The card is authoritative for every employee it holds — its notes, or none — on saved and
+  new months alike (`applyEmployeeRates`); a month record's notes count only for an employee the
+  card does not hold.
 - A saved month's salaries, totals and Full Attendance Basic stay as saved. Only a new month picks
   up the card's figures.
 
@@ -31,9 +32,9 @@ month erased every employee's notes from `employee_rates/<COMPANY>`.
 
 - Opening the month the card was last built from rebuilds an identical card, so the load writes
   nothing and notes survive.
-- Notes the bug already wiped from the card come back the next time a month record that still
-  holds them is opened.
-- A note cleared on the card can return from an older month record that still holds it.
+- A note cleared on the card stays cleared in every month, like the Full Attendance Basic pin.
+- Notes the bug already wiped from the card stay hidden. Month records may still hold them, but
+  the card wins, so they must be re-typed.
 - A Full Attendance Basic pin reaches the month it was typed in and every month created after it,
   not months already saved. ADR-0012's "Uttam Das's PF rises retroactively for every stored month"
   does not happen; to pin a filed month, open it and set the pin there.
@@ -49,5 +50,10 @@ entered today would silently rewrite the pay of months already paid and filed.
 **Overlay notes and the Full Attendance Basic.** Matches ADR-0012's intent, but the pin moves
 Official PF, so it would retroactively change statutory remittance on filed months.
 
-**Card notes authoritative whenever the card has an entry.** A cleared note would stay cleared
-everywhere, but the notes the bug already wiped from the card would be lost for good.
+**Card notes first, month record as fallback.** Would recover notes the bug wiped from the card,
+but carry-forward copies notes into every month record, so a cleared note would return the next
+time any other month — older or newer — was opened.
+
+**Recover once, then the card.** Store a cleared note as `""` and fall back to the month record
+only for card entries written before this fix. Recovers wiped notes only from whichever month is
+opened first, and changes the card's shape for every employee.

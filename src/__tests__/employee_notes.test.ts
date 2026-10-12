@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateSalary } from "../salary";
 import { buildOfficialRow } from "../officialSheet";
-import { buildRateMap, hydrateRoster, hydrateSavedMonth } from "../roster";
+import { applyEmployeeRates, buildRateMap, hydrateRoster, hydrateSavedMonth } from "../roster";
 import type { EmployeeInput } from "../types";
 
 // Notes are a free-text log kept per employee (increments, remarks). They ride
@@ -54,8 +54,15 @@ describe("notes on a saved month", () => {
     expect(hydrateSavedMonth([base], 30, card)[0].notes).toBe("ID 44");
   });
 
-  it("survive from the month record when the Rate Card has none", () => {
+  it("survive from the month record for an employee the Rate Card does not hold", () => {
     expect(hydrateSavedMonth([{ ...base, notes: "ID 44" }], 30, {})[0].notes).toBe("ID 44");
+  });
+
+  it("stay cleared once cleared on the Rate Card, in saved and new months alike", () => {
+    const cleared = buildRateMap(hydrateRoster([base], 30));
+    const stale = { ...base, notes: "ID 44" };
+    expect(hydrateSavedMonth([stale], 30, cleared)[0].notes).toBeUndefined();
+    expect(applyEmployeeRates([stale], cleared)[0].notes).toBeUndefined();
   });
 
   it("prefer the Rate Card over the month record", () => {

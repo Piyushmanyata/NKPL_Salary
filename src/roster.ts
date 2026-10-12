@@ -121,8 +121,6 @@ export const carryForwardEmployee = (
   specialBonus: undefined,
 });
 
-// A new month takes the latest standing rates from the Rate Card. A month that
-// already has saved data keeps the rates it was saved with (ADR-0017).
 export const applyEmployeeRates = (
   list: EmployeeInput[],
   rates: EmployeeRateMap,
@@ -141,7 +139,7 @@ export const applyEmployeeRates = (
       bonusPerDay: Math.max(0, numberValue(rate.bonusPerDay)),
       ...(monthlySalary > 0 ? { monthlySalary } : {}),
       ...(totalSalary > monthlySalary ? { totalSalary } : {}),
-      ...(rate.notes ? { notes: rate.notes } : {}),
+      notes: rate.notes,
       // The pin is standing rate data: clearing it in the card clears it
       // everywhere, so an explicit 0 must erase the month snapshot's value.
       fullAttendanceBasic: fullAttendanceBasic > 0 ? fullAttendanceBasic : undefined,
@@ -168,7 +166,6 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-/** Sanitize each stored row, then overlay the given Rate Card. */
 export function hydrateRoster(
   rawEmployees: unknown[],
   monthDays: number,
@@ -186,7 +183,7 @@ export function hydrateSavedMonth(
   rates: EmployeeRateMap,
 ): EmployeeInput[] {
   return hydrateRoster(rawEmployees, monthDays).map((employee) => {
-    const notes = rates[employee.id]?.notes;
-    return notes ? { ...employee, notes } : employee;
+    const rate = rates[employee.id];
+    return rate ? { ...employee, notes: rate.notes } : employee;
   });
 }
