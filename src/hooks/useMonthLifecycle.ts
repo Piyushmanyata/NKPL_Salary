@@ -8,6 +8,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { applyRateCardPatch, rateCardPatch } from "../../api/_lib/rateCard";
 import {
   getAllMonthLabels,
   getEmployeeRates,
@@ -32,6 +33,8 @@ import {
 import {
   initialLifecycleState,
   monthLifecycleReducer,
+  ratesSaveDelay,
+  SAVE_DEBOUNCE_MS,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -63,8 +66,12 @@ function monthSignature(
   return JSON.stringify({ company, monthLabel, days, employees });
 }
 
-function ratesSignature(rates: EmployeeRateMap): string {
-  return JSON.stringify(rates);
+export function ratesSignature(roster: EmployeeInput[], baseline: string | null = null): string {
+  return JSON.stringify({ ...ratesFromSignature(baseline), ...buildRateMap(roster) });
+}
+
+function ratesFromSignature(signature: string | null): EmployeeRateMap {
+  return JSON.parse(signature ?? "{}");
 }
 
 function errorMessage(error: unknown): string {
@@ -95,12 +102,14 @@ export function useMonthLifecycle(
 
   const scopeMonthLabel = normalizeMonthLabel(monthLabel);
   const isCanonicalMonth = scopeMonthLabel === monthLabel;
-  const nextRates = useMemo(() => buildRateMap(employees), [employees]);
   const monthPayloadSignature = useMemo(
     () => monthSignature(activeCompany, scopeMonthLabel, effectiveMonthDays, employees),
     [activeCompany, scopeMonthLabel, effectiveMonthDays, employees],
   );
-  const nextRatesSignature = useMemo(() => ratesSignature(nextRates), [nextRates]);
+  const nextRatesSignature = useMemo(
+    () => ratesSignature(employees, lifecycle.lastRatesSignature),
+    [employees, lifecycle.lastRatesSignature],
+  );
 
   const carryMonthInto = useCallback(
     async (
@@ -125,7 +134,7 @@ export function useMonthLifecycle(
         company: activeCompany,
         monthLabel: target,
         suppressNextSave: false,
-        ratesSignature: ratesSignature(rates),
+        ratesSignature: ratesSignature(carried),
       });
       setAllMonths((current) =>
         current.includes(target) ? current : sortMonthsChronologically([...current, target]),
@@ -169,7 +178,7 @@ export function useMonthLifecycle(
             calendarDaysForMonth(scopeMonthLabel),
             roster,
           ),
-          ratesSignature: ratesSignature(rates),
+          ratesSignature: ratesSignature(roster),
         });
         return;
       }
@@ -241,7 +250,7 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: monthPayloadSignature,
       });
-    }, 2000);
+    }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
@@ -291,14 +300,16 @@ export function useMonthLifecycle(
         monthLabel: scopeMonthLabel,
         signature: nextRatesSignature,
       });
-    }, 2000);
+    }, ratesSaveDelay(lifecycle, monthPayloadSignature));
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
     isCanonicalMonth,
+    lifecycle.lastMonthSignature,
     lifecycle.pendingWrite,
     lifecycle.retryToken,
     lifecycle.status,
+    monthPayloadSignature,
     nextRatesSignature,
     scopeMonthLabel,
   ]);
@@ -306,9 +317,13 @@ export function useMonthLifecycle(
   useEffect(() => {
     const pending = lifecycle.pendingWrite;
     if (pending?.kind !== "rates") return;
-    void saveEmployeeRates(pending.company, nextRates).then((result) => {
+    const patch = rateCardPatch(
+      ratesFromSignature(lifecycle.lastRatesSignature),
+      ratesFromSignature(pending.signature),
+    );
+    void saveEmployeeRates(pending.company, patch).then((result) => {
       if (result.ok) {
-        setEmployeeRates(nextRates);
+        setEmployeeRates((card) => applyRateCardPatch(card, patch));
         dispatchLifecycle({
           type: "SAVE_SUCCESS",
           kind: "rates",
@@ -347,6 +362,7 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
       suppressNextSave: false,
+      ratesSignature: ratesSignature([]),
     });
   }, [activeCompany, scopeMonthLabel]);
 
@@ -360,7 +376,7 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
       suppressNextSave: false,
-      ratesSignature: ratesSignature(employeeRates),
+      ratesSignature: ratesSignature(sanitized),
     });
   }, [activeCompany, effectiveMonthDays, employeeRates, scopeMonthLabel]);
 

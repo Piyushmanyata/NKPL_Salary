@@ -1,4 +1,4 @@
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
@@ -37,18 +37,19 @@ export function sortMonthsChronologically(months: string[]): string[] {
   });
 }
 
+export function monthKey(label: string): number {
+  const parsed = parseMonthYearString(label);
+  return parsed ? parsed.year * 12 + parsed.monthIndex : Number.NaN;
+}
+
 /** Pick the nearest earlier month, or the earliest later month, for carry-forward. */
 export function pickCarrySource(months: string[], target: string): string {
-  const key = (label: string) => {
-    const parsed = parseMonthYearString(label);
-    return parsed ? parsed.year * 12 + parsed.monthIndex : Number.NaN;
-  };
-  const targetKey = key(target);
+  const targetKey = monthKey(target);
   if (!Number.isFinite(targetKey)) return "";
 
-  const candidates = months.filter((month) => month !== target && Number.isFinite(key(month)));
-  const sorted = [...candidates].sort((a, b) => key(a) - key(b));
-  const before = sorted.filter((month) => key(month) < targetKey);
+  const candidates = months.filter((month) => month !== target && Number.isFinite(monthKey(month)));
+  const sorted = [...candidates].sort((a, b) => monthKey(a) - monthKey(b));
+  const before = sorted.filter((month) => monthKey(month) < targetKey);
   return before.length ? before[before.length - 1] : (sorted[0] ?? "");
 }
 

@@ -94,7 +94,7 @@ export function OfficialSheet({
                 ) : null}
                 {row.esiSuppressedByPin ? (
                   <span
-                    title={`Main Basic pin of ${currency(row.monthlyBasic)} is above the ${currency(ESI_GROSS_LIMIT)} ESI ceiling, so this employee's ESI is not charged. Clear the pin to restore it.`}
+                    title={`Fixed Main-Sheet Basic puts this employee's Basic at ${currency(row.monthlyBasic)}, above the ${currency(ESI_GROSS_LIMIT)} ESI ceiling, so their ESI is not charged. Set Fixed Main-Sheet Basic to 0 (Settings → Advanced) to restore it.`}
                     style={{
                       marginLeft: 6,
                       fontSize: 10,

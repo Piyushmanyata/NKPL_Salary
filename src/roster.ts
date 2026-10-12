@@ -7,6 +7,7 @@ import {
   uid,
 } from "./salary";
 import { normalizeCategory } from "./officialSheet";
+import { sanitizeIncrements } from "./increments";
 import type { EmployeeInput } from "./types";
 import type { EmployeeRateMap } from "./db";
 
@@ -98,6 +99,7 @@ export const sanitizeEmployee = (
       Math.max(0, numberValue(row.fullAttendanceBasic)) > 0
         ? Math.max(0, numberValue(row.fullAttendanceBasic))
         : undefined,
+    increments: sanitizeIncrements(row.increments),
     specialBonus:
       row.specialBonus !== undefined &&
       row.specialBonus !== null &&
@@ -143,6 +145,7 @@ export const applyEmployeeRates = (
       // The pin is standing rate data: clearing it in the card clears it
       // everywhere, so an explicit 0 must erase the month snapshot's value.
       fullAttendanceBasic: fullAttendanceBasic > 0 ? fullAttendanceBasic : undefined,
+      increments: sanitizeIncrements(rate.increments),
     };
   });
 
@@ -161,6 +164,7 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
       totalSalary: Math.max(0, numberValue(employee.totalSalary)),
       ...(employee.notes?.trim() ? { notes: employee.notes } : {}),
       fullAttendanceBasic: Math.max(0, numberValue(employee.fullAttendanceBasic)),
+      ...(employee.increments?.length ? { increments: employee.increments } : {}),
     };
   });
   return map;
@@ -184,6 +188,8 @@ export function hydrateSavedMonth(
 ): EmployeeInput[] {
   return hydrateRoster(rawEmployees, monthDays).map((employee) => {
     const rate = rates[employee.id];
-    return rate ? { ...employee, notes: rate.notes } : employee;
+    return rate
+      ? { ...employee, notes: rate.notes, increments: sanitizeIncrements(rate.increments) }
+      : employee;
   });
 }

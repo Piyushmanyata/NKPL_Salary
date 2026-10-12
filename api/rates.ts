@@ -1,5 +1,6 @@
 import { redisGetJson, redisSetJson } from './_lib/redis.js';
 import { normalizeCompany, withApiHandler } from './_lib/http.js';
+import { applyRateCardPatch, isRateCardPatch, isRecord } from './_lib/rateCard.js';
 
 // A single small JSON value per company holds every employee's per-day rates.
 // This is the one piece of employee data meant to persist across every month.
@@ -14,11 +15,18 @@ export default withApiHandler('GET,POST,OPTIONS', async (req, res) => {
 
   if (req.method === 'POST') {
     const bodyCompany = normalizeCompany(req.body.company);
-    const rates = req.body.rates;
-    if (!rates || typeof rates !== 'object') {
-      return res.status(400).json({ error: 'Missing rates' });
+    const patch = req.body.patch;
+    if (!isRateCardPatch(patch)) {
+      return res.status(400).json({ error: 'Missing patch' });
     }
-    await redisSetJson(`employee_rates/${bodyCompany}`, rates);
+    const key = `employee_rates/${bodyCompany}`;
+    // ponytail: read-merge-write is not atomic; two saves in the same instant lose one. Use WATCH/MULTI if the app gains concurrent writers.
+    const stored = await redisGetJson<Record<string, object>>(key);
+    if (stored !== null && !isRecord(stored)) {
+      return res.status(500).json({ error: 'Stored Rate Card is not an object' });
+    }
+    const rates = applyRateCardPatch(stored ?? {}, patch);
+    await redisSetJson(key, rates);
     return res.status(200).json(rates);
   }
 

@@ -1,4 +1,5 @@
-import type { EmployeeInput } from "./types";
+import { applyRateCardPatch, type RateCardPatch } from "../api/_lib/rateCard";
+import type { EmployeeInput, Increment } from "./types";
 import {
   legacyStorageKeys,
   readStorage,
@@ -187,6 +188,7 @@ export interface EmployeeRate {
   notes?: string;
   /** Standing Official basic pin at full attendance. SPEC §6.3 / issue #29. */
   fullAttendanceBasic?: number;
+  increments?: Increment[];
 }
 
 export type EmployeeRateMap = Record<string, EmployeeRate>;
@@ -199,7 +201,10 @@ export async function getEmployeeRates(company: string): Promise<EmployeeRateMap
     writeStorage(storageKeys.employeeRates(company), JSON.stringify(result.data));
     return result.data as EmployeeRateMap;
   }
+  return cachedEmployeeRates(company);
+}
 
+function cachedEmployeeRates(company: string): EmployeeRateMap {
   const cached = readStorage(
     storageKeys.employeeRates(company),
     legacyStorageKeys.employeeRates(company),
@@ -216,8 +221,11 @@ export async function getEmployeeRates(company: string): Promise<EmployeeRateMap
 
 export async function saveEmployeeRates(
   company: string,
-  rates: EmployeeRateMap,
+  patch: RateCardPatch,
 ): Promise<{ ok: boolean; error?: string }> {
-  writeStorage(storageKeys.employeeRates(company), JSON.stringify(rates));
-  return postJson("/api/rates", { company, rates });
+  writeStorage(
+    storageKeys.employeeRates(company),
+    JSON.stringify(applyRateCardPatch(cachedEmployeeRates(company), patch)),
+  );
+  return postJson("/api/rates", { company, patch });
 }

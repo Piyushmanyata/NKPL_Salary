@@ -148,8 +148,8 @@ Statutory Official daily basic rates: Unskilled ₹400, Semi-skilled ₹440, Ski
 _Avoid_: Reference salary per day
 
 **Full Attendance Basic**:
-Standing per-employee Official **Monthly Basic**, expressed as the figure that prints at **full attendance** (`A = 26`) and prorated on the same 26-day frame below that. Lives on the **Rate Card**, so it is standing package data rather than a monthly input: it carries into every new month, while a month already saved keeps the pin it was saved with (ADR-0017). It **overrides both** the **Wage-Board Daily** basic (when PF is on) and the **Opt-Out Basic** (when PF is off): an explicit per-person figure outranks a general formula. Absent, `0` or negative means no pin. Never moves **Net Payable** — **Net Equality Packing** absorbs it into HRA/TA/bonus — but it does move Official PF, and it can suppress **ESI (Official)** by lifting basic past ₹21,000, which flags the row rather than failing silently (ADR-0012).
-_Avoid_: Reference basic, Basic Share, a per-month override, a name list in code, treating it as a cap rather than an anchor
+Standing per-employee Official **Monthly Basic**, expressed as the figure that prints at **full attendance** (`A = 26`) and prorated on the same 26-day frame below that. Lives on the **Rate Card**, so it is standing package data rather than a monthly input: it carries into every new month, while a month already saved keeps the pin it was saved with (ADR-0017). It **overrides both** the **Wage-Board Daily** basic (when PF is on) and the **Opt-Out Basic** (when PF is off): an explicit per-person figure outranks a general formula. Absent, `0` or negative means no pin. Never moves **Net Payable** — **Net Equality Packing** absorbs it into HRA/TA/bonus — but it does move Official PF, and it can suppress **ESI (Official)** by lifting basic past ₹21,000, which flags the row rather than failing silently (ADR-0012). Labelled **Fixed Main-Sheet Basic** in the settings panel.
+_Avoid_: **Main Basic** and **Wage Basic** (the first hides which sheet, the second reads as the **Wage-Board Daily** basic it overrides); Reference basic, Basic Share, a per-month override, a name list in code, treating it as a cap rather than an anchor
 
 **Opt-Out Basic**:
 Elevated Official basic used **only when PF is off**. When PF is on, Official basic is the wage-board daily rate × Official attendance, **uncapped** (no ₹15,000 cap on the displayed basic). When PF is off: if ESI is also off, max(₹21,100, 51% of total salary) attendance-prorated on the Official frame; if ESI is on (and PF off), max(₹15,100, 51% of total salary) attendance-prorated. Special always uses this path (PF forced off).
@@ -172,7 +172,7 @@ _Avoid_: Different rule engines per company without an explicit decision
 ### Month lifecycle
 
 **Rate Card** (`employee_rates/<COMPANY>`):
-Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary**, **Total Salary**, **Full Attendance Basic** and notes, saved automatically whenever the user edits them. It **seeds new months** via Month Carry-Forward. A month that already has saved data keeps the rates it was saved with — a standing figure edited today never rewrites a filed month — and takes only notes from the card, which is authoritative for every employee it holds: a note cleared on the card stays cleared in every month (ADR-0017). Per-month inputs (Days Worked, Extra Days, advance, special bonus) are never overlaid. Belongs to exactly one company — a rate card must never contain another company's employee IDs. Known hazard: opening an older saved month rewrites the card from that month's roster (issue #35).
+Per-company store of each employee's standing `salaryPerDay`, `bonusPerDay`, **Monthly Salary**, **Total Salary**, **Full Attendance Basic**, notes and **Increments** (ADR-0016), saved automatically whenever the user edits them. A save changes only the fields edited since the month loaded (an employee the card lacks gets their whole entry), merged into the stored card by the server: opening a month never writes it, and no edit removes an employee's entry, not even removing them from a month (ADR-0018). It **seeds new months** via Month Carry-Forward. A month that already has saved data keeps the rates it was saved with — a standing figure edited today never rewrites a filed month — and takes only notes and Increments from the card, which is authoritative for every employee it holds: a note cleared or an Increment deleted on the card stays gone in every month (ADR-0016, ADR-0017). Per-month inputs (Days Worked, Extra Days, advance, special bonus) are never overlaid. Belongs to exactly one company — a rate card must never contain another company's employee IDs.
 _Avoid_: Treating it as a per-month record; assuming a rate edit reaches a month that is already saved
 
 **Month Carry-Forward**:
@@ -182,6 +182,12 @@ _Avoid_: Copying last month's manual day values forward; prompting the user to c
 **Scope Guard**:
 The rule that a roster may only be written to the company+month it was loaded for. Switching company changes the active company a render before the new roster arrives, so without this guard the debounced auto-save writes the previous company's employees under the new company's key. This is not hypothetical — it put all 51 NKPL employees into `monthly_salary/APTUS/July 2026` and `employee_rates/APTUS` on 2026-07-29.
 _Avoid_: Keying an auto-save on the active company alone
+
+### Pay history
+
+**Increment**:
+A recorded rise in an employee's pay, kept as history: the month it began, the rupee amount of the rise, and an optional note. Almost always added to **Travelling**. Purely a record — recording one never changes pay, and the salary figures are edited separately; months may be recorded after the fact. Belongs to the employee, not to a month, like the employee's notes. See ADR-0016.
+_Avoid_: Tracking raises in free-text notes; treating an Increment as an effective-dated rate (the **Rate Card** still applies its latest figures to every month); raise, revision, hike
 
 ### Sources
 

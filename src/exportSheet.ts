@@ -1,4 +1,5 @@
 import { roundMoney } from "./salary";
+import { incrementsForMonth } from "./increments";
 import type { OfficialRow } from "./officialSheet";
 import type { SalaryRow } from "./types";
 import { zipStored } from "./zip";
@@ -21,7 +22,7 @@ export const sanitizeSpreadsheetCell = (value: string) =>
 
 export type ExportRow = Record<string, string | number>;
 
-export function buildReferenceExportRows(rows: SalaryRow[]): ExportRow[] {
+export function buildReferenceExportRows(rows: SalaryRow[], monthLabel: string): ExportRow[] {
   return rows.map((row, index) => ({
     "Sl No": index + 1,
     "Employee Name": row.name,
@@ -31,6 +32,7 @@ export function buildReferenceExportRows(rows: SalaryRow[]): ExportRow[] {
     "Bonus Per Day": roundMoney(row.bonusPerDay),
     "Salary Per Month": roundMoney(row.monthlySalary),
     "Total Salary": roundMoney(row.totalSalary),
+    Increment: incrementsForMonth(row.increments, monthLabel).total || "",
     "Days Worked": row.daysWorked,
     "Extra Days": row.extraDays,
     "Absent Days": row.absentDays,

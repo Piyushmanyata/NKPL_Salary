@@ -4,6 +4,7 @@ import {
   canWriteForScope,
   initialLifecycleState,
   monthLifecycleReducer,
+  ratesSaveDelay,
   type MonthLifecycleState,
 } from "../monthLifecycle";
 
@@ -13,6 +14,7 @@ function loaded(): MonthLifecycleState {
   return monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
     type: "LOAD_SUCCESS",
     ...SCOPE,
+    ratesSignature: "rates-0",
   });
 }
 
@@ -56,7 +58,7 @@ describe("monthLifecycleReducer write gate", () => {
     expect(state.awaitingChoice).toBe(false);
     expect(state.suppressNextSave).toBe(true);
     expect(state.lastMonthSignature).toBeNull();
-    expect(state.lastRatesSignature).toBeNull();
+    expect(state.lastRatesSignature).toBe("rates-0");
   });
 
   it("refuses writes while a no-data choice is open", () => {
@@ -105,6 +107,14 @@ describe("monthLifecycleReducer write gate", () => {
     expect(state.pendingWrite?.kind).toBe("rates");
     state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
     expect(requestRates(state, "rates-2")).toEqual(state);
+  });
+
+  it("ignores a late success from a write that is no longer the pending one", () => {
+    const state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+
+    expect(
+      monthLifecycleReducer(state, { type: "SAVE_SUCCESS", kind: "rates", signature: "rates-A" }),
+    ).toEqual(state);
   });
 
   it("rejects a scope mismatch before any signature check", () => {
@@ -183,5 +193,34 @@ describe("monthLifecycleReducer write gate", () => {
       company: "APTUS",
       monthLabel: "July 2026",
     }, "month-1")).toBe(false);
+  });
+});
+
+describe("ratesSaveDelay", () => {
+  function monthSaved(signature = "month-1"): MonthLifecycleState {
+    return monthLifecycleReducer(requestMonth(requestMonth(loaded()), signature), {
+      type: "SAVE_SUCCESS",
+      kind: "month",
+      signature,
+    });
+  }
+
+  it("sends the Rate Card straight after the month write for the same roster", () => {
+    expect(ratesSaveDelay(monthSaved(), "month-1")).toBe(0);
+  });
+
+  it("debounces while the roster has changed since the month write", () => {
+    expect(ratesSaveDelay(monthSaved(), "month-2")).toBe(2000);
+  });
+
+  it("debounces after a load, before anything was written", () => {
+    const state = monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
+      type: "LOAD_SUCCESS",
+      ...SCOPE,
+      monthSignature: "month-1",
+      ratesSignature: "rates-0",
+    });
+
+    expect(ratesSaveDelay(state, "month-1")).toBe(2000);
   });
 });

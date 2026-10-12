@@ -15,15 +15,15 @@ exports[`pipeline characterization (#26) > scripted edits + engine + export byte
 `;
 
 exports[`pipeline characterization (#26) > scripted edits + engine + export bytes stay stable > ref-csv 1`] = `
-""Sl No","Employee Name","Category","Basic Percent","Salary Per Day","Bonus Per Day","Salary Per Month","Total Salary","Days Worked","Extra Days","Absent Days","PF Opt In","ESI Opt In","Absent Deduction","Earned Salary","Basic Salary","HRA","Travel Allowance","Performance Bonus","Special Bonus","Daily Bonus Amount","Employee PF Deduction","Employer PF Contribution","ESI Deduction","Employer ESI Contribution","P-Tax","Advance","Other Deduction","Net Payable","Employer Total Cost"
-"1","Ravi Kumar","Skilled","70","520","110","15600","18900","29","1","1","Yes","Yes","520","15080","10556","5399.8","2314.2","630","200","3190","1267","1267","90.75","393.25","130","-750","0","16862.25","20760.25"
-"2","Unskilled Worker","Unskilled","50","420","50","12600","14100","26","0","4","Yes","Yes","1680","10920","5460","4732","2028","0","0","1300","655","655","69","299","0","0","100","11396","13174"
-"3","Special Person","Special","70","0","0","20000","22000","30","0","0","No","No","0","20000","14000","4200","1800","0","0","0","0","0","0","0","130","0","0","19870","20000""
+""Sl No","Employee Name","Category","Basic Percent","Salary Per Day","Bonus Per Day","Salary Per Month","Total Salary","Increment","Days Worked","Extra Days","Absent Days","PF Opt In","ESI Opt In","Absent Deduction","Earned Salary","Basic Salary","HRA","Travel Allowance","Performance Bonus","Special Bonus","Daily Bonus Amount","Employee PF Deduction","Employer PF Contribution","ESI Deduction","Employer ESI Contribution","P-Tax","Advance","Other Deduction","Net Payable","Employer Total Cost"
+"1","Ravi Kumar","Skilled","70","520","110","15600","18900","","29","1","1","Yes","Yes","520","15080","10556","5399.8","2314.2","630","200","3190","1267","1267","90.75","393.25","130","-750","0","16862.25","20760.25"
+"2","Unskilled Worker","Unskilled","50","420","50","12600","14100","","26","0","4","Yes","Yes","1680","10920","5460","4732","2028","0","0","1300","655","655","69","299","0","0","100","11396","13174"
+"3","Special Person","Special","70","0","0","20000","22000","","30","0","0","No","No","0","20000","14000","4200","1800","0","0","0","0","0","0","0","130","0","0","19870","20000""
 `;
 
 exports[`pipeline characterization (#26) > scripted edits + engine + export bytes stay stable > ref-xlsx 1`] = `
-"Sl No,Employee Name,Category,Basic Percent,Salary Per Day,Bonus Per Day,Salary Per Month,Total Salary,Days Worked,Extra Days,Absent Days,PF Opt In,ESI Opt In,Absent Deduction,Earned Salary,Basic Salary,HRA,Travel Allowance,Performance Bonus,Special Bonus,Daily Bonus Amount,Employee PF Deduction,Employer PF Contribution,ESI Deduction,Employer ESI Contribution,P-Tax,Advance,Other Deduction,Net Payable,Employer Total Cost
-1,Ravi Kumar,Skilled,70,520,110,15600,18900,29,1,1,Yes,Yes,520,15080,10556,5399.8,2314.2,630,200,3190,1267,1267,90.75,393.25,130,-750,0,16862.25,20760.25
-2,Unskilled Worker,Unskilled,50,420,50,12600,14100,26,0,4,Yes,Yes,1680,10920,5460,4732,2028,0,0,1300,655,655,69,299,0,0,100,11396,13174
-3,Special Person,Special,70,0,0,20000,22000,30,0,0,No,No,0,20000,14000,4200,1800,0,0,0,0,0,0,0,130,0,0,19870,20000"
+"Sl No,Employee Name,Category,Basic Percent,Salary Per Day,Bonus Per Day,Salary Per Month,Total Salary,Increment,Days Worked,Extra Days,Absent Days,PF Opt In,ESI Opt In,Absent Deduction,Earned Salary,Basic Salary,HRA,Travel Allowance,Performance Bonus,Special Bonus,Daily Bonus Amount,Employee PF Deduction,Employer PF Contribution,ESI Deduction,Employer ESI Contribution,P-Tax,Advance,Other Deduction,Net Payable,Employer Total Cost
+1,Ravi Kumar,Skilled,70,520,110,15600,18900,,29,1,1,Yes,Yes,520,15080,10556,5399.8,2314.2,630,200,3190,1267,1267,90.75,393.25,130,-750,0,16862.25,20760.25
+2,Unskilled Worker,Unskilled,50,420,50,12600,14100,,26,0,4,Yes,Yes,1680,10920,5460,4732,2028,0,0,1300,655,655,69,299,0,0,100,11396,13174
+3,Special Person,Special,70,0,0,20000,22000,,30,0,0,No,No,0,20000,14000,4200,1800,0,0,0,0,0,0,0,130,0,0,19870,20000"
 `;

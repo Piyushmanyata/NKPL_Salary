@@ -21,10 +21,10 @@ month erased every employee's notes from `employee_rates/<COMPANY>`.
 ## Decision
 
 - `sanitizeEmployee` keeps `notes`.
-- `hydrateSavedMonth` loads a saved month without the rate overlay and takes only `notes` from the
-  card. The card is authoritative for every employee it holds — its notes, or none — on saved and
-  new months alike (`applyEmployeeRates`); a month record's notes count only for an employee the
-  card does not hold.
+- `hydrateSavedMonth` loads a saved month without the rate overlay and takes only `notes` (and
+  `increments`, ADR-0016) from the card. The card is authoritative for every employee it holds —
+  its notes, or none — on saved and new months alike (`applyEmployeeRates`); a month record's
+  notes count only for an employee the card does not hold.
 - A saved month's salaries, totals and Full Attendance Basic stay as saved. Only a new month picks
   up the card's figures.
 
@@ -40,7 +40,7 @@ month erased every employee's notes from `employee_rates/<COMPANY>`.
   does not happen; to pin a filed month, open it and set the pin there.
 - Not fixed here: opening an older saved month rebuilds the whole card from that month's roster
   and `/api/rates` replaces the stored value, reverting standing salaries and dropping employees
-  absent from that month (issue #35).
+  absent from that month (issue #35). Fixed by ADR-0018.
 
 ## Alternatives rejected
 
