@@ -24,7 +24,7 @@ export type MonthLifecycleState = {
   suppressNextSave: boolean;
   /** Identity of the last month payload successfully written. */
   lastMonthSignature: string | null;
-  /** Identity of the last shared Rate Card successfully written. */
+  /** JSON of the Rate Card entries as loaded or last written, keeping employees since dropped from the roster; a rates write sends only what differs from it. */
   lastRatesSignature: string | null;
   saveError: string | null;
   retryToken: number;
@@ -38,7 +38,7 @@ export type MonthLifecycleAction =
       company: string;
       monthLabel: string;
       monthSignature?: string;
-      ratesSignature?: string;
+      ratesSignature: string;
       suppressNextSave?: boolean;
     }
   | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
@@ -147,7 +147,7 @@ export function monthLifecycleReducer(
         awaitingChoice: false,
         suppressNextSave: action.suppressNextSave ?? true,
         lastMonthSignature: action.monthSignature ?? null,
-        lastRatesSignature: action.ratesSignature ?? null,
+        lastRatesSignature: action.ratesSignature,
         saveError: null,
         pendingWrite: null,
       };
@@ -200,9 +200,10 @@ export function monthLifecycleReducer(
       );
 
     case "SAVE_SUCCESS": {
-      if (!state.pendingWrite) return state;
-      const kind = action.kind ?? state.pendingWrite.kind;
-      const signature = action.signature ?? state.pendingWrite.signature;
+      const pending = state.pendingWrite;
+      if (!pending) return state;
+      const { kind = pending.kind, signature = pending.signature } = action;
+      if (kind !== pending.kind || signature !== pending.signature) return state;
       return {
         ...state,
         status: "saved",
