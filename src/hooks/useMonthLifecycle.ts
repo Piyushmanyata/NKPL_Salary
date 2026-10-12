@@ -20,6 +20,7 @@ import {
   carryForwardEmployee,
   buildRateMap,
   hydrateRoster,
+  hydrateSavedMonth,
 } from "../roster";
 import type { EmployeeInput } from "../types";
 import {
@@ -151,9 +152,10 @@ export function useMonthLifecycle(
       }
 
       if (monthResult.kind === "found") {
-        const roster = hydrateRoster(
+        const roster = hydrateSavedMonth(
           monthResult.record.employees,
           calendarDaysForMonth(scopeMonthLabel),
+          rates,
         );
         setEmployees(roster);
         setCopySourceMonth("");

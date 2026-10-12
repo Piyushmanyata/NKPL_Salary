@@ -7,7 +7,7 @@ import {
 } from "../officialSheet";
 import { alignReferenceEsi, calculateSalary, roundMoney } from "../salary";
 import { applyEmployeeEdit } from "../editEmployee";
-import { applyEmployeeRates, buildRateMap, sanitizeEmployee } from "../roster";
+import { applyEmployeeRates, buildRateMap, hydrateSavedMonth, sanitizeEmployee } from "../roster";
 import type { EmployeeInput, SalaryRow } from "../types";
 
 function refRow(partial: EmployeeInput, monthDays = 30): SalaryRow {
@@ -242,19 +242,24 @@ describe("Full Attendance Basic — persistence (issue #29)", () => {
     }
   });
 
-  it("round-trips through the Rate Card and reaches every month", () => {
+  it("round-trips through the Rate Card into a new month", () => {
     const rates = buildRateMap([guru({ fullAttendanceBasic: 21500 }) as EmployeeInput]);
     expect(rates["emp-1"].fullAttendanceBasic).toBe(21500);
 
-    // A stored month snapshot with no pin picks it up from the card.
+    // A carried-forward snapshot with no pin picks it up from the card.
     const [overlaid] = applyEmployeeRates([guru()], rates);
     expect(overlaid.fullAttendanceBasic).toBe(21500);
   });
 
-  it("clearing the pin in the Rate Card clears it on already-saved months", () => {
+  it("clearing the pin in the Rate Card clears it from new months", () => {
     const rates = buildRateMap([guru({ fullAttendanceBasic: 0 }) as EmployeeInput]);
     const [overlaid] = applyEmployeeRates([guru({ fullAttendanceBasic: 21500 })], rates);
     expect(overlaid.fullAttendanceBasic).toBeUndefined();
+  });
+
+  it("leaves a month that is already saved on the pin it was saved with (ADR-0017)", () => {
+    const rates = buildRateMap([guru({ fullAttendanceBasic: 21500 }) as EmployeeInput]);
+    expect(hydrateSavedMonth([guru()], 30, rates)[0].fullAttendanceBasic).toBeUndefined();
   });
 
   it("is editable and clearable through the settings panel", () => {

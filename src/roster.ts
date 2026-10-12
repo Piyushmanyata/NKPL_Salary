@@ -78,6 +78,7 @@ export const sanitizeEmployee = (
           : undefined,
     salaryPerDay,
     bonusPerDay,
+    notes: typeof row.notes === "string" && row.notes.trim() ? row.notes : undefined,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
     extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
@@ -120,9 +121,8 @@ export const carryForwardEmployee = (
   specialBonus: undefined,
 });
 
-// Salary/day and bonus/day are shared across every month for a given
-// employee — overlay the shared rate on top of whatever per-month snapshot
-// was loaded so every month always reflects the latest rate.
+// A new month takes the latest standing rates from the Rate Card. A month that
+// already has saved data keeps the rates it was saved with (ADR-0017).
 export const applyEmployeeRates = (
   list: EmployeeInput[],
   rates: EmployeeRateMap,
@@ -168,7 +168,7 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-/** Hydrate a stored month record: sanitize each row then overlay Rate Card. */
+/** Sanitize each stored row, then overlay the given Rate Card. */
 export function hydrateRoster(
   rawEmployees: unknown[],
   monthDays: number,
@@ -178,4 +178,15 @@ export function hydrateRoster(
     .map((emp, index) => sanitizeEmployee(emp, index, monthDays))
     .filter((emp): emp is EmployeeInput => Boolean(emp));
   return applyEmployeeRates(sanitized, rates);
+}
+
+export function hydrateSavedMonth(
+  rawEmployees: unknown[],
+  monthDays: number,
+  rates: EmployeeRateMap,
+): EmployeeInput[] {
+  return hydrateRoster(rawEmployees, monthDays).map((employee) => {
+    const notes = rates[employee.id]?.notes;
+    return notes ? { ...employee, notes } : employee;
+  });
 }
