@@ -79,6 +79,7 @@ export const sanitizeEmployee = (
           : undefined,
     salaryPerDay,
     bonusPerDay,
+    notes: typeof row.notes === "string" && row.notes.trim() ? row.notes : undefined,
     daysWorked: isSpecial ? days : clampDays(numberValue(row.daysWorked), days),
     extraDays: isSpecial ? 0 : Math.max(0, numberValue(row.extraDays)),
     basicPercent: clampBasicPercent(row.basicPercent),
@@ -122,9 +123,6 @@ export const carryForwardEmployee = (
   specialBonus: undefined,
 });
 
-// Salary/day and bonus/day are shared across every month for a given
-// employee — overlay the shared rate on top of whatever per-month snapshot
-// was loaded so every month always reflects the latest rate.
 export const applyEmployeeRates = (
   list: EmployeeInput[],
   rates: EmployeeRateMap,
@@ -143,7 +141,7 @@ export const applyEmployeeRates = (
       bonusPerDay: Math.max(0, numberValue(rate.bonusPerDay)),
       ...(monthlySalary > 0 ? { monthlySalary } : {}),
       ...(totalSalary > monthlySalary ? { totalSalary } : {}),
-      ...(rate.notes ? { notes: rate.notes } : {}),
+      notes: rate.notes,
       // The pin is standing rate data: clearing it in the card clears it
       // everywhere, so an explicit 0 must erase the month snapshot's value.
       fullAttendanceBasic: fullAttendanceBasic > 0 ? fullAttendanceBasic : undefined,
@@ -172,7 +170,6 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
   return map;
 };
 
-/** Hydrate a stored month record: sanitize each row then overlay Rate Card. */
 export function hydrateRoster(
   rawEmployees: unknown[],
   monthDays: number,
@@ -191,6 +188,8 @@ export function hydrateSavedMonth(
 ): EmployeeInput[] {
   return hydrateRoster(rawEmployees, monthDays).map((employee) => {
     const rate = rates[employee.id];
-    return rate ? { ...employee, increments: sanitizeIncrements(rate.increments) } : employee;
+    return rate
+      ? { ...employee, notes: rate.notes, increments: sanitizeIncrements(rate.increments) }
+      : employee;
   });
 }

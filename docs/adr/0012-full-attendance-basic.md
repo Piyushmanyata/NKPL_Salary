@@ -5,7 +5,7 @@
 Accepted (2026-09-02). Adds a branch ahead of both SPEC §6.3 basic rules — the wage board of
 TICKET-12 and the opt-out floor of TICKET-08 — and qualifies the ESI clamp of ADR-0011.
 Reference construction, net equality (ADR-0001) and the ESI base (ADR-0002, ADR-0005) are
-unchanged. Issue #29.
+unchanged. Issue #29. §4 and the retroactive-PF consequence corrected by ADR-0017.
 
 ## Context
 
@@ -53,11 +53,10 @@ discontinuity at exactly the attendance boundary, where losing one day costs the
 while remitting PF computed on ₹12,584 would be internally inconsistent on a filed register.
 For Uttam Das this moves employee PF from ₹1,510 to ₹1,800, and employer PF likewise.
 
-**4. It lives on the Rate Card, so it reaches every month.** It is standing package data, not a
-monthly input. The Rate Card is overlaid on every month as it loads, so the pin applies to
-already-filed months — which is the point, since their accounting was done on these figures.
-This is safe in a way a retroactive *raise* is not: the pin cannot move net, so no past payment
-changes.
+**4. It lives on the Rate Card, so it carries into every new month.** It is standing package
+data, not a monthly input. A month that already has saved data keeps the pin it was saved with —
+the card seeds new months only (ADR-0017) — so a filed month gets the pin by opening it and
+setting the pin there.
 
 **5. It may suppress ESI, and says so.** A pin above ₹21,000 zeroes ESI for an otherwise-eligible
 employee. The pin still wins, but the row is flagged `esiSuppressedByPin` and badged on the
@@ -71,8 +70,9 @@ since `A_min` is 1 for anyone who worked.
 ## Consequences
 
 - Nine NKPL rows print their agreed basic; APTUS needs data entry only, no code change.
-- **Uttam Das's PF rises ₹580/month across employee and employer**, retroactively for every
-  stored month he was PF-on. This is the only real money the change moves.
+- **Uttam Das's PF rises ₹580/month across employee and employer** in every month that carries
+  his pin. Months already saved are not changed unless the pin is set in them (ADR-0017). This
+  is the only real money the change moves.
 - **A pin the row cannot afford degrades quietly.** The packer lowers attendance until the
   prorated pin fits, so an over-large pin prints a basic *below* the agreed figure and an
   attendance below the days actually worked, with no flag. "Guru shows 21,500" holds only while
