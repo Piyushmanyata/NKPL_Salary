@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-09-03). Changes what the Main (Official) sheet *displays* and *exports*, on screen,
+Accepted (2026-09-03). Export format amended by ADR-0015: the `.xls` below is now a real `.xlsx`
+with the same ruled cells. Changes what the Main (Official) sheet *displays* and *exports*, on screen,
 in print, and in the `.xls`. No money rule moves: `salary.ts` and `officialSheet.ts` are untouched,
 `OfficialRow` keeps every field it had, and net equality (ADR-0001), the ESI base (ADR-0005), the
 ADR-0012 pin and the ADR-0013 ratio ceiling all behave exactly as before.
