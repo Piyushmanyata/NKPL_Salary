@@ -8,6 +8,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { applyRateCardPatch, rateCardPatch } from "../../api/_lib/rateCard";
 import {
   getAllMonthLabels,
   getEmployeeRates,
@@ -65,8 +66,12 @@ function monthSignature(
   return JSON.stringify({ company, monthLabel, days, employees });
 }
 
-function ratesSignature(rates: EmployeeRateMap): string {
-  return JSON.stringify(rates);
+function ratesSignature(roster: EmployeeInput[]): string {
+  return JSON.stringify(buildRateMap(roster));
+}
+
+function ratesFromSignature(signature: string | null): EmployeeRateMap {
+  return JSON.parse(signature ?? "{}");
 }
 
 function errorMessage(error: unknown): string {
@@ -97,12 +102,11 @@ export function useMonthLifecycle(
 
   const scopeMonthLabel = normalizeMonthLabel(monthLabel);
   const isCanonicalMonth = scopeMonthLabel === monthLabel;
-  const nextRates = useMemo(() => buildRateMap(employees), [employees]);
   const monthPayloadSignature = useMemo(
     () => monthSignature(activeCompany, scopeMonthLabel, effectiveMonthDays, employees),
     [activeCompany, scopeMonthLabel, effectiveMonthDays, employees],
   );
-  const nextRatesSignature = useMemo(() => ratesSignature(nextRates), [nextRates]);
+  const nextRatesSignature = useMemo(() => ratesSignature(employees), [employees]);
 
   const carryMonthInto = useCallback(
     async (
@@ -127,7 +131,7 @@ export function useMonthLifecycle(
         company: activeCompany,
         monthLabel: target,
         suppressNextSave: false,
-        ratesSignature: ratesSignature(rates),
+        ratesSignature: ratesSignature(carried),
       });
       setAllMonths((current) =>
         current.includes(target) ? current : sortMonthsChronologically([...current, target]),
@@ -171,7 +175,7 @@ export function useMonthLifecycle(
             calendarDaysForMonth(scopeMonthLabel),
             roster,
           ),
-          ratesSignature: ratesSignature(rates),
+          ratesSignature: ratesSignature(roster),
         });
         return;
       }
@@ -310,9 +314,13 @@ export function useMonthLifecycle(
   useEffect(() => {
     const pending = lifecycle.pendingWrite;
     if (pending?.kind !== "rates") return;
-    void saveEmployeeRates(pending.company, nextRates).then((result) => {
+    const patch = rateCardPatch(
+      ratesFromSignature(lifecycle.lastRatesSignature),
+      ratesFromSignature(pending.signature),
+    );
+    void saveEmployeeRates(pending.company, patch).then((result) => {
       if (result.ok) {
-        setEmployeeRates(nextRates);
+        setEmployeeRates((card) => applyRateCardPatch(card, patch));
         dispatchLifecycle({
           type: "SAVE_SUCCESS",
           kind: "rates",
@@ -351,6 +359,7 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
       suppressNextSave: false,
+      ratesSignature: ratesSignature([]),
     });
   }, [activeCompany, scopeMonthLabel]);
 
@@ -364,7 +373,7 @@ export function useMonthLifecycle(
       company: activeCompany,
       monthLabel: scopeMonthLabel,
       suppressNextSave: false,
-      ratesSignature: ratesSignature(employeeRates),
+      ratesSignature: ratesSignature(sanitized),
     });
   }, [activeCompany, effectiveMonthDays, employeeRates, scopeMonthLabel]);
 

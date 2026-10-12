@@ -24,7 +24,7 @@ export type MonthLifecycleState = {
   suppressNextSave: boolean;
   /** Identity of the last month payload successfully written. */
   lastMonthSignature: string | null;
-  /** Identity of the last shared Rate Card successfully written. */
+  /** JSON of the roster's Rate Card entries as loaded or last written; a rates write sends only what differs from it. */
   lastRatesSignature: string | null;
   saveError: string | null;
   retryToken: number;
