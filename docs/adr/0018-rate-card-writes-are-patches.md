@@ -21,7 +21,11 @@ followed by the same full rewrite.
 ## Decision
 
 - The rates write gate starts from the loaded roster's own card entries, so a load with no edit
+  writes nothing. The baseline only grows: an employee who drops off the roster (removed, or a
+  name cleared mid-edit) keeps their baseline entry, so coming back is not a new employee and
   writes nothing.
+- A write's success moves the baseline only while that write is still the pending one, so a
+  success that lands after a month switch cannot replace the new month's baseline.
 - A write sends a patch: for each employee whose entry changed since the load or the last write,
   the whole new entry and the names of the fields that changed (a cleared field is named but
   absent from the entry).

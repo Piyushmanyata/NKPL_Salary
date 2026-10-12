@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyRateCardPatch, isRateCardPatch, rateCardPatch } from "../../api/_lib/rateCard";
+import { ratesSignature } from "../hooks/useMonthLifecycle";
 import { blankEmployee, buildRateMap, hydrateSavedMonth } from "../roster";
 import type { EmployeeInput } from "../types";
 
@@ -28,6 +29,16 @@ describe("Rate Card patch", () => {
     expect(stored["emp-asha"]).toMatchObject({ monthlySalary: 12000, notes: "Joined 2019" });
     expect(stored["emp-asha"].increments).toEqual([increment]);
     expect(stored["emp-ravi"]).toEqual(card["emp-ravi"]);
+  });
+
+  it("an employee missing from the roster for a while keeps their baseline, so they never return as new", () => {
+    const olderMonth = hydrateSavedMonth([asha({ monthlySalary: 10000 })], D, buildRateMap([asha()]));
+    const loaded = ratesSignature(olderMonth);
+    const blanked = ratesSignature(olderMonth.map((row) => ({ ...row, name: "" })), loaded);
+
+    expect(blanked).toBe(loaded);
+    expect(ratesSignature(olderMonth, blanked)).toBe(loaded);
+    expect(ratesSignature([], loaded)).toBe(loaded);
   });
 
   it("clearing a field removes it, and removing an employee keeps their entry", () => {

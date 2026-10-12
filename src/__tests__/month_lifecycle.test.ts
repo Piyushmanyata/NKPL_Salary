@@ -109,6 +109,14 @@ describe("monthLifecycleReducer write gate", () => {
     expect(requestRates(state, "rates-2")).toEqual(state);
   });
 
+  it("ignores a late success from a write that is no longer the pending one", () => {
+    const state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+
+    expect(
+      monthLifecycleReducer(state, { type: "SAVE_SUCCESS", kind: "rates", signature: "rates-A" }),
+    ).toEqual(state);
+  });
+
   it("rejects a scope mismatch before any signature check", () => {
     let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
     const before = state;

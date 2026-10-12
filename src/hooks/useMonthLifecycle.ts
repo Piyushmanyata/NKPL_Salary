@@ -66,8 +66,8 @@ function monthSignature(
   return JSON.stringify({ company, monthLabel, days, employees });
 }
 
-function ratesSignature(roster: EmployeeInput[]): string {
-  return JSON.stringify(buildRateMap(roster));
+export function ratesSignature(roster: EmployeeInput[], baseline: string | null = null): string {
+  return JSON.stringify({ ...ratesFromSignature(baseline), ...buildRateMap(roster) });
 }
 
 function ratesFromSignature(signature: string | null): EmployeeRateMap {
@@ -106,7 +106,10 @@ export function useMonthLifecycle(
     () => monthSignature(activeCompany, scopeMonthLabel, effectiveMonthDays, employees),
     [activeCompany, scopeMonthLabel, effectiveMonthDays, employees],
   );
-  const nextRatesSignature = useMemo(() => ratesSignature(employees), [employees]);
+  const nextRatesSignature = useMemo(
+    () => ratesSignature(employees, lifecycle.lastRatesSignature),
+    [employees, lifecycle.lastRatesSignature],
+  );
 
   const carryMonthInto = useCallback(
     async (
