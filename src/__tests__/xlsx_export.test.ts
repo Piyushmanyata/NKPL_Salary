@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import { createExportDownload } from "../exportActions";
 import { serializeXlsx } from "../exportSheet";
+import { calculateSalary } from "../salary";
+import type { EmployeeInput } from "../types";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -62,6 +64,26 @@ describe("xlsx export", () => {
     expect(sheet).toContain('<c r="A1" s="2"');
     expect(sheet).toContain('<c r="A2" s="1"');
     expect(sheet).toContain('<c r="B2" s="1"/>');
+  });
+
+  it("keeps formula-like names as plain text: no apostrophe in xlsx, guarded in csv", () => {
+    const employee = {
+      id: "e1", name: "=Asha", category: "Skilled", monthlySalary: 15600, totalSalary: 18900,
+      daysWorked: 26, extraDays: 0, basicPercent: 50, pfOptIn: true, esiOptIn: true, otherDeduction: 0,
+    } as EmployeeInput;
+    const salaryRows = [calculateSalary(employee, { basicShare: 0.5, workingDays: 26 })];
+    const exportAs = (format: "csv" | "workbook") => {
+      const result = createExportDownload({
+        mode: "reference", companyName: "NKPL", monthLabel: "May 2026", salaryRows, officialRows: [], format,
+      });
+      if (!("download" in result)) throw new Error("export blocked");
+      return result.download.content;
+    };
+
+    const sheet = XLSX.read(exportAs("workbook"), { type: "array" }).Sheets["Reference Salary Sheet"]!;
+    expect(sheet.B2).toMatchObject({ t: "s", v: "=Asha" });
+    expect(sheet.B2.f).toBeUndefined();
+    expect(exportAs("csv")).toContain(`"'=Asha"`);
   });
 
   it("names columns past Z", () => {

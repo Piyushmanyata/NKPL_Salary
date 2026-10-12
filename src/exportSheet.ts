@@ -12,9 +12,10 @@ export const htmlEscape = (value: string | number) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-// Neutralize spreadsheet formula injection: a free-text name starting with
-// =, +, -, or @ would otherwise execute as a formula when the exported
-// CSV/Excel file is opened. Prefixing with an apostrophe forces text.
+// Neutralize CSV formula injection: a free-text cell starting with =, +, -,
+// or @ would otherwise execute as a formula when the CSV is opened. Prefixing
+// with an apostrophe forces text. The .xlsx needs no guard: it writes text as
+// inline strings, which are never evaluated.
 export const sanitizeSpreadsheetCell = (value: string) =>
   /^[=+\-@]/.test(value) ? `'${value}` : value;
 
@@ -23,7 +24,7 @@ export type ExportRow = Record<string, string | number>;
 export function buildReferenceExportRows(rows: SalaryRow[]): ExportRow[] {
   return rows.map((row, index) => ({
     "Sl No": index + 1,
-    "Employee Name": sanitizeSpreadsheetCell(row.name),
+    "Employee Name": row.name,
     Category: row.category,
     "Basic Percent": row.basicPercent,
     "Salary Per Day": roundMoney(row.salaryPerDay),
@@ -58,7 +59,7 @@ export function buildReferenceExportRows(rows: SalaryRow[]): ExportRow[] {
 export function buildOfficialExportRows(rows: OfficialRow[]): ExportRow[] {
   return rows.map((row, index) => ({
     "Sl No": index + 1,
-    "Employee Name": sanitizeSpreadsheetCell(row.name),
+    "Employee Name": row.name,
     "Wage Category": row.wageCategory,
     "Employee Types": row.employeeTypes,
     "Allowed Basic": roundMoney(row.allowedBasic),
@@ -81,7 +82,14 @@ export function serializeCsv(exportRows: ExportRow[]): string {
   const headers = Object.keys(exportRows[0] ?? { "Employee Name": "" });
   return [
     headers.map(csvEscape).join(","),
-    ...exportRows.map((row) => headers.map((header) => csvEscape(row[header] ?? "")).join(",")),
+    ...exportRows.map((row) =>
+      headers
+        .map((header) => {
+          const value = row[header] ?? "";
+          return csvEscape(typeof value === "string" ? sanitizeSpreadsheetCell(value) : value);
+        })
+        .join(","),
+    ),
   ].join("\n");
 }
 
