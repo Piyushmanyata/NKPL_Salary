@@ -6,12 +6,13 @@
  * Golden engine fixtures remain the money lock; this locks the path around them.
  */
 import { describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import { applyEmployeeEdit } from "../editEmployee";
 import {
   buildOfficialExportRows,
   buildReferenceExportRows,
   serializeCsv,
-  serializeSpreadsheetHtml,
+  serializeXlsx,
 } from "../exportSheet";
 import { buildOfficialRow } from "../officialSheet";
 import {
@@ -86,6 +87,11 @@ const rates: EmployeeRateMap = {
   },
 };
 
+function readXlsxAsCsv(bytes: Uint8Array): string {
+  const workbook = XLSX.read(bytes, { type: "array" });
+  return XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]!]!);
+}
+
 function runPipeline(list: EmployeeInput[]) {
   const salaryRows = list.map((employee) => {
     const share = clampBasicPercent(employee.basicPercent) / 100;
@@ -102,8 +108,8 @@ function runPipeline(list: EmployeeInput[]) {
     officialNets: officialRows.map((r) => roundMoney(r.netPayable)),
     refCsv: serializeCsv(refExport),
     offCsv: serializeCsv(offExport),
-    refHtml: serializeSpreadsheetHtml(refExport),
-    offHtml: serializeSpreadsheetHtml(offExport),
+    refXlsx: readXlsxAsCsv(serializeXlsx(refExport, "Reference")),
+    offXlsx: readXlsxAsCsv(serializeXlsx(offExport, "Official")),
   };
 }
 
@@ -178,8 +184,8 @@ describe("pipeline characterization (#26)", () => {
     expect(result.refCsv).toContain('"Ravi Kumar"');
     expect(result.refCsv).toContain('"-750"'); // display sign: recovered
     expect(result.offCsv).toContain('"Wage Category"');
-    expect(result.refHtml).toContain('<table border="1"');
-    expect(result.offHtml).toContain("Official Basic");
+    expect(result.refXlsx).toContain("Ravi Kumar");
+    expect(result.offXlsx).toContain("Wage Category");
 
     // Full byte hashes via length + content fingerprint
     expect(result.refCsv.length).toBeGreaterThan(200);
@@ -187,8 +193,8 @@ describe("pipeline characterization (#26)", () => {
     // Stable full-string lock for both formats of both sheets
     expect(result.refCsv).toMatchSnapshot("ref-csv");
     expect(result.offCsv).toMatchSnapshot("off-csv");
-    expect(result.refHtml).toMatchSnapshot("ref-html");
-    expect(result.offHtml).toMatchSnapshot("off-html");
+    expect(result.refXlsx).toMatchSnapshot("ref-xlsx");
+    expect(result.offXlsx).toMatchSnapshot("off-xlsx");
   });
 
   it("buildRateMap records standing package for shared store", () => {

@@ -2,7 +2,7 @@ import {
   buildOfficialExportRows,
   buildReferenceExportRows,
   serializeCsv,
-  serializeSpreadsheetHtml,
+  serializeXlsx,
 } from "./exportSheet";
 import type { OfficialRow } from "./officialSheet";
 import type { SalaryRow } from "./types";
@@ -10,7 +10,7 @@ import type { SalaryRow } from "./types";
 export type ExportMode = "reference" | "main";
 
 export type ExportDownload = {
-  content: string;
+  content: string | Uint8Array<ArrayBuffer>;
   fileName: string;
   type: string;
 };
@@ -42,18 +42,18 @@ export function createExportDownload({
   const rows = mode === "main"
     ? buildOfficialExportRows(officialRows)
     : buildReferenceExportRows(salaryRows);
-  const content = format === "csv" ? serializeCsv(rows) : serializeSpreadsheetHtml(rows);
   const sheetLabel = mode === "main" ? "Official Main Sheet" : "Reference Salary Sheet";
+  const fileStem = `${companyName || "Company"} ${sheetLabel} ${monthLabel}`;
   return {
     blocked: [],
-    download: {
-      content,
-      fileName: `${companyName || "Company"} ${sheetLabel} ${monthLabel}.${format === "csv" ? "csv" : "xls"}`,
-      type:
-        format === "csv"
-          ? "text/csv;charset=utf-8;"
-          : "application/vnd.ms-excel;charset=utf-8;",
-    },
+    download:
+      format === "csv"
+        ? { content: serializeCsv(rows), fileName: `${fileStem}.csv`, type: "text/csv;charset=utf-8;" }
+        : {
+            content: serializeXlsx(rows, sheetLabel),
+            fileName: `${fileStem}.xlsx`,
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
   };
 }
 
