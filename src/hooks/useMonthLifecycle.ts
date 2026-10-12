@@ -133,7 +133,6 @@ export function useMonthLifecycle(
         type: "LOAD_SUCCESS",
         company: activeCompany,
         monthLabel: target,
-        suppressNextSave: false,
         ratesSignature: ratesSignature(carried),
       });
       setAllMonths((current) =>
@@ -361,7 +360,6 @@ export function useMonthLifecycle(
       type: "LOAD_SUCCESS",
       company: activeCompany,
       monthLabel: scopeMonthLabel,
-      suppressNextSave: false,
       ratesSignature: ratesSignature([]),
     });
   }, [activeCompany, scopeMonthLabel]);
@@ -375,7 +373,6 @@ export function useMonthLifecycle(
       type: "LOAD_SUCCESS",
       company: activeCompany,
       monthLabel: scopeMonthLabel,
-      suppressNextSave: false,
       ratesSignature: ratesSignature(sanitized),
     });
   }, [activeCompany, effectiveMonthDays, employeeRates, scopeMonthLabel]);
