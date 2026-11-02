@@ -20,9 +20,7 @@ export type MonthLifecycleState = {
   loadedScope: Scope | null;
   /** A no-data modal is open; no write is legal until the user makes a choice. */
   awaitingChoice: boolean;
-  /** The first save intent after hydration is consumed without writing. */
-  suppressNextSave: boolean;
-  /** Identity of the last month payload successfully written. */
+  /** Identity of the month payload as loaded or last written; a month write needs a different one. */
   lastMonthSignature: string | null;
   /** JSON of the Rate Card entries as loaded or last written, keeping employees since dropped from the roster; a rates write sends only what differs from it. */
   lastRatesSignature: string | null;
@@ -39,7 +37,6 @@ export type MonthLifecycleAction =
       monthLabel: string;
       monthSignature?: string;
       ratesSignature: string;
-      suppressNextSave?: boolean;
     }
   | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
   | { type: "CANCEL_CHOICE" }
@@ -55,7 +52,6 @@ export function initialLifecycleState(_monthLabel: string): MonthLifecycleState 
     status: "loading",
     loadedScope: null,
     awaitingChoice: false,
-    suppressNextSave: false,
     lastMonthSignature: null,
     lastRatesSignature: null,
     saveError: null,
@@ -75,7 +71,6 @@ function canStartWrite(state: MonthLifecycleState, scope: Scope): boolean {
       state.status !== "saving" &&
       state.status !== "error" &&
       !state.awaitingChoice &&
-      !state.suppressNextSave &&
       !state.pendingWrite,
   );
 }
@@ -99,10 +94,6 @@ function requestWrite(
     state.pendingWrite
   ) {
     return state;
-  }
-
-  if (state.suppressNextSave) {
-    return { ...state, suppressNextSave: false };
   }
 
   if (lastSignatureFor(state, kind) === signature) return state;
@@ -132,7 +123,6 @@ export function monthLifecycleReducer(
         status: "loading",
         loadedScope: null,
         awaitingChoice: false,
-        suppressNextSave: true,
         lastMonthSignature: null,
         lastRatesSignature: null,
         saveError: null,
@@ -145,7 +135,6 @@ export function monthLifecycleReducer(
         status: "loaded",
         loadedScope: { company: action.company, monthLabel: action.monthLabel },
         awaitingChoice: false,
-        suppressNextSave: action.suppressNextSave ?? true,
         lastMonthSignature: action.monthSignature ?? null,
         lastRatesSignature: action.ratesSignature,
         saveError: null,
@@ -158,7 +147,6 @@ export function monthLifecycleReducer(
         status: "loaded",
         loadedScope: null,
         awaitingChoice: true,
-        suppressNextSave: true,
         lastMonthSignature: null,
         lastRatesSignature: null,
         saveError: null,
@@ -171,7 +159,6 @@ export function monthLifecycleReducer(
         status: "error",
         loadedScope: null,
         awaitingChoice: false,
-        suppressNextSave: false,
         pendingWrite: null,
         saveError: action.error,
       };
@@ -180,7 +167,6 @@ export function monthLifecycleReducer(
       return {
         ...state,
         awaitingChoice: false,
-        suppressNextSave: false,
       };
 
     case "SAVE_REQUEST":
@@ -231,7 +217,6 @@ export function monthLifecycleReducer(
       return {
         ...state,
         status: state.loadedScope ? "dirty" : "loading",
-        suppressNextSave: false,
         saveError: null,
         pendingWrite: null,
         retryToken: state.retryToken + 1,

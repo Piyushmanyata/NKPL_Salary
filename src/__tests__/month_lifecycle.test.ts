@@ -14,6 +14,7 @@ function loaded(): MonthLifecycleState {
   return monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
     type: "LOAD_SUCCESS",
     ...SCOPE,
+    monthSignature: "month-0",
     ratesSignature: "rates-0",
   });
 }
@@ -56,8 +57,7 @@ describe("monthLifecycleReducer write gate", () => {
     expect(state.status).toBe("loaded");
     expect(state.loadedScope).toEqual(SCOPE);
     expect(state.awaitingChoice).toBe(false);
-    expect(state.suppressNextSave).toBe(true);
-    expect(state.lastMonthSignature).toBeNull();
+    expect(state.lastMonthSignature).toBe("month-0");
     expect(state.lastRatesSignature).toBe("rates-0");
   });
 
@@ -72,16 +72,19 @@ describe("monthLifecycleReducer write gate", () => {
     expect(requestMonth(state)).toEqual(state);
   });
 
-  it("consumes the one post-load suppression without entering saving", () => {
-    const state = requestMonth(loaded());
+  it("does not write the loaded payload back", () => {
+    const state = loaded();
 
-    expect(state.status).toBe("loaded");
-    expect(state.suppressNextSave).toBe(false);
-    expect(state.pendingWrite).toBeNull();
+    expect(requestMonth(state, "month-0")).toEqual(state);
+    expect(requestRates(state, "rates-0")).toEqual(state);
   });
 
-  it("accepts a changed month payload after suppression is consumed", () => {
-    const state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+  it("writes a Rate Card edit that lands before the first debounced save after a load", () => {
+    expect(requestRates(loaded(), "rates-1").pendingWrite?.signature).toBe("rates-1");
+  });
+
+  it("writes an edit that lands before the first debounced save after a load", () => {
+    const state = requestMonth(loaded(), "month-1");
 
     expect(state.status).toBe("saving");
     expect(state.pendingWrite).toEqual({
@@ -93,7 +96,7 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("rejects a month payload whose signature was already written", () => {
-    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    let state = requestMonth(loaded(), "month-1");
     state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
     const before = state;
 
@@ -101,7 +104,7 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("uses the same signature gate for the Rate Card", () => {
-    let state = requestRates(requestMonth(requestMonth(loaded(), "month-0"), "month-1"), "rates-1");
+    let state = requestRates(requestMonth(loaded(), "month-1"), "rates-1");
     state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS" });
     state = requestRates(state, "rates-2");
     expect(state.pendingWrite?.kind).toBe("rates");
@@ -110,7 +113,7 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("ignores a late success from a write that is no longer the pending one", () => {
-    const state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    const state = requestMonth(loaded(), "month-1");
 
     expect(
       monthLifecycleReducer(state, { type: "SAVE_SUCCESS", kind: "rates", signature: "rates-A" }),
@@ -118,7 +121,7 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("rejects a scope mismatch before any signature check", () => {
-    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    let state = requestMonth(loaded(), "month-1");
     const before = state;
 
     state = monthLifecycleReducer(state, {
@@ -136,10 +139,10 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("reports a failed write without recording its signature, then retries", () => {
-    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    let state = requestMonth(loaded(), "month-1");
     state = monthLifecycleReducer(state, { type: "SAVE_ERROR", error: "offline" });
     expect(state.status).toBe("error");
-    expect(state.lastMonthSignature).toBeNull();
+    expect(state.lastMonthSignature).toBe("month-0");
     expect(state.pendingWrite).toBeNull();
 
     state = monthLifecycleReducer(state, { type: "RETRY" });
@@ -150,7 +153,7 @@ describe("monthLifecycleReducer write gate", () => {
   });
 
   it("drops a write failure that outlived its scope", () => {
-    let state = requestMonth(requestMonth(loaded(), "month-0"), "month-1");
+    let state = requestMonth(loaded(), "month-1");
     expect(state.status).toBe("saving");
 
     state = monthLifecycleReducer(state, {
@@ -198,7 +201,7 @@ describe("monthLifecycleReducer write gate", () => {
 
 describe("ratesSaveDelay", () => {
   function monthSaved(signature = "month-1"): MonthLifecycleState {
-    return monthLifecycleReducer(requestMonth(requestMonth(loaded()), signature), {
+    return monthLifecycleReducer(requestMonth(loaded(), signature), {
       type: "SAVE_SUCCESS",
       kind: "month",
       signature,

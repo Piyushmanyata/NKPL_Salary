@@ -33,8 +33,8 @@ Suite is **green**. Golden fixtures must stay byte-identical; if a fixture would
 
 ## Lifecycle write gate
 
-`monthLifecycleReducer` owns `loadedScope`, the no-data choice, save suppression,
-payload signatures, pending writes, and retry state. `useMonthLifecycle` owns
+`monthLifecycleReducer` owns `loadedScope`, the no-data choice, payload
+signatures, pending writes, and retry state. `useMonthLifecycle` owns
 the matching load/save effects and hydrates month records with the real Rate
 Card only after a found record or an explicit blank/sample/copy choice.
 
