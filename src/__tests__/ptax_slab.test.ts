@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { calculateProfessionalTax, calculateSalary } from "../salary";
 import type { EmployeeInput } from "../types";
 
-describe("West Bengal P-Tax slab by salary month (ADR-0019)", () => {
+describe("West Bengal P-Tax slab by salary month (ADR-0020)", () => {
   it("October 2026 onward uses notification 1407-F.T. at every band edge", () => {
     const cases: Array<[number, number]> = [
       [0, 0], [20000, 0], [20000.01, 100], [30000, 100], [30000.01, 140],

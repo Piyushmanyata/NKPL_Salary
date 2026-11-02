@@ -233,7 +233,7 @@ that alignment explicit; ADR-0004 remains the source-arithmetic record. `pfEligi
 stays on the **full-month** basic `M × p`, not the earned basic the NKPL workbook tests, so PF
 status is stable month to month.
 
-**West Bengal Professional Tax slab** (`wbSlab`, on `grossPayable`, chosen by salary month — ADR-0019):
+**West Bengal Professional Tax slab** (`wbSlab`, on `grossPayable`, chosen by salary month — ADR-0020):
 
 | Monthly wages | Up to Sep 2026 | From Oct 2026 |
 |---|---|---|
