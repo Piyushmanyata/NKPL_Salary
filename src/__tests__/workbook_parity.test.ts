@@ -38,6 +38,7 @@ const compute = (input: EmployeeInput) =>
   calculateSalary(input, {
     workingDays: 30,
     basicShare: clampBasicPercent(input.basicPercent) / 100,
+    monthLabel: "June 2026",
   });
 
 describe("Issue #24: Source Workbook parity", () => {

@@ -35,7 +35,7 @@ function loadGolden(name: string): GoldenFile {
 
 function compute(emp: EmployeeInput, monthDays: number) {
   const share = clampBasicPercent(emp.basicPercent) / 100;
-  const raw = calculateSalary(emp, { workingDays: monthDays, basicShare: share });
+  const raw = calculateSalary(emp, { workingDays: monthDays, basicShare: share, monthLabel: "June 2026" });
   const off = buildOfficialRow(raw, monthDays);
   const ref = alignReferenceEsi(raw, off.esi, off.employerEsi);
   return { ref, off };

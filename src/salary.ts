@@ -1,3 +1,4 @@
+import { monthKey } from "./months";
 import type { Category, EmployeeInput, SalaryRow } from "./types";
 
 /** Fallback only when a month label cannot be parsed. Never 31. SPEC §3 / TICKET-03. */
@@ -47,21 +48,23 @@ export function clampBasicPercent(value: unknown) {
   return Math.max(MIN_BASIC_PERCENT, Math.min(MAX_BASIC_PERCENT, numberValue(value) || 70));
 }
 
-export function calculateProfessionalTax(monthlyWages: number) {
+// West Bengal P-Tax, employee slab. The October 2026 slab is Kolkata Gazette notification
+// 1407-F.T. dated 18 Aug 2026 (Schedule Part A, Sl. 1, in force 1 Oct 2026). Earlier months
+// keep the slab they were paid on, so a filed month never changes (ADR-0019).
+const WB_PT_SLAB_BEFORE_OCT_2026: ReadonlyArray<readonly [upTo: number, tax: number]> = [
+  [10000, 0], [15000, 110], [25000, 130], [40000, 150], [Infinity, 200],
+];
+const WB_PT_SLAB_FROM_OCT_2026: ReadonlyArray<readonly [upTo: number, tax: number]> = [
+  [20000, 0], [30000, 100], [50000, 140], [100000, 170], [Infinity, 208],
+];
+const WB_PT_NEW_SLAB_FROM = monthKey("October 2026");
+
+/** A missing or unreadable month gets the slab in force today, never the retired one. */
+export function calculateProfessionalTax(monthlyWages: number, monthLabel?: string) {
   const wages = Math.max(0, numberValue(monthlyWages));
-  if (wages <= 10000) {
-    return 0;
-  }
-  if (wages <= 15000) {
-    return 110;
-  }
-  if (wages <= 25000) {
-    return 130;
-  }
-  if (wages <= 40000) {
-    return 150;
-  }
-  return 200;
+  const slab =
+    monthKey(monthLabel ?? "") < WB_PT_NEW_SLAB_FROM ? WB_PT_SLAB_BEFORE_OCT_2026 : WB_PT_SLAB_FROM_OCT_2026;
+  return slab.find(([upTo]) => wages <= upTo)![1];
 }
 
 export function isSpecialCategory(category: Category | string | undefined | null): boolean {
@@ -128,6 +131,7 @@ export function calculateSalary(
   options?: {
     basicShare?: number;
     workingDays?: number;
+    monthLabel?: string;
   },
 ): SalaryRow {
   const workingDays = clampMonthDays(options?.workingDays ?? DEFAULT_MONTH_DAYS);
@@ -284,7 +288,7 @@ export function calculateSalary(
 
   // TDS payers are exempt from Professional Tax (TICKET-15, resolved 2026-07-29).
   // Official copies this figure, so the exemption reaches both sheets from here.
-  const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable);
+  const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable, options?.monthLabel);
   const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
 
   return {

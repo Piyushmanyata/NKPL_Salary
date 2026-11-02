@@ -24,6 +24,7 @@ import { calendarDaysForMonth } from "../months";
     const raw = calculateSalary(partial, {
       workingDays: monthDays,
       basicShare: clampBasicPercent(partial.basicPercent) / 100,
+      monthLabel: "June 2026",
     });
     const official = buildOfficialRow(raw, monthDays);
     return alignReferenceEsi(raw, official.esi, official.employerEsi);

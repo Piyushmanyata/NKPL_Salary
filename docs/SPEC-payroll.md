@@ -218,7 +218,7 @@ matches the June sheets.
 20  referenceEsi    = officialEsi(A*)                                      // final Reference amount
 21  employerEsi     = officialEmployerEsi(A*)
 
-22  professionalTax = otherDeduction > 0 ? 0 : wbSlab(grossPayable)   // TDS payers exempt
+22  professionalTax = otherDeduction > 0 ? 0 : wbSlab(grossPayable, month)   // TDS payers exempt
 
 23  netPayable = grossPayable − employeePf − referenceEsi − professionalTax − advance − otherDeduction
 24  totalCost  = grossPayable + employerPf + employerEsi
@@ -233,15 +233,22 @@ that alignment explicit; ADR-0004 remains the source-arithmetic record. `pfEligi
 stays on the **full-month** basic `M × p`, not the earned basic the NKPL workbook tests, so PF
 status is stable month to month.
 
-**West Bengal Professional Tax slab** (`wbSlab`, on `grossPayable`):
+**West Bengal Professional Tax slab** (`wbSlab`, on `grossPayable`, chosen by salary month — ADR-0019):
 
-| Monthly wages | Tax |
-|---|---|
-| ≤ ₹10,000 | ₹0 |
-| ₹10,001 – ₹15,000 | ₹110 |
-| ₹15,001 – ₹25,000 | ₹130 |
-| ₹25,001 – ₹40,000 | ₹150 |
-| > ₹40,000 | ₹200 |
+| Monthly wages | Up to Sep 2026 | From Oct 2026 |
+|---|---|---|
+| ≤ ₹10,000 | ₹0 | ₹0 |
+| ₹10,001 – ₹15,000 | ₹110 | ₹0 |
+| ₹15,001 – ₹20,000 | ₹130 | ₹0 |
+| ₹20,001 – ₹25,000 | ₹130 | ₹100 |
+| ₹25,001 – ₹30,000 | ₹150 | ₹100 |
+| ₹30,001 – ₹40,000 | ₹150 | ₹140 |
+| ₹40,001 – ₹50,000 | ₹200 | ₹140 |
+| ₹50,001 – ₹1,00,000 | ₹200 | ₹170 |
+| > ₹1,00,000 | ₹200 | ₹208 |
+
+The October 2026 slab is Kolkata Gazette notification 1407-F.T. dated 18 Aug 2026. A missing or
+unreadable month uses the slab in force now.
 
 ---
 

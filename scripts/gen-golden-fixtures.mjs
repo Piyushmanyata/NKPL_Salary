@@ -15,7 +15,7 @@ mkdirSync("src/__tests__/fixtures", { recursive: true });
 
 function goldenRow(emp, D = 30) {
   const share = clampBasicPercent(emp.basicPercent) / 100;
-  const raw = calculateSalary(emp, { workingDays: D, basicShare: share });
+  const raw = calculateSalary(emp, { workingDays: D, basicShare: share, monthLabel: "June 2026" });
   if (raw.missingRate) {
     throw new Error(`missingRate for ${emp.name}`);
   }
