@@ -86,8 +86,8 @@ describe("Issue #2 / TICKET-01: Employee Rate Model & Special Category", () => {
       extraDays: 0,
       otherDeduction: 0,
     };
-    const d28 = calculateSalary(base, { workingDays: 28 });
-    const d31 = calculateSalary(base, { workingDays: 31 });
+    const d28 = calculateSalary(base, { workingDays: 28, monthLabel: "June 2026" });
+    const d31 = calculateSalary(base, { workingDays: 31, monthLabel: "June 2026" });
     expect(d28.monthlySalary).toBe(d31.monthlySalary);
     expect(d28.monthlySalary).toBe(60000);
     expect(d28.professionalTax).toBe(200);

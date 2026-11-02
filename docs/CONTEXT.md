@@ -134,7 +134,7 @@ Employee state insurance on Official: 0.75% of Official **Monthly Basic**, only 
 _Avoid_: Using Reference gross for Official ESI
 
 **Professional Tax**:
-Slab tax computed from Reference Gross Payable and shown as the same rupee amount on both sheets. **Waived entirely for TDS payers** — any employee with a non-zero TDS (stored as `otherDeduction`) pays ₹0 Professional Tax (TICKET-15, resolved 2026-07-29). This restores the ₹0 P-Tax the **Source Workbooks** show for PUNIT SODHANI and Nawneet Sodhani.
+Slab tax computed from Reference Gross Payable and shown as the same rupee amount on both sheets. The slab is picked by the salary month: up to September 2026 the old West Bengal slab, from October 2026 the new one (ADR-0019). **Waived entirely for TDS payers** — any employee with a non-zero TDS (stored as `otherDeduction`) pays ₹0 Professional Tax (TICKET-15, resolved 2026-07-29). This restores the ₹0 P-Tax the **Source Workbooks** show for PUNIT SODHANI and Nawneet Sodhani.
 _Avoid_: PF, ESI; charging P-Tax on a row that already carries TDS
 
 **Advance / Other Deduction**:

@@ -156,9 +156,10 @@ function App() {
           calculateSalary(employee, {
             basicShare: clampBasicPercent(employee.basicPercent) / 100,
             workingDays: effectiveMonthDays,
+            monthLabel,
           }),
         ),
-    [employees, effectiveMonthDays],
+    [employees, effectiveMonthDays, monthLabel],
   );
 
   const officialRows = useMemo(

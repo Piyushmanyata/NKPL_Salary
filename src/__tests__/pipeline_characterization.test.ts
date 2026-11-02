@@ -95,7 +95,7 @@ function readXlsxAsCsv(bytes: Uint8Array): string {
 function runPipeline(list: EmployeeInput[]) {
   const salaryRows = list.map((employee) => {
     const share = clampBasicPercent(employee.basicPercent) / 100;
-    return calculateSalary(employee, { workingDays: D, basicShare: share });
+    return calculateSalary(employee, { workingDays: D, basicShare: share, monthLabel: "June 2026" });
   });
   const officialRows = salaryRows.map((row) => buildOfficialRow(row, D));
   const aligned = salaryRows.map((row, i) =>

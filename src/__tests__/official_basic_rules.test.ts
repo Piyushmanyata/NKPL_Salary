@@ -23,7 +23,7 @@ function refRow(
   monthDays = 30,
   options?: { basicShare?: number },
 ): SalaryRow {
-  const raw = calculateSalary(partial, { workingDays: monthDays, ...options });
+  const raw = calculateSalary(partial, { workingDays: monthDays, monthLabel: "June 2026", ...options });
   const official = buildOfficialRow(raw, monthDays);
   return alignReferenceEsi(raw, official.esi, official.employerEsi);
 }
