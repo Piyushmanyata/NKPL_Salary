@@ -6,7 +6,6 @@
   white-space: normal;
 }
 
-.settings-panel,
 .advanced-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
@@ -14,6 +13,10 @@
 }
 
 .settings-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
   position: sticky;
   left: 0;
   max-width: calc(100vw - 48px);
@@ -23,8 +26,24 @@
   border-radius: var(--radius-md);
 }
 
-.settings-panel .settings-column--full {
-  grid-column: 1 / -1;
+.settings-panel > .settings-column {
+  flex: 0 0 180px;
+}
+
+.settings-panel > .increments,
+.settings-panel > .notes-column {
+  flex: 1 1 300px;
+  max-width: 480px;
+  min-width: 0;
+}
+
+.settings-panel > .settings-column--full {
+  flex: 1 1 100%;
+}
+
+.notes-column .notes-toggle {
+  width: auto;
+  justify-self: start;
 }
 
 .notes-toggle {
@@ -49,10 +68,6 @@
 
 .notes-toggle .rot {
   transform: rotate(180deg);
-}
-
-.settings-column--full {
-  grid-column: 1 / -1;
 }
 
 .notes-input {
@@ -300,15 +315,18 @@
 }
 
 @media (max-width: 1100px) {
-  .settings-panel,
   .advanced-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
-  .settings-panel,
   .advanced-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-panel > .settings-column {
+    flex: 1 1 100%;
+    max-width: none;
   }
 }

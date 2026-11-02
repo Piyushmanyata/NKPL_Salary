@@ -78,7 +78,7 @@ function IncrementsSection({
   const newestFirst = increments.map((entry, index) => ({ entry, index })).reverse();
 
   return (
-    <div className={`${styles.settingsColumn} ${styles.settingsColumnFull} ${styles.increments}`}>
+    <div className={`${styles.settingsColumn} ${styles.increments}`}>
       <span>Increments</span>
       <small>A record only — it never changes pay. Edit Travelling or the salary separately.</small>
       {newestFirst.length ? (
@@ -275,7 +275,7 @@ export function EmployeeSettingsPanel({
               text; it is already an editable dropdown in
               the row itself, and its Special explanation
               now lives on that dropdown's tooltip. */}
-          <div className={styles.settingsColumn}>
+          <div className={`${styles.settingsColumn} ${styles.notesColumn}`}>
             <span>Notes</span>
             <button
               type="button"
@@ -286,22 +286,22 @@ export function EmployeeSettingsPanel({
               <ChevronDown size={13} className={notesOpen ? styles.rot : undefined} />
               {row.notes?.trim() ? "Edit notes" : "Add notes"}
             </button>
+            {notesOpen ? (
+              <>
+                <textarea
+                  className={styles.notesInput}
+                  rows={3}
+                  placeholder="Anything worth keeping about this employee — ID numbers, remarks."
+                  value={row.notes ?? ""}
+                  onChange={(event) => onUpdate("notes", event.target.value)}
+                />
+                <small>
+                  Kept with the employee, not the month — the same notes show in every
+                  month and never affect any calculation.
+                </small>
+              </>
+            ) : null}
           </div>
-          {notesOpen ? (
-            <div className={`${styles.settingsColumn} ${styles.settingsColumnFull}`}>
-              <textarea
-                className={styles.notesInput}
-                rows={3}
-                placeholder="Anything worth keeping about this employee — ID numbers, remarks."
-                value={row.notes ?? ""}
-                onChange={(event) => onUpdate("notes", event.target.value)}
-              />
-              <small>
-                Kept with the employee, not the month — the same notes show in every
-                month and never affect any calculation.
-              </small>
-            </div>
-          ) : null}
           <details className={`${styles.settingsColumnFull} ${styles.advanced}`}>
             <summary>{advancedSummary}</summary>
             <div className={styles.advancedGrid}>
