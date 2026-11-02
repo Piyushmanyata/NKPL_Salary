@@ -50,7 +50,7 @@ export function clampBasicPercent(value: unknown) {
 
 // West Bengal P-Tax, employee slab. The October 2026 slab is Kolkata Gazette notification
 // 1407-F.T. dated 18 Aug 2026 (Schedule Part A, Sl. 1, in force 1 Oct 2026). Earlier months
-// keep the slab they were paid on, so a filed month never changes (ADR-0019).
+// keep the slab they were paid on, so a filed month never changes (ADR-0020).
 const WB_PT_SLAB_BEFORE_OCT_2026: ReadonlyArray<readonly [upTo: number, tax: number]> = [
   [10000, 0], [15000, 110], [25000, 130], [40000, 150], [Infinity, 200],
 ];
