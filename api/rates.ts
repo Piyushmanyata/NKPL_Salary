@@ -4,7 +4,7 @@ import { applyRateCardPatch, isRateCardPatch, isRecord } from './_lib/rateCard.j
 
 // A single small JSON value per company holds every employee's per-day rates.
 // This is the one piece of employee data meant to persist across every month.
-export default withApiHandler('GET,POST,OPTIONS', async (req, res) => {
+export default withApiHandler('GET,POST', async (req, res) => {
   const company = normalizeCompany(req.query.company);
   const path = `employee_rates/${company}`;
 

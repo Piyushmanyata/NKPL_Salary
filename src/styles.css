@@ -1,3 +1,0 @@
-/* Deprecated: styles moved to src/styles/global.css and *.module.css.
-   Kept empty so accidental imports fail loudly via missing rules rather than double-load.
-   main.tsx imports ./styles/global.css. */

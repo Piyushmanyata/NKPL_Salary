@@ -133,19 +133,6 @@ select:focus-visible {
   background: rgba(37, 99, 235, 0.16);
 }
 
-/* Tiny layout utilities used inline by the app */
-.text-right {
-  text-align: right !important;
-}
-
-.text-center {
-  text-align: center !important;
-}
-
-.font-bold {
-  font-weight: 700 !important;
-}
-
 /* Typography baseline */
 h1,
 h2,
@@ -277,9 +264,6 @@ button:disabled {
   transform: none;
 }
 
-.hidden-input {
-  display: none;
-}
 /* ==========================================================================
    CONTROL STRIP + INPUTS
    ========================================================================== */
