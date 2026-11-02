@@ -1,5 +1,3 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-
 export const DEFAULT_COMPANY = "NKPL";
 
 export function normalizeCompany(value: unknown): string {
@@ -7,27 +5,30 @@ export function normalizeCompany(value: unknown): string {
   return text || DEFAULT_COMPANY;
 }
 
-export function applyCors(req: VercelRequest, res: VercelResponse, methods: string) {
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  if (req.headers.origin) {
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  }
-  res.setHeader("Access-Control-Allow-Methods", methods);
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version",
-  );
-}
+/** The parts of Vercel's Node request and response helpers these routes use. */
+export type ApiRequest = {
+  method?: string;
+  query: Record<string, string | string[] | undefined>;
+  body: any;
+};
+export type ApiResponse = {
+  status(code: number): ApiResponse;
+  json(body: unknown): ApiResponse;
+  setHeader(name: string, value: string): void;
+};
 
-type RouteHandler = (req: VercelRequest, res: VercelResponse) => Promise<void | VercelResponse>;
+type RouteHandler = (req: ApiRequest, res: ApiResponse) => Promise<void | ApiResponse>;
 
-/** Shared CORS + OPTIONS + error wrapper for serverless routes. */
+/**
+ * Shared method check and error wrapper for serverless routes. The app calls them from its own page only, so no CORS
+ * headers: a page on another site cannot read or change salaries with the visitor's Vercel login.
+ */
 export function withApiHandler(methods: string, handler: RouteHandler) {
-  return async (req: VercelRequest, res: VercelResponse) => {
-    applyCors(req, res, methods);
-    if (req.method === "OPTIONS") {
-      res.status(200).end();
-      return;
+  const allowed = methods.split(",");
+  return async (req: ApiRequest, res: ApiResponse) => {
+    if (!allowed.includes(req.method ?? "")) {
+      res.setHeader("Allow", methods);
+      return res.status(405).json({ error: "Method not allowed" });
     }
     try {
       await handler(req, res);

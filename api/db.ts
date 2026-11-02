@@ -5,7 +5,7 @@ import { DEFAULT_COMPANY, normalizeCompany, withApiHandler } from './_lib/http.j
 // confirms none remain (issue #26). No scan run in this environment —
 // fallback stays. Finding: cannot verify datastore without REDIS credentials.
 
-export default withApiHandler('GET,DELETE,POST,PUT,OPTIONS', async (req, res) => {
+export default withApiHandler('GET,DELETE,POST', async (req, res) => {
   const { month } = req.query;
   const company = normalizeCompany(req.query.company);
 
