@@ -1,4 +1,4 @@
-.dialog {
+:global(.modal).dialog {
   width: min(100%, 560px);
   height: auto;
   max-height: min(100%, 860px);
@@ -26,6 +26,7 @@
 
 .field {
   display: grid;
+  align-content: start;
   gap: 6px;
   min-width: 0;
   margin: 0;
@@ -36,9 +37,20 @@
 .field > span,
 .field > legend {
   padding: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hint,
+.error,
+.warning,
+.check,
+.segment {
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .field > legend {
@@ -129,6 +141,7 @@ textarea.input {
 .hint {
   margin: 0;
   font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
 }
 
