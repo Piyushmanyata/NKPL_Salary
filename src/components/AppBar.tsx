@@ -1,12 +1,15 @@
 import {
   BookOpen,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   FileDown,
   FileSpreadsheet,
   History,
   RefreshCw,
 } from "lucide-react";
+import { MONTH_NAMES, parseMonthYearString, pickerYears, shiftMonth } from "../months";
 import styles from "./AppBar.module.css";
 
 export type CompanyOption = { code: string; label: string };
@@ -20,8 +23,7 @@ export function AppBar({
   dbLoading,
   onSwitchCompany,
   onCompanyNameChange,
-  onMonthLabelChange,
-  onMonthLabelBlur,
+  onMonthChange,
   onOpenRules,
   onOpenHistory,
   onExportCsv,
@@ -36,14 +38,20 @@ export function AppBar({
   dbLoading: boolean;
   onSwitchCompany: (code: string) => void;
   onCompanyNameChange: (name: string) => void;
-  onMonthLabelChange: (label: string) => void;
-  onMonthLabelBlur: () => void;
+  onMonthChange: (label: string) => void;
   onOpenRules: () => void;
   onOpenHistory: () => void;
   onExportCsv: () => void;
   onOpenDb: () => void;
   onExportWorkbook: () => void;
 }) {
+  const today = new Date();
+  const shown = parseMonthYearString(monthLabel) ?? {
+    monthIndex: today.getMonth(),
+    year: today.getFullYear(),
+  };
+  const shownLabel = `${MONTH_NAMES[shown.monthIndex]} ${shown.year}`;
+
   return (
     <section className={styles.appbar}>
       <div className={styles.appbarIdentity}>
@@ -70,14 +78,54 @@ export function AppBar({
           onChange={(event) => onCompanyNameChange(event.target.value)}
         />
         <span className={styles.titleSuffix}>Payroll</span>
-        <input
-          className={styles.monthInput}
-          value={monthLabel}
-          aria-label="Month"
-          title="Month"
-          onBlur={onMonthLabelBlur}
-          onChange={(event) => onMonthLabelChange(event.target.value)}
-        />
+        <div className={styles.monthPicker} role="group" aria-label="Month">
+          <button
+            type="button"
+            className={styles.monthStep}
+            aria-label="Previous month"
+            title="Previous month"
+            onClick={() => onMonthChange(shiftMonth(shownLabel, -1))}
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <select
+            className={styles.monthSelect}
+            aria-label="Month name"
+            value={shown.monthIndex}
+            onChange={(event) =>
+              onMonthChange(`${MONTH_NAMES[Number(event.target.value)]} ${shown.year}`)
+            }
+          >
+            {MONTH_NAMES.map((name, index) => (
+              <option key={name} value={index}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            className={styles.monthSelect}
+            aria-label="Year"
+            value={shown.year}
+            onChange={(event) =>
+              onMonthChange(`${MONTH_NAMES[shown.monthIndex]} ${event.target.value}`)
+            }
+          >
+            {pickerYears(shown.year, today.getFullYear()).map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={styles.monthStep}
+            aria-label="Next month"
+            title="Next month"
+            onClick={() => onMonthChange(shiftMonth(shownLabel, 1))}
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
         <span
           className={styles.daysChip}
           title="Calendar days, derived from the month label (not editable)"

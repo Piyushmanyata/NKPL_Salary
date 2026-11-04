@@ -59,3 +59,14 @@ export function calendarDaysForMonth(label: string): number {
   if (!parsed) return 30;
   return new Date(parsed.year, parsed.monthIndex + 1, 0).getDate();
 }
+
+export function shiftMonth(label: string, delta: number): string {
+  const key = monthKey(label) + delta;
+  return `${MONTH_NAMES[key % 12]} ${Math.floor(key / 12)}`;
+}
+
+export function pickerYears(shownYear: number, currentYear: number): number[] {
+  const first = Math.min(shownYear, currentYear - 3);
+  const last = Math.max(shownYear, currentYear + 1);
+  return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+}

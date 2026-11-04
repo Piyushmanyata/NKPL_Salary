@@ -23,6 +23,7 @@ import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./sto
 import {
   calendarDaysForMonth,
   normalizeMonthLabel,
+  parseMonthYearString,
 } from "./months";
 import { AppBar } from "./components/AppBar";
 import { DatabaseModal } from "./components/DatabaseModal";
@@ -82,7 +83,8 @@ function loadMonthConfig(company: CompanyCode) {
       label?: unknown;
       days?: unknown;
     };
-    const label = String(parsed.label || "May 2026");
+    const stored = normalizeMonthLabel(String(parsed.label ?? ""));
+    const label = parseMonthYearString(stored) ? stored : "May 2026";
     return {
       label,
       days: calendarDaysForMonth(label),
@@ -207,14 +209,6 @@ function App() {
   );
 
   const categoryTotals = useMemo(() => calculateCategoryTotals(salaryRows), [salaryRows]);
-
-  const updateMonthLabel = (value: string) => {
-    setMonthLabel(value);
-  };
-
-  const commitMonthLabel = () => {
-    setMonthLabel((current) => normalizeMonthLabel(current));
-  };
 
   const updateEmployee = (
     id: string,
@@ -389,8 +383,7 @@ function App() {
           dbLoading={dbLoading}
           onSwitchCompany={(code) => handleSwitchCompany(code as CompanyCode)}
           onCompanyNameChange={setCompanyName}
-          onMonthLabelChange={updateMonthLabel}
-          onMonthLabelBlur={commitMonthLabel}
+          onMonthChange={setMonthLabel}
           onOpenRules={() => setIsRulesOpen(true)}
           onOpenHistory={() => setIsHistoryOpen(true)}
           onExportCsv={exportCsv}
