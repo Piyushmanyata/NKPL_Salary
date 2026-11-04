@@ -39,11 +39,54 @@
   margin-left: -4px;
 }
 
-.month-input {
-  width: clamp(110px, 14ch, 190px);
-  min-height: 36px;
+.month-picker {
+  display: inline-flex;
+  align-items: stretch;
   margin-left: var(--space-2);
-  font-weight: 700;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.month-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.month-step:hover {
+  background: var(--color-primary-soft);
+}
+
+.month-step:active {
+  transform: scale(0.94);
+}
+
+.month-step:focus-visible,
+.month-select:focus-visible {
+  box-shadow: inset var(--ring);
+}
+
+.month-select {
+  min-height: 40px;
+  padding: 0 6px;
+  border: 0;
+  border-left: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.month-select:last-of-type {
+  border-right: 1px solid var(--border-default);
 }
 
 .days-chip {
@@ -124,7 +167,18 @@
 
 @media print {
   .appbar-actions,
-  .company-switch {
+  .company-switch,
+  .month-step {
     display: none !important;
+  }
+
+  .month-picker {
+    border: 0;
+  }
+
+  .month-select,
+  .month-select:last-of-type {
+    appearance: none;
+    border: 0;
   }
 }
