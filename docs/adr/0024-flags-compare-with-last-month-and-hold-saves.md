@@ -1,4 +1,4 @@
-# ADR 0023: Flags compare each month with the last one, and a new flag holds the auto-save
+# ADR 0024: Flags compare each month with the last one, and a new flag holds the auto-save
 
 ## Status
 
