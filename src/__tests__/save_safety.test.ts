@@ -126,6 +126,7 @@ describe("save status and retries", () => {
       at: "2026-11-04T10:00:00Z",
     });
     expect(saveStatus(loaded, false, true, null)).toEqual({ kind: "offline" });
+    expect(saveStatus(loaded, true, false, null, true)).toEqual({ kind: "held" });
     const pending = monthLifecycleReducer(loaded, {
       type: "SAVE_REQUEST",
       company: "NKPL",

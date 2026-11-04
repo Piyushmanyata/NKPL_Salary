@@ -306,6 +306,7 @@ export function hasUnsavedChanges(
 export type SaveStatus =
   | { kind: "loading" }
   | { kind: "saving" }
+  | { kind: "held" }
   | { kind: "saved"; at: string | null }
   | { kind: "retrying" }
   | { kind: "stale" }
@@ -316,8 +317,10 @@ export function saveStatus(
   unsaved: boolean,
   offline: boolean,
   savedAt: string | null,
+  held = false,
 ): SaveStatus {
   if (state.stale) return { kind: "stale" };
+  if (held && unsaved) return { kind: "held" };
   if (state.status === "error") return { kind: "retrying" };
   if (state.status === "loading") return { kind: "loading" };
   if (offline) return { kind: "offline" };

@@ -1,8 +1,8 @@
-# ADR 0023: A nightly backup outside Redis, and saves that keep trying
+# ADR 0025: A nightly backup outside Redis, and saves that keep trying
 
 ## Status
 
-Accepted (2026-11-04). Number 0023 because ADR 0022 is taken by the add-employee form (PR #46).
+Accepted (2026-11-04).
 
 ## Context
 

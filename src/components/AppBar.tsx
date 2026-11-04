@@ -1,6 +1,8 @@
 import {
   BookOpen,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   FileDown,
   FileSpreadsheet,
@@ -9,11 +11,13 @@ import {
 } from "lucide-react";
 import { formatSavedAt } from "../hooks/useMonthLifecycle";
 import type { SaveStatus } from "../monthLifecycle";
+import { MONTH_NAMES, parseMonthYearString, pickerYears, shiftMonth } from "../months";
 import styles from "./AppBar.module.css";
 
 const SAVE_CHIP: Record<SaveStatus["kind"], { text: string; tone: string; hint: string }> = {
   loading: { text: "Loading…", tone: "saveBusy", hint: "Reading this month from the server" },
   saving: { text: "Saving…", tone: "saveBusy", hint: "Your last change is on its way to the server" },
+  held: { text: "Save held", tone: "saveWarn", hint: "A change added a flag, so saving waits. Fix it, or press Save anyway" },
   saved: { text: "Saved", tone: "saveDone", hint: "Every change in this tab is on the server" },
   retrying: { text: "Not saved", tone: "saveBad", hint: "The last save failed. The app keeps trying by itself" },
   stale: { text: "Out of date", tone: "saveBad", hint: "Newer data was saved elsewhere. Reload this tab" },
@@ -44,10 +48,10 @@ export function AppBar({
   effectiveMonthDays,
   dbLoading,
   saveStatus,
+  locked,
   onSwitchCompany,
   onCompanyNameChange,
-  onMonthLabelChange,
-  onMonthLabelBlur,
+  onMonthChange,
   onOpenRules,
   onOpenHistory,
   onExportCsv,
@@ -61,16 +65,23 @@ export function AppBar({
   effectiveMonthDays: number;
   dbLoading: boolean;
   saveStatus: SaveStatus;
+  locked: boolean;
   onSwitchCompany: (code: string) => void;
   onCompanyNameChange: (name: string) => void;
-  onMonthLabelChange: (label: string) => void;
-  onMonthLabelBlur: () => void;
+  onMonthChange: (label: string) => void;
   onOpenRules: () => void;
   onOpenHistory: () => void;
   onExportCsv: () => void;
   onOpenDb: () => void;
   onExportWorkbook: () => void;
 }) {
+  const today = new Date();
+  const shown = parseMonthYearString(monthLabel) ?? {
+    monthIndex: today.getMonth(),
+    year: today.getFullYear(),
+  };
+  const shownLabel = `${MONTH_NAMES[shown.monthIndex]} ${shown.year}`;
+
   return (
     <section className={styles.appbar}>
       <div className={styles.appbarIdentity}>
@@ -81,6 +92,8 @@ export function AppBar({
               type="button"
               role="tab"
               aria-selected={activeCompany === company.code}
+              disabled={locked && activeCompany !== company.code}
+              title={locked ? "Save or fix the held change first" : undefined}
               className={`${styles.companyTab} ${activeCompany === company.code ? styles.active : ""}`}
               onClick={() => onSwitchCompany(company.code)}
             >
@@ -97,14 +110,63 @@ export function AppBar({
           onChange={(event) => onCompanyNameChange(event.target.value)}
         />
         <span className={styles.titleSuffix}>Payroll</span>
-        <input
-          className={styles.monthInput}
-          value={monthLabel}
+        <div
+          className={styles.monthPicker}
+          role="group"
           aria-label="Month"
-          title="Month"
-          onBlur={onMonthLabelBlur}
-          onChange={(event) => onMonthLabelChange(event.target.value)}
-        />
+          title={locked ? "Save or fix the held change first" : undefined}
+        >
+          <button
+            type="button"
+            className={styles.monthStep}
+            aria-label="Previous month"
+            disabled={locked}
+            title="Previous month"
+            onClick={() => onMonthChange(shiftMonth(shownLabel, -1))}
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <select
+            className={styles.monthSelect}
+            aria-label="Month name"
+            disabled={locked}
+            value={shown.monthIndex}
+            onChange={(event) =>
+              onMonthChange(`${MONTH_NAMES[Number(event.target.value)]} ${shown.year}`)
+            }
+          >
+            {MONTH_NAMES.map((name, index) => (
+              <option key={name} value={index}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            className={styles.monthSelect}
+            aria-label="Year"
+            disabled={locked}
+            value={shown.year}
+            onChange={(event) =>
+              onMonthChange(`${MONTH_NAMES[shown.monthIndex]} ${event.target.value}`)
+            }
+          >
+            {pickerYears(shown.year, today.getFullYear()).map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={styles.monthStep}
+            aria-label="Next month"
+            disabled={locked}
+            title="Next month"
+            onClick={() => onMonthChange(shiftMonth(shownLabel, 1))}
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
         <span
           className={styles.daysChip}
           title="Calendar days, derived from the month label (not editable)"

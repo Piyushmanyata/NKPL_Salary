@@ -107,6 +107,7 @@ export function useMonthLifecycle(
   activeCompany: string,
   monthLabel: string,
   effectiveMonthDays: number,
+  holdSave = false,
 ): MonthLifecycleApi {
   const [employees, setEmployees] = useState<EmployeeInput[]>([]);
   const [employeeRates, setEmployeeRates] = useState<EmployeeRateMap>({});
@@ -269,7 +270,7 @@ export function useMonthLifecycle(
   }, [activeCompany, loadRetryToken, loadScope, scopeMonthLabel]);
 
   useEffect(() => {
-    if (!isCanonicalMonth) return;
+    if (!isCanonicalMonth || holdSave) return;
     const timer = window.setTimeout(() => {
       dispatchLifecycle({
         type: "SAVE_REQUEST",
@@ -281,6 +282,7 @@ export function useMonthLifecycle(
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
+    holdSave,
     isCanonicalMonth,
     lifecycle.pendingWrite,
     lifecycle.retryToken,
@@ -339,7 +341,7 @@ export function useMonthLifecycle(
   }, [lifecycle.pendingWrite]);
 
   useEffect(() => {
-    if (!isCanonicalMonth) return;
+    if (!isCanonicalMonth || holdSave) return;
     const timer = window.setTimeout(() => {
       dispatchLifecycle({
         type: "RATES_SAVE_REQUEST",
@@ -351,6 +353,7 @@ export function useMonthLifecycle(
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
+    holdSave,
     isCanonicalMonth,
     lifecycle.lastMonthSignature,
     lifecycle.pendingWrite,
@@ -410,7 +413,7 @@ export function useMonthLifecycle(
     if (lifecycle.status === "saved" || lifecycle.status === "loaded") retryAttemptRef.current = 0;
   }, [lifecycle.status]);
 
-  const autoRetry = lifecycle.status === "error" && !lifecycle.stale;
+  const autoRetry = lifecycle.status === "error" && !lifecycle.stale && !holdSave;
   const nextRetryMs = retryDelay(retryAttemptRef.current);
   useEffect(() => {
     if (!autoRetry) return;
@@ -545,7 +548,7 @@ export function useMonthLifecycle(
     createSampleMonth,
     copyMonth,
     restoreVersion,
-    saveStatus: saveStatus(lifecycle, unsaved, offline, savedAt),
+    saveStatus: saveStatus(lifecycle, unsaved, offline, savedAt, holdSave),
     nextRetryMs,
     draftNotice,
     dismissDraftNotice: () => setDraftNotice(null),
