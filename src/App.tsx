@@ -11,16 +11,11 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  alignReferenceEsi,
-  calculateSalary,
-  clampBasicPercent,
-} from "./salary";
 import type {
   Category,
   SalaryRow,
 } from "./types";
-import { buildOfficialRow } from "./officialSheet";
+import { buildMonthSheets } from "./monthSheets";
 import { applyEmployeeEdit, type EditableField, type EditValue } from "./editEmployee";
 import { blankEmployee } from "./roster";
 import { createExportDownload, downloadBlob } from "./exportActions";
@@ -40,7 +35,8 @@ import { LifecycleErrorBanner } from "./components/LifecycleErrorBanner";
 import { Toast } from "./components/Toast";
 import { TotalsStrip } from "./components/TotalsStrip";
 import { useGridNavigation } from "./hooks/useGridNavigation";
-import { useMonthLifecycle } from "./hooks/useMonthLifecycle";
+import { formatSavedAt, useMonthLifecycle } from "./hooks/useMonthLifecycle";
+import { HistoryDialog } from "./components/HistoryDialog";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
 import { calculateCategoryTotals, calculateMonthTotals } from "./totals";
@@ -132,6 +128,8 @@ function App() {
     createBlankMonth,
     createSampleMonth,
     copyMonth,
+    restoreVersion,
+    employeeRates,
   } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays);
   const saveError = lifecycle.saveError;
   const noDataMonth = monthLabel;
@@ -143,39 +141,15 @@ function App() {
   // The calculation rules are reference material: read once while learning the
   // sheet, never again. They live in a dialog so they cost no scroll depth.
   const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // Notes needs real height and is untouched most months, so it stays folded
   // inside the settings panel until asked for.
   const [notesOpen, setNotesOpen] = useState(false);
   const tableWrapRef = useRef<HTMLDivElement>(null);
 
-  const calculatedSalaryRows = useMemo(
-    () =>
-      employees
-        .filter((employee) => employee.name.trim())
-        .map((employee) =>
-          calculateSalary(employee, {
-            basicShare: clampBasicPercent(employee.basicPercent) / 100,
-            workingDays: effectiveMonthDays,
-            monthLabel,
-          }),
-        ),
+  const { salaryRows, officialRows } = useMemo(
+    () => buildMonthSheets(employees, effectiveMonthDays, monthLabel),
     [employees, effectiveMonthDays, monthLabel],
-  );
-
-  const officialRows = useMemo(
-    () => calculatedSalaryRows.map((row) => buildOfficialRow(row, effectiveMonthDays)),
-    [calculatedSalaryRows, effectiveMonthDays],
-  );
-
-  const salaryRows = useMemo(
-    () =>
-      calculatedSalaryRows.map((row, index) => {
-        const official = officialRows[index];
-        return official
-          ? alignReferenceEsi(row, official.esi, official.employerEsi)
-          : row;
-      }),
-    [calculatedSalaryRows, officialRows],
   );
 
   const filteredRows = useMemo(() => {
@@ -350,12 +324,14 @@ function App() {
   // Close whichever modal is open on Escape, matching the explicit close/cancel
   // action each modal already exposes via its own button.
   useEffect(() => {
-    if (!isDbModalOpen && !showNoDataModal && !isRulesOpen && !openSettingsId) {
+    if (!isDbModalOpen && !showNoDataModal && !isRulesOpen && !isHistoryOpen && !openSettingsId) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (isDbModalOpen) {
+      if (isHistoryOpen) {
+        setIsHistoryOpen(false);
+      } else if (isDbModalOpen) {
         setIsDbModalOpen(false);
       } else if (showNoDataModal) {
         handleCancelNoData();
@@ -369,7 +345,7 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDbModalOpen, showNoDataModal, isRulesOpen, openSettingsId]);
+  }, [isDbModalOpen, showNoDataModal, isRulesOpen, isHistoryOpen, openSettingsId]);
 
   const createDownload = (format: "csv" | "workbook") =>
     createExportDownload({
@@ -398,7 +374,7 @@ function App() {
 
   return (
     <>
-      {saveError && <LifecycleErrorBanner error={saveError} onRetry={retry} />}
+      {saveError && <LifecycleErrorBanner error={saveError} stale={lifecycle.stale} onRetry={retry} />}
       <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
@@ -416,6 +392,7 @@ function App() {
           onMonthLabelChange={updateMonthLabel}
           onMonthLabelBlur={commitMonthLabel}
           onOpenRules={() => setIsRulesOpen(true)}
+          onOpenHistory={() => setIsHistoryOpen(true)}
           onExportCsv={exportCsv}
           onOpenDb={() => setIsDbModalOpen(true)}
           onExportWorkbook={exportWorkbook}
@@ -557,6 +534,24 @@ function App() {
           onCreateSampleMonth={handleCreateSampleMonth}
           onCreateBlankMonth={handleCreateBlankMonth}
           onCancel={handleCancelNoData}
+        />
+      )}
+
+      {isHistoryOpen && (
+        <HistoryDialog
+          company={activeCompany}
+          monthLabel={normalizeMonthLabel(monthLabel)}
+          rates={employeeRates}
+          onRestore={(record) => {
+            if (lifecycle.stale) {
+              showToast("This tab is out of date. Reload first, then restore.", "error");
+              return;
+            }
+            restoreVersion(record.employees);
+            setIsHistoryOpen(false);
+            showToast(`Restored the copy saved ${formatSavedAt(record.updatedAt)}`);
+          }}
+          onClose={() => setIsHistoryOpen(false)}
         />
       )}
 

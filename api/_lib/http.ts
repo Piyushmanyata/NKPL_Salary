@@ -9,6 +9,7 @@ export function normalizeCompany(value: unknown): string {
 export type ApiRequest = {
   method?: string;
   query: Record<string, string | string[] | undefined>;
+  headers: Record<string, string | string[] | undefined>;
   body: any;
 };
 export type ApiResponse = {

@@ -14,7 +14,17 @@ export interface MonthRecord {
   days: number;
   employees: EmployeeInput[];
   updatedAt: string;
+  version: number;
+  device?: string;
 }
+
+export type StaleInfo = { updatedAt?: string; device?: string };
+
+export type SaveMonthResult =
+  | { ok: true; version: number; updatedAt: string }
+  | { ok: false; error: string; stale?: StaleInfo };
+
+const TAB_ID = globalThis.crypto.randomUUID();
 
 export type MonthDataResult =
   | { kind: "found"; record: MonthRecord }
@@ -43,7 +53,8 @@ function localGetRecord(company: string, monthLabel: string): MonthRecord | null
   );
   if (!cached) return null;
   try {
-    return JSON.parse(cached) as MonthRecord;
+    const record = JSON.parse(cached) as MonthRecord;
+    return { ...record, version: record.version ?? 1 };
   } catch {
     return null;
   }
@@ -103,17 +114,64 @@ export async function saveMonthData(
   monthLabel: string,
   days: number,
   employees: EmployeeInput[],
-): Promise<{ ok: boolean; error?: string }> {
-  const record: MonthRecord = {
+  baseVersion: number,
+  checkpoint = false,
+): Promise<SaveMonthResult> {
+  try {
+    const response = await fetch("/api/db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company, monthLabel, days, employees, baseVersion, tabId: TAB_ID, checkpoint }),
+    });
+    if (response.status === 409) {
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        current?: StaleInfo | null;
+      };
+      return { ok: false, error: body.error || "This tab is out of date.", stale: body.current ?? {} };
+    }
+    if (!response.ok) {
+      return { ok: false, error: (await response.text()) || `Request failed with status ${response.status}` };
+    }
+    const saved = (await response.json()) as { version: number; updatedAt: string };
+    localPutRecord({
+      id: recordId(company, monthLabel),
+      company,
+      monthLabel,
+      days,
+      employees,
+      updatedAt: saved.updatedAt,
+      version: saved.version,
+    });
+    return { ok: true, version: saved.version, updatedAt: saved.updatedAt };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function getMonthHistory(
+  company: string,
+  monthLabel: string,
+): Promise<{ ok: true; records: MonthRecord[] } | { ok: false; error: string }> {
+  const result = await fetchJson(
+    `/api/db?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&history=1&t=${Date.now()}`,
+  );
+  if (!result.ok) return { ok: false, error: result.error };
+  const records = (Array.isArray(result.data) ? result.data : []) as Partial<MonthRecord>[];
+  return { ok: true, records: records.map((data) => toRecord(company, monthLabel, data)) };
+}
+
+function toRecord(company: string, monthLabel: string, data: Partial<MonthRecord>): MonthRecord {
+  return {
     id: recordId(company, monthLabel),
     company,
-    monthLabel,
-    days,
-    employees,
-    updatedAt: new Date().toISOString(),
+    monthLabel: data.monthLabel ?? monthLabel,
+    days: data.days ?? 0,
+    employees: data.employees || [],
+    updatedAt: data.updatedAt || new Date().toISOString(),
+    version: data.version ?? 1,
+    device: data.device,
   };
-  localPutRecord(record);
-  return postJson("/api/db", record);
 }
 
 export async function getMonthData(
@@ -125,15 +183,7 @@ export async function getMonthData(
   );
   const cached = localGetRecord(company, monthLabel);
   if (result.ok && result.data) {
-    const data = result.data as Partial<MonthRecord>;
-    const record: MonthRecord = {
-      id: recordId(company, monthLabel),
-      company,
-      monthLabel: data.monthLabel ?? monthLabel,
-      days: data.days ?? 0,
-      employees: data.employees || [],
-      updatedAt: data.updatedAt || new Date().toISOString(),
-    };
+    const record = toRecord(company, monthLabel, result.data as Partial<MonthRecord>);
     localPutRecord(record);
     return { kind: "found", record };
   }

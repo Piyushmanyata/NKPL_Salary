@@ -1,13 +1,17 @@
-import { redisDel, redisGetJson, redisKeys, redisSetJson } from './_lib/redis.js';
+import { getRedis, redisKeys } from './_lib/redis.js';
 import { DEFAULT_COMPANY, normalizeCompany, withApiHandler } from './_lib/http.js';
+import { deviceLabel, monthKey, readHistory, readMonth, saveMonth } from './_lib/monthStore.js';
 
 // Legacy pre-multi-Company flat keys kept until a read-only Redis scan
 // confirms none remain (issue #26). No scan run in this environment —
 // fallback stays. Finding: cannot verify datastore without REDIS credentials.
 
-export default withApiHandler('GET,DELETE,POST', async (req, res) => {
+const STALE_MESSAGE = 'This tab is out of date: newer data was saved after it opened. Reload the page.';
+
+export default withApiHandler('GET,POST', async (req, res) => {
   const { month } = req.query;
   const company = normalizeCompany(req.query.company);
+  const redis = getRedis();
 
   if (req.method === 'GET') {
     if (!month) {
@@ -32,11 +36,14 @@ export default withApiHandler('GET,DELETE,POST', async (req, res) => {
     }
 
     const normalized = String(month);
-    const primaryPath = `monthly_salary/${company}/${normalized}`;
-    let data = await redisGetJson(primaryPath);
+    if (req.query.history) {
+      return res.status(200).json(await readHistory(redis, company, normalized));
+    }
 
+    let data = await readMonth(redis, monthKey(company, normalized));
     if (!data && company === DEFAULT_COMPANY) {
-      data = await redisGetJson(`monthly_salary/${normalized}`);
+      const legacy = await readMonth(redis, `monthly_salary/${normalized}`);
+      data = legacy && { ...legacy, version: 0 };
     }
 
     if (!data) {
@@ -46,29 +53,36 @@ export default withApiHandler('GET,DELETE,POST', async (req, res) => {
     return res.status(200).json(data);
   }
 
-  if (req.method === 'POST') {
-    const { monthLabel, days, employees } = req.body;
-    const bodyCompany = normalizeCompany(req.body.company);
-    if (!monthLabel) {
-      return res.status(400).json({ error: 'Missing monthLabel' });
-    }
-
-    const data = { monthLabel, days, employees, company: bodyCompany, updatedAt: new Date().toISOString() };
-    await redisSetJson(`monthly_salary/${bodyCompany}/${monthLabel}`, data);
-    return res.status(200).json(data);
+  const { monthLabel, days, employees, baseVersion, tabId, checkpoint } = req.body;
+  const bodyCompany = normalizeCompany(req.body.company);
+  if (!monthLabel) {
+    return res.status(400).json({ error: 'Missing monthLabel' });
+  }
+  if (!Number.isInteger(baseVersion) || typeof tabId !== 'string' || !tabId) {
+    return res.status(409).json({ error: STALE_MESSAGE, stale: true });
   }
 
-  if (req.method === 'DELETE') {
-    if (!month) {
-      return res.status(400).json({ error: 'Missing month' });
-    }
-    const normalized = String(month);
-    await redisDel(`monthly_salary/${company}/${normalized}`);
-    if (company === DEFAULT_COMPANY) {
-      await redisDel(`monthly_salary/${normalized}`);
-    }
-    return res.status(200).json({ success: true });
+  const result = await saveMonth(redis, {
+    company: bodyCompany,
+    monthLabel,
+    days,
+    employees,
+    baseVersion,
+    tabId,
+    device: deviceLabel(firstHeader(req.headers['user-agent'])),
+    checkpoint: checkpoint === true,
+  });
+  if (!result.ok) {
+    const current = await readMonth(redis, monthKey(bodyCompany, monthLabel));
+    return res.status(409).json({
+      error: STALE_MESSAGE,
+      stale: true,
+      current: current && { version: current.version, updatedAt: current.updatedAt, device: current.device },
+    });
   }
-
-  return res.status(405).json({ error: 'Method not allowed' });
+  return res.status(200).json(result.record);
 });
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}

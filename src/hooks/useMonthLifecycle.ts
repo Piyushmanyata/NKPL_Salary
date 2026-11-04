@@ -16,6 +16,7 @@ import {
   saveEmployeeRates,
   saveMonthData,
   type EmployeeRateMap,
+  type StaleInfo,
 } from "../db";
 import {
   carryForwardEmployee,
@@ -55,6 +56,7 @@ export type MonthLifecycleApi = {
   createBlankMonth: () => void;
   createSampleMonth: () => Promise<void>;
   copyMonth: (source: string) => Promise<CarryResult>;
+  restoreVersion: (savedEmployees: unknown[]) => void;
 };
 
 function monthSignature(
@@ -94,6 +96,7 @@ export function useMonthLifecycle(
   const [copySourceMonth, setCopySourceMonth] = useState("");
   const [loadRetryToken, setLoadRetryToken] = useState(0);
   const copyGenerationRef = useRef(0);
+  const checkpointNextSaveRef = useRef(false);
   const [lifecycle, dispatchLifecycle] = useReducer(
     monthLifecycleReducer,
     monthLabel,
@@ -178,6 +181,7 @@ export function useMonthLifecycle(
             roster,
           ),
           ratesSignature: ratesSignature(roster),
+          version: monthResult.record.version,
         });
         return;
       }
@@ -264,19 +268,27 @@ export function useMonthLifecycle(
   useEffect(() => {
     const pending = lifecycle.pendingWrite;
     if (pending?.kind !== "month") return;
+    const checkpoint = checkpointNextSaveRef.current;
+    checkpointNextSaveRef.current = false;
     void saveMonthData(
       pending.company,
       pending.monthLabel,
       calendarDaysForMonth(pending.monthLabel),
       employees,
+      pending.baseVersion,
+      checkpoint,
     ).then((result) => {
       if (result.ok) {
         dispatchLifecycle({
           type: "SAVE_SUCCESS",
           kind: "month",
           signature: pending.signature,
+          version: result.version,
         });
+      } else if (result.stale) {
+        dispatchLifecycle({ type: "SAVE_ERROR", error: staleMessage(result.stale, true), stale: true });
       } else {
+        if (checkpoint) checkpointNextSaveRef.current = true;
         dispatchLifecycle({
           type: "SAVE_ERROR",
           error: result.error || "Failed to save month data to the database.",
@@ -343,10 +355,43 @@ export function useMonthLifecycle(
   }, [lifecycle.pendingWrite]);
 
   const retry = useCallback(() => {
-    const shouldReload = lifecycle.loadedScope === null;
+    const shouldReload = lifecycle.loadedScope === null || lifecycle.stale;
     dispatchLifecycle({ type: "RETRY" });
     if (shouldReload) setLoadRetryToken((token) => token + 1);
-  }, [lifecycle.loadedScope]);
+  }, [lifecycle.loadedScope, lifecycle.stale]);
+
+  const loadedScope = lifecycle.loadedScope;
+  useEffect(() => {
+    if (!loadedScope) return;
+    const { company, monthLabel: loadedMonth } = loadedScope;
+    const checkServer = () => {
+      if (document.visibilityState !== "visible") return;
+      void getMonthData(company, loadedMonth).then((result) => {
+        if (result.kind !== "found") return;
+        dispatchLifecycle({
+          type: "NEWER_ON_SERVER",
+          company,
+          monthLabel: loadedMonth,
+          version: result.record.version,
+          error: staleMessage(result.record, false),
+        });
+      });
+    };
+    document.addEventListener("visibilitychange", checkServer);
+    window.addEventListener("focus", checkServer);
+    return () => {
+      document.removeEventListener("visibilitychange", checkServer);
+      window.removeEventListener("focus", checkServer);
+    };
+  }, [loadedScope]);
+
+  const restoreVersion = useCallback(
+    (savedEmployees: unknown[]) => {
+      checkpointNextSaveRef.current = true;
+      setEmployees(hydrateSavedMonth(savedEmployees, calendarDaysForMonth(scopeMonthLabel), employeeRates));
+    },
+    [employeeRates, scopeMonthLabel],
+  );
 
   const cancelNoData = useCallback(() => {
     copyGenerationRef.current += 1;
@@ -405,5 +450,22 @@ export function useMonthLifecycle(
     createBlankMonth,
     createSampleMonth,
     copyMonth,
+    restoreVersion,
   };
+}
+
+function staleMessage(saved: StaleInfo, editLost: boolean): string {
+  const when = saved.updatedAt ? ` at ${formatSavedAt(saved.updatedAt)}` : "";
+  const where = saved.device ? ` from ${saved.device}` : "";
+  const lost = editLost ? " Your last change in this tab was NOT saved." : "";
+  return `Newer data was saved${when}${where}. This tab is out of date.${lost} Reload to see the latest.`;
+}
+
+export function formatSavedAt(iso: string): string {
+  return new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

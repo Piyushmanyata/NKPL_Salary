@@ -92,6 +92,7 @@ describe("monthLifecycleReducer write gate", () => {
       company: SCOPE.company,
       monthLabel: SCOPE.monthLabel,
       signature: "month-1",
+      baseVersion: 0,
     });
   });
 
@@ -196,6 +197,64 @@ describe("monthLifecycleReducer write gate", () => {
       company: "APTUS",
       monthLabel: "July 2026",
     }, "month-1")).toBe(false);
+  });
+});
+
+describe("monthLifecycleReducer server version", () => {
+  const loadedAt = (version: number) =>
+    monthLifecycleReducer(initialLifecycleState(SCOPE.monthLabel), {
+      type: "LOAD_SUCCESS",
+      ...SCOPE,
+      monthSignature: "month-0",
+      ratesSignature: "rates-0",
+      version,
+    });
+
+  it("sends the loaded version with a month write and moves to the saved one", () => {
+    let state = requestMonth(loadedAt(7));
+    expect(state.pendingWrite?.baseVersion).toBe(7);
+
+    state = monthLifecycleReducer(state, { type: "SAVE_SUCCESS", kind: "month", signature: "month-1", version: 8 });
+    expect(state.version).toBe(8);
+    expect(requestMonth(state, "month-2").pendingWrite?.baseVersion).toBe(8);
+  });
+
+  it("treats a month that was never saved as version 0", () => {
+    expect(requestMonth(loaded()).pendingWrite?.baseVersion).toBe(0);
+  });
+
+  it("blocks every write after an out-of-date save until a reload", () => {
+    let state = monthLifecycleReducer(requestMonth(loadedAt(3)), {
+      type: "SAVE_ERROR",
+      error: "Newer data was saved",
+      stale: true,
+    });
+    expect(state.stale).toBe(true);
+    expect(state.status).toBe("error");
+    expect(requestMonth(state, "month-2").pendingWrite).toBeNull();
+    expect(requestRates(state).pendingWrite).toBeNull();
+
+    state = monthLifecycleReducer(state, { type: "SELECT_SCOPE", ...SCOPE });
+    expect(state.stale).toBe(false);
+  });
+
+  it("marks the tab out of date when the server holds a newer version", () => {
+    const state = monthLifecycleReducer(loadedAt(3), {
+      type: "NEWER_ON_SERVER",
+      ...SCOPE,
+      version: 4,
+      error: "Newer data was saved",
+    });
+    expect(state.stale).toBe(true);
+    expect(state.saveError).toBe("Newer data was saved");
+    expect(requestMonth(state).pendingWrite).toBeNull();
+  });
+
+  it("ignores a server check that is not newer, is for another month, or races a save", () => {
+    const check = { type: "NEWER_ON_SERVER" as const, ...SCOPE, version: 3, error: "x" };
+    expect(monthLifecycleReducer(loadedAt(3), check).stale).toBe(false);
+    expect(monthLifecycleReducer(loadedAt(3), { ...check, monthLabel: "July 2026", version: 9 }).stale).toBe(false);
+    expect(monthLifecycleReducer(requestMonth(loadedAt(3)), { ...check, version: 4 }).stale).toBe(false);
   });
 });
 

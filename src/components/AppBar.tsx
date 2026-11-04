@@ -4,6 +4,7 @@ import {
   Cloud,
   FileDown,
   FileSpreadsheet,
+  History,
   RefreshCw,
 } from "lucide-react";
 import styles from "./AppBar.module.css";
@@ -22,6 +23,7 @@ export function AppBar({
   onMonthLabelChange,
   onMonthLabelBlur,
   onOpenRules,
+  onOpenHistory,
   onExportCsv,
   onOpenDb,
   onExportWorkbook,
@@ -37,6 +39,7 @@ export function AppBar({
   onMonthLabelChange: (label: string) => void;
   onMonthLabelBlur: () => void;
   onOpenRules: () => void;
+  onOpenHistory: () => void;
   onExportCsv: () => void;
   onOpenDb: () => void;
   onExportWorkbook: () => void;
@@ -91,6 +94,15 @@ export function AppBar({
         >
           <BookOpen size={17} />
           Rules
+        </button>
+        <button
+          className="ghost-button"
+          type="button"
+          onClick={onOpenHistory}
+          title="Saved versions of this month, with restore"
+        >
+          <History size={17} />
+          History
         </button>
         <button className="ghost-button" type="button" onClick={onExportCsv}>
           <FileDown size={17} />

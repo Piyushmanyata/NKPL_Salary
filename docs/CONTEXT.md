@@ -183,6 +183,14 @@ _Avoid_: Copying last month's manual day values forward; prompting the user to c
 The rule that a roster may only be written to the company+month it was loaded for. Switching company changes the active company a render before the new roster arrives, so without this guard the debounced auto-save writes the previous company's employees under the new company's key. This is not hypothetical — it put all 51 NKPL employees into `monthly_salary/APTUS/July 2026` and `employee_rates/APTUS` on 2026-07-29.
 _Avoid_: Keying an auto-save on the active company alone
 
+**Month Version**:
+A counter on each saved month that goes up by one on every save. A tab sends the version its copy came from, and the server refuses the save if another save landed first, so a tab left open on old figures can never write them over newer ones. A refused tab shows "Newer data was saved … Reload" and writes nothing until reloaded; a tab that comes back into focus checks the server and shows the same banner before anyone types. Version 0 means the month was never saved (ADR-0021).
+_Avoid_: Last write wins; trusting a tab's copy because it is open
+
+**Saved Version** (History):
+A full copy of a month as it was just before a save replaced it, kept in `salary_history/<COMPANY>/<Month>` (newest first, last 40). Another tab's save always keeps one; one tab typing steadily keeps one every 10 minutes; a **Restore** always keeps one, so a restore can itself be undone. Restore puts an old copy back on screen and the normal auto-save writes it, so the Rate Card follows the restored figures the way it follows any edit (ADR-0021).
+_Avoid_: Calling it a backup — it lives in the same Redis as the data
+
 ### Pay history
 
 **Increment**:

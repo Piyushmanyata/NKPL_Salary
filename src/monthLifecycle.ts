@@ -12,6 +12,8 @@ export type WriteKind = "month" | "rates";
 export type PendingWrite = Scope & {
   kind: WriteKind;
   signature: string;
+  /** Server version the month write expects to replace; the server refuses it if another save landed first. */
+  baseVersion: number;
 };
 
 export type MonthLifecycleState = {
@@ -24,6 +26,10 @@ export type MonthLifecycleState = {
   lastMonthSignature: string | null;
   /** JSON of the Rate Card entries as loaded or last written, keeping employees since dropped from the roster; a rates write sends only what differs from it. */
   lastRatesSignature: string | null;
+  /** Server version of the month this tab's copy came from: 0 for a month not saved yet. */
+  version: number;
+  /** Another save landed after this tab loaded; nothing more is written until a reload. */
+  stale: boolean;
   saveError: string | null;
   retryToken: number;
   pendingWrite: PendingWrite | null;
@@ -37,14 +43,16 @@ export type MonthLifecycleAction =
       monthLabel: string;
       monthSignature?: string;
       ratesSignature: string;
+      version?: number;
     }
   | { type: "LOAD_EMPTY"; company: string; monthLabel: string }
   | { type: "CANCEL_CHOICE" }
   | { type: "LOAD_ERROR"; error: string }
   | { type: "SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
   | { type: "RATES_SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
-  | { type: "SAVE_SUCCESS"; kind?: WriteKind; signature?: string }
-  | { type: "SAVE_ERROR"; error: string }
+  | { type: "SAVE_SUCCESS"; kind?: WriteKind; signature?: string; version?: number }
+  | { type: "SAVE_ERROR"; error: string; stale?: boolean }
+  | { type: "NEWER_ON_SERVER"; company: string; monthLabel: string; version: number; error: string }
   | { type: "RETRY" };
 
 export function initialLifecycleState(_monthLabel: string): MonthLifecycleState {
@@ -54,6 +62,8 @@ export function initialLifecycleState(_monthLabel: string): MonthLifecycleState 
     awaitingChoice: false,
     lastMonthSignature: null,
     lastRatesSignature: null,
+    version: 0,
+    stale: false,
     saveError: null,
     retryToken: 0,
     pendingWrite: null,
@@ -102,7 +112,7 @@ function requestWrite(
     ...state,
     status: "saving",
     saveError: null,
-    pendingWrite: { kind, ...scope, signature },
+    pendingWrite: { kind, ...scope, signature, baseVersion: state.version },
   };
 }
 
@@ -125,6 +135,8 @@ export function monthLifecycleReducer(
         awaitingChoice: false,
         lastMonthSignature: null,
         lastRatesSignature: null,
+        version: 0,
+        stale: false,
         saveError: null,
         pendingWrite: null,
       };
@@ -137,6 +149,8 @@ export function monthLifecycleReducer(
         awaitingChoice: false,
         lastMonthSignature: action.monthSignature ?? null,
         lastRatesSignature: action.ratesSignature,
+        version: action.version ?? 0,
+        stale: false,
         saveError: null,
         pendingWrite: null,
       };
@@ -196,7 +210,7 @@ export function monthLifecycleReducer(
         saveError: null,
         pendingWrite: null,
         ...(kind === "month"
-          ? { lastMonthSignature: signature }
+          ? { lastMonthSignature: signature, version: action.version ?? state.version + 1 }
           : { lastRatesSignature: signature }),
       };
     }
@@ -209,9 +223,21 @@ export function monthLifecycleReducer(
       return {
         ...state,
         status: "error",
+        stale: Boolean(action.stale),
         saveError: action.error,
         pendingWrite: null,
       };
+
+    case "NEWER_ON_SERVER":
+      if (
+        !scopesEqual(state.loadedScope, action) ||
+        state.pendingWrite ||
+        state.stale ||
+        action.version <= state.version
+      ) {
+        return state;
+      }
+      return { ...state, status: "error", stale: true, saveError: action.error };
 
     case "RETRY":
       return {
