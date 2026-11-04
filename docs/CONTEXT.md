@@ -191,6 +191,14 @@ _Avoid_: Last write wins; trusting a tab's copy because it is open
 A full copy of a month as it was just before a save replaced it, kept in `salary_history/<COMPANY>/<Month>` (newest first, last 40). Another tab's save always keeps one; one tab typing steadily keeps one every 10 minutes; a **Restore** always keeps one, so a restore can itself be undone. Restore puts an old copy back on screen and the normal auto-save writes it, so the Rate Card follows the restored figures the way it follows any edit (ADR-0021).
 _Avoid_: Calling it a backup — it lives in the same Redis as the data
 
+**Flag**:
+Something on a month that looks wrong, found by comparing it with the previous calendar month's saved record and with the pay rules (`src/flags.ts`). **Must fix** is wrong pay or a broken row (blank or duplicate name, no rate, Days over Calendar Days, a rate cut); **Check** is unusual and needs a look (net moved ≥15% and ≥₹1,000, rate rise with no Increment, missing person, advance / other cut / special bonus changed, Extra Days with missed days, everyone still on full days, net ≤ 0); **Note** is information (new person, logged raise). A Flag never changes pay (ADR-0023).
+_Avoid_: Treating a Flag as an error that blocks export; flags against Tally or the register (those checks live outside the app)
+
+**Save Hold**:
+An auto-save the app holds back because an edit created a Must fix or Check Flag that was not there when the month loaded. A bar says "Not saved yet" until the value is fixed or the user presses **Save anyway**; leaving the page while held asks first. Flags already present at load never hold a save (ADR-0023).
+_Avoid_: Holding saves for Notes; holding for flags the user already accepted
+
 ### Pay history
 
 **Increment**:

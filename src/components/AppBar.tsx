@@ -18,6 +18,7 @@ export function AppBar({
   monthLabel,
   effectiveMonthDays,
   dbLoading,
+  locked,
   onSwitchCompany,
   onCompanyNameChange,
   onMonthLabelChange,
@@ -34,6 +35,7 @@ export function AppBar({
   monthLabel: string;
   effectiveMonthDays: number;
   dbLoading: boolean;
+  locked: boolean;
   onSwitchCompany: (code: string) => void;
   onCompanyNameChange: (name: string) => void;
   onMonthLabelChange: (label: string) => void;
@@ -54,6 +56,8 @@ export function AppBar({
               type="button"
               role="tab"
               aria-selected={activeCompany === company.code}
+              disabled={locked && activeCompany !== company.code}
+              title={locked ? "Save or fix the held change first" : undefined}
               className={`${styles.companyTab} ${activeCompany === company.code ? styles.active : ""}`}
               onClick={() => onSwitchCompany(company.code)}
             >
@@ -74,7 +78,8 @@ export function AppBar({
           className={styles.monthInput}
           value={monthLabel}
           aria-label="Month"
-          title="Month"
+          title={locked ? "Save or fix the held change first" : "Month"}
+          disabled={locked}
           onBlur={onMonthLabelBlur}
           onChange={(event) => onMonthLabelChange(event.target.value)}
         />
