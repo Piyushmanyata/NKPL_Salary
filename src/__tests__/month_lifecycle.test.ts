@@ -238,6 +238,18 @@ describe("monthLifecycleReducer server version", () => {
     expect(state.stale).toBe(false);
   });
 
+  it("drops an error that belongs to a different write than the pending one", () => {
+    const pending = requestMonth(loadedAt(3), "november-1");
+    const late = monthLifecycleReducer(pending, {
+      type: "SAVE_ERROR",
+      kind: "month",
+      signature: "october-9",
+      error: "late",
+      stale: true,
+    });
+    expect(late).toBe(pending);
+  });
+
   it("marks the tab out of date when the server holds a newer version", () => {
     const state = monthLifecycleReducer(loadedAt(3), {
       type: "NEWER_ON_SERVER",

@@ -24,10 +24,16 @@ told either tab, and nothing could bring the newer figures back.
   `salary_history/<COMPANY>/<Month>`, writes the new record and bumps the version, so two saves
   cannot interleave. A mismatch is `409` with when and from which device the newer save came; a
   save without `baseVersion` (an app tab opened before this change) is refused the same way.
+  One exception: when the stored version is one ahead and the last writer is the same tab, that
+  tab's previous write landed but its reply was lost, so the save is rebased and accepted.
+- A month the server answers 404 for but the browser still has cached is treated as never saved
+  (version 0), so saving it recreates it rather than being refused forever.
 - The lifecycle keeps the version in state, puts it on the pending month write, and moves it on
   success. A `409` sets `stale`, which blocks every month and Rate Card write until a reload; the
   banner's button becomes **Reload**. A tab that regains focus fetches the month and goes stale the
-  same way when the server is ahead, before anything is typed in it.
+  same way when the server is ahead (unless the newer record is its own write), before anything is
+  typed in it. A save error only applies to the write it belongs to, so a late failure from the
+  month just left cannot mark the new month stale.
 - History keeps the replaced copy when the save comes from another tab, when 10 minutes have passed
   since the last kept copy, or when the save is a **Restore**; it holds the last 40 per month
   (~13 KB each, so at most ~0.5 MB per month).

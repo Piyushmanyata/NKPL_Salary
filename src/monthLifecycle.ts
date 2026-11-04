@@ -51,7 +51,7 @@ export type MonthLifecycleAction =
   | { type: "SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
   | { type: "RATES_SAVE_REQUEST"; company: string; monthLabel: string; signature: string }
   | { type: "SAVE_SUCCESS"; kind?: WriteKind; signature?: string; version?: number }
-  | { type: "SAVE_ERROR"; error: string; stale?: boolean }
+  | { type: "SAVE_ERROR"; error: string; stale?: boolean; kind?: WriteKind; signature?: string }
   | { type: "NEWER_ON_SERVER"; company: string; monthLabel: string; version: number; error: string }
   | { type: "RETRY" };
 
@@ -220,6 +220,8 @@ export function monthLifecycleReducer(
       // already cleared the pending write. Dropping it keeps a stale failure
       // from putting the freshly loaded scope into `error` and blocking it.
       if (!state.pendingWrite) return state;
+      if (action.kind && action.kind !== state.pendingWrite.kind) return state;
+      if (action.signature && action.signature !== state.pendingWrite.signature) return state;
       return {
         ...state,
         status: "error",

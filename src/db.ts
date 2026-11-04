@@ -16,6 +16,7 @@ export interface MonthRecord {
   updatedAt: string;
   version: number;
   device?: string;
+  tabId?: string;
 }
 
 export type StaleInfo = { updatedAt?: string; device?: string };
@@ -149,6 +150,10 @@ export async function saveMonthData(
   }
 }
 
+export function savedByThisTab(record: MonthRecord): boolean {
+  return record.tabId === TAB_ID;
+}
+
 export async function getMonthHistory(
   company: string,
   monthLabel: string,
@@ -171,6 +176,7 @@ function toRecord(company: string, monthLabel: string, data: Partial<MonthRecord
     updatedAt: data.updatedAt || new Date().toISOString(),
     version: data.version ?? 1,
     device: data.device,
+    tabId: data.tabId,
   };
 }
 
@@ -187,7 +193,10 @@ export async function getMonthData(
     localPutRecord(record);
     return { kind: "found", record };
   }
-  if (cached) return { kind: "found", record: cached };
+  if (cached) {
+    const notOnServer = !result.ok && result.kind === "not-found";
+    return { kind: "found", record: notOnServer ? { ...cached, version: 0 } : cached };
+  }
   if (!result.ok && result.kind === "unavailable") {
     return { kind: "unavailable", error: result.error };
   }

@@ -52,6 +52,19 @@ describe.skipIf(!url)("month store against a real Redis", () => {
     expect(now.body.employees).toEqual([{ id: "a", daysWorked: 24 }]);
   });
 
+  it("accepts a retry from the tab whose own last write landed but whose reply was lost", async () => {
+    await post({ employees: [{ id: "a", daysWorked: 25 }], baseVersion: 0, tabId: "A" });
+    await post({ employees: [{ id: "a", daysWorked: 24 }], baseVersion: 1, tabId: "A" });
+    const retry = await post({ employees: [{ id: "a", daysWorked: 23 }], baseVersion: 1, tabId: "A" });
+    expect(retry.code).toBe(200);
+    expect(retry.body.version).toBe(3);
+    expect((await call("GET", { company: "APTUS", month: "October 2026" })).body).toMatchObject({
+      version: 3,
+      employees: [{ id: "a", daysWorked: 23 }],
+    });
+    expect((await post({ employees: [], baseVersion: 1, tabId: "B" })).code).toBe(409);
+  });
+
   it("refuses a save that carries no version, as an app tab opened before this change would", async () => {
     await post({ employees: [], baseVersion: 0, tabId: "A" });
     const old = await post({ employees: [{ id: "x" }] });
@@ -65,7 +78,8 @@ describe.skipIf(!url)("month store against a real Redis", () => {
     expect((await post({ employees: [], baseVersion: 0, tabId: "A" })).code).toBe(409);
     expect((await post({ employees: [{ id: "a" }], baseVersion: 1, tabId: "A" })).body.version).toBe(2);
     const history = await call("GET", { company: "APTUS", month: "October 2026", history: "1" });
-    expect(history.body).toEqual([{ monthLabel: "October 2026", employees: [], version: 1 }]);
+    expect(history.body.map((entry: { version: number }) => entry.version)).toEqual([2, 1]);
+    expect(history.body[1]).toEqual({ monthLabel: "October 2026", employees: [], version: 1 });
   });
 
   it("keeps the replaced copy when another tab saves, newest first", async () => {
@@ -73,8 +87,8 @@ describe.skipIf(!url)("month store against a real Redis", () => {
     await post({ employees: [{ id: "a", daysWorked: 24 }], baseVersion: 1, tabId: "B" });
     await post({ employees: [{ id: "a", daysWorked: 23 }], baseVersion: 2, tabId: "A" });
     const history = await readHistory(redis, "APTUS", "October 2026");
-    expect(history.map((entry) => entry.version)).toEqual([2, 1]);
-    expect(history[0].employees).toEqual([{ id: "a", daysWorked: 24 }]);
+    expect(history.map((entry) => entry.version)).toEqual([3, 2, 1]);
+    expect(history[1].employees).toEqual([{ id: "a", daysWorked: 24 }]);
   });
 
   it("keeps one copy per 10 minutes while the same tab keeps typing, and always on a restore", async () => {
@@ -95,11 +109,11 @@ describe.skipIf(!url)("month store against a real Redis", () => {
     await save(1, 1);
     await save(2, 2);
     await save(3, 3);
-    expect((await readHistory(redis, "NKPL", "October 2026")).map((e) => e.version)).toEqual([1]);
+    expect((await readHistory(redis, "NKPL", "October 2026")).map((e) => e.version)).toEqual([4, 1]);
 
     await save(4, 1 + CHECKPOINT_WINDOW_MS / 60_000);
     await save(5, 12, true);
-    expect((await readHistory(redis, "NKPL", "October 2026")).map((e) => e.version)).toEqual([5, 4, 1]);
+    expect((await readHistory(redis, "NKPL", "October 2026")).map((e) => e.version)).toEqual([6, 5, 4, 1]);
   });
 
   it(`keeps only the last ${HISTORY_KEEP} copies`, async () => {
@@ -107,8 +121,8 @@ describe.skipIf(!url)("month store against a real Redis", () => {
       await post({ employees: [], baseVersion: version, tabId: `tab-${version}` });
     }
     const history = await readHistory(redis, "APTUS", "October 2026");
-    expect(history).toHaveLength(HISTORY_KEEP);
-    expect(history[0].version).toBe(HISTORY_KEEP + 4);
+    expect(history).toHaveLength(HISTORY_KEEP + 1);
+    expect(history[1].version).toBe(HISTORY_KEEP + 4);
   });
 
   it("no longer deletes months", async () => {

@@ -73,7 +73,7 @@ export default withApiHandler('GET,POST', async (req, res) => {
     checkpoint: checkpoint === true,
   });
   if (!result.ok) {
-    const current = await readMonth(redis, monthKey(bodyCompany, monthLabel));
+    const { current } = result;
     return res.status(409).json({
       error: STALE_MESSAGE,
       stale: true,

@@ -16,6 +16,7 @@ import {
   saveEmployeeRates,
   saveMonthData,
   type EmployeeRateMap,
+  savedByThisTab,
   type StaleInfo,
 } from "../db";
 import {
@@ -286,17 +287,27 @@ export function useMonthLifecycle(
           version: result.version,
         });
       } else if (result.stale) {
-        dispatchLifecycle({ type: "SAVE_ERROR", error: staleMessage(result.stale, true), stale: true });
+        dispatchLifecycle({
+          type: "SAVE_ERROR",
+          kind: "month",
+          signature: pending.signature,
+          error: staleMessage(result.stale, true),
+          stale: true,
+        });
       } else {
         if (checkpoint) checkpointNextSaveRef.current = true;
         dispatchLifecycle({
           type: "SAVE_ERROR",
+          kind: "month",
+          signature: pending.signature,
           error: result.error || "Failed to save month data to the database.",
         });
       }
     }).catch((error: unknown) => {
       dispatchLifecycle({
         type: "SAVE_ERROR",
+        kind: "month",
+        signature: pending.signature,
         error: error instanceof Error ? error.message : String(error),
       });
     });
@@ -343,12 +354,16 @@ export function useMonthLifecycle(
       } else {
         dispatchLifecycle({
           type: "SAVE_ERROR",
+          kind: "rates",
+          signature: pending.signature,
           error: result.error || "Failed to save employee rates.",
         });
       }
     }).catch((error: unknown) => {
       dispatchLifecycle({
         type: "SAVE_ERROR",
+        kind: "rates",
+        signature: pending.signature,
         error: error instanceof Error ? error.message : String(error),
       });
     });
@@ -367,7 +382,7 @@ export function useMonthLifecycle(
     const checkServer = () => {
       if (document.visibilityState !== "visible") return;
       void getMonthData(company, loadedMonth).then((result) => {
-        if (result.kind !== "found") return;
+        if (result.kind !== "found" || savedByThisTab(result.record)) return;
         dispatchLifecycle({
           type: "NEWER_ON_SERVER",
           company,

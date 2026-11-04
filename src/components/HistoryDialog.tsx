@@ -1,6 +1,6 @@
 import { History, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getMonthData, getMonthHistory, type EmployeeRateMap, type MonthRecord } from "../db";
+import { getMonthHistory, type EmployeeRateMap, type MonthRecord } from "../db";
 import { formatSavedAt } from "../hooks/useMonthLifecycle";
 import { describeChanges } from "../monthDiff";
 import { buildMonthSheets } from "../monthSheets";
@@ -42,17 +42,10 @@ export function HistoryDialog({
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([getMonthData(company, monthLabel), getMonthHistory(company, monthLabel)]).then(
-      ([current, history]) => {
-        if (cancelled) return;
-        if (!history.ok) {
-          setLoaded({ kind: "error", error: history.error });
-          return;
-        }
-        const now = current.kind === "found" ? [current.record] : [];
-        setLoaded({ kind: "ready", records: [...now, ...history.records] });
-      },
-    );
+    void getMonthHistory(company, monthLabel).then((history) => {
+      if (cancelled) return;
+      setLoaded(history.ok ? { kind: "ready", records: history.records } : { kind: "error", error: history.error });
+    });
     return () => {
       cancelled = true;
     };

@@ -12,7 +12,9 @@ const SAVE_SCRIPT = `
 local cur = redis.call('GET', KEYS[1])
 local meta = redis.call('HMGET', KEYS[2], 'version', 'tab', 'pushedAt')
 local version = tonumber(meta[1]) or (cur and 1 or 0)
-if tonumber(ARGV[1]) ~= version then return {0, version} end
+local base = tonumber(ARGV[1])
+if base + 1 == version and meta[2] == ARGV[3] then return {2, version, cur} end
+if base ~= version then return {0, version, cur} end
 local now = tonumber(ARGV[4])
 if cur and (ARGV[5] == '1' or meta[2] ~= ARGV[3] or now - (tonumber(meta[3]) or 0) >= tonumber(ARGV[7])) then
   redis.call('LPUSH', KEYS[3], cur)
@@ -32,6 +34,7 @@ export type StoredMonth = {
   updatedAt: string;
   version: number;
   device?: string;
+  tabId?: string;
 };
 
 export type SaveInput = {
@@ -48,7 +51,7 @@ export type SaveInput = {
 
 export type SaveResult =
   | { ok: true; record: StoredMonth }
-  | { ok: false; currentVersion: number };
+  | { ok: false; current: StoredMonth | null };
 
 export async function saveMonth(redis: Redis, input: SaveInput): Promise<SaveResult> {
   const now = input.now ?? new Date();
@@ -60,8 +63,9 @@ export async function saveMonth(redis: Redis, input: SaveInput): Promise<SaveRes
     updatedAt: now.toISOString(),
     version: input.baseVersion + 1,
     device: input.device,
+    tabId: input.tabId,
   };
-  const [ok, version] = (await redis.eval(
+  const [outcome, version, current] = (await redis.eval(
     SAVE_SCRIPT,
     3,
     monthKey(input.company, input.monthLabel),
@@ -74,12 +78,15 @@ export async function saveMonth(redis: Redis, input: SaveInput): Promise<SaveRes
     input.checkpoint ? "1" : "0",
     String(HISTORY_KEEP),
     String(CHECKPOINT_WINDOW_MS),
-  )) as [number, number];
-  return ok === 1 ? { ok: true, record } : { ok: false, currentVersion: version };
+  )) as [number, number, string | null];
+  if (outcome === 2) {
+    // This tab's previous write landed but its reply was lost, so the tab is one behind its own save.
+    return saveMonth(redis, { ...input, baseVersion: version, now });
+  }
+  return outcome === 1 ? { ok: true, record } : { ok: false, current: parseStoredMonth(current) };
 }
 
-export async function readMonth(redis: Redis, key: string): Promise<StoredMonth | null> {
-  const raw = await redis.get(key);
+function parseStoredMonth(raw: string | null): StoredMonth | null {
   if (raw == null) return null;
   try {
     const data = JSON.parse(raw) as StoredMonth;
@@ -89,16 +96,17 @@ export async function readMonth(redis: Redis, key: string): Promise<StoredMonth 
   }
 }
 
+export async function readMonth(redis: Redis, key: string): Promise<StoredMonth | null> {
+  return parseStoredMonth(await redis.get(key));
+}
+
+/** The current record first, then the copies saves replaced, newest first. */
 export async function readHistory(redis: Redis, company: string, month: string): Promise<StoredMonth[]> {
-  const raw = await redis.lrange(historyKey(company, month), 0, -1);
-  return raw.flatMap((item) => {
-    try {
-      const data = JSON.parse(item) as StoredMonth;
-      return [{ ...data, version: data.version ?? 1 }];
-    } catch {
-      return [];
-    }
-  });
+  const [current, kept] = await Promise.all([
+    redis.get(monthKey(company, month)),
+    redis.lrange(historyKey(company, month), 0, -1),
+  ]);
+  return [current, ...kept].flatMap((raw) => parseStoredMonth(raw) ?? []);
 }
 
 export function deviceLabel(userAgent: string | undefined): string {
