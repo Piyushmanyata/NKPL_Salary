@@ -90,6 +90,7 @@ export function useMonthLifecycle(
   activeCompany: string,
   monthLabel: string,
   effectiveMonthDays: number,
+  holdSave = false,
 ): MonthLifecycleApi {
   const [employees, setEmployees] = useState<EmployeeInput[]>([]);
   const [employeeRates, setEmployeeRates] = useState<EmployeeRateMap>({});
@@ -246,7 +247,7 @@ export function useMonthLifecycle(
   }, [activeCompany, loadRetryToken, loadScope, scopeMonthLabel]);
 
   useEffect(() => {
-    if (!isCanonicalMonth) return;
+    if (!isCanonicalMonth || holdSave) return;
     const timer = window.setTimeout(() => {
       dispatchLifecycle({
         type: "SAVE_REQUEST",
@@ -258,6 +259,7 @@ export function useMonthLifecycle(
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
+    holdSave,
     isCanonicalMonth,
     lifecycle.pendingWrite,
     lifecycle.retryToken,
@@ -314,7 +316,7 @@ export function useMonthLifecycle(
   }, [lifecycle.pendingWrite]);
 
   useEffect(() => {
-    if (!isCanonicalMonth) return;
+    if (!isCanonicalMonth || holdSave) return;
     const timer = window.setTimeout(() => {
       dispatchLifecycle({
         type: "RATES_SAVE_REQUEST",
@@ -326,6 +328,7 @@ export function useMonthLifecycle(
     return () => window.clearTimeout(timer);
   }, [
     activeCompany,
+    holdSave,
     isCanonicalMonth,
     lifecycle.lastMonthSignature,
     lifecycle.pendingWrite,

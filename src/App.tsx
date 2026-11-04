@@ -1,6 +1,7 @@
 import {
   Calculator,
   FileSpreadsheet,
+  Flag as FlagIcon,
   Plus,
   Printer,
   Search,
@@ -38,6 +39,9 @@ import { TotalsStrip } from "./components/TotalsStrip";
 import { useGridNavigation } from "./hooks/useGridNavigation";
 import { formatSavedAt, useMonthLifecycle } from "./hooks/useMonthLifecycle";
 import { HistoryDialog } from "./components/HistoryDialog";
+import { FlagsPanel } from "./components/FlagsPanel";
+import { SaveHoldBar } from "./components/SaveHoldBar";
+import { useMonthFlags } from "./hooks/useMonthFlags";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
 import { calculateCategoryTotals, calculateMonthTotals } from "./totals";
@@ -46,7 +50,7 @@ import styles from "./App.module.css";
 
 const CATEGORIES: Category[] = ["Unskilled", "Semi-skilled", "Skilled", "Special"];
 
-type SheetMode = "reference" | "main";
+type SheetMode = "reference" | "main" | "flags";
 
 const COMPANIES = [
   { code: "NKPL", label: "NKPL" },
@@ -115,6 +119,7 @@ function App() {
   );
 
   const { toast, showToast, dismissToast } = useToast();
+  const [holdSave, setHoldSave] = useState(false);
 
   const {
     lifecycle,
@@ -132,7 +137,25 @@ function App() {
     copyMonth,
     restoreVersion,
     employeeRates,
-  } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays);
+  } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays, holdSave);
+  const monthFlags = useMonthFlags(
+    activeCompany,
+    normalizeMonthLabel(monthLabel),
+    effectiveMonthDays,
+    employees,
+    dbLoading || showNoDataModal,
+  );
+  const flagsToSee = monthFlags.report.flags.filter((flag) => flag.level !== "note");
+  const mustFixCount = flagsToSee.filter((flag) => flag.level === "fix").length;
+  const saveHeld = monthFlags.unsavedWarnings.length > 0;
+
+  useEffect(() => {
+    setHoldSave(saveHeld);
+    if (!saveHeld) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [saveHeld]);
   const saveError = lifecycle.saveError;
   const noDataMonth = monthLabel;
   const prevMonthRef = useRef(monthLabel);
@@ -204,7 +227,7 @@ function App() {
   );
 
   const totals = useMemo(
-    () => calculateMonthTotals(sheetMode, salaryRows, officialRows),
+    () => calculateMonthTotals(sheetMode === "main" ? "main" : "reference", salaryRows, officialRows),
     [sheetMode, salaryRows, officialRows],
   );
 
@@ -343,7 +366,7 @@ function App() {
 
   const createDownload = (format: "csv" | "workbook") =>
     createExportDownload({
-      mode: sheetMode,
+      mode: sheetMode === "main" ? "main" : "reference",
       companyName,
       monthLabel,
       salaryRows,
@@ -369,6 +392,13 @@ function App() {
   return (
     <>
       {saveError && <LifecycleErrorBanner error={saveError} stale={lifecycle.stale} onRetry={retry} />}
+      {saveHeld && (
+        <SaveHoldBar
+          warnings={monthFlags.unsavedWarnings}
+          onShow={() => setSheetMode("flags")}
+          onSaveAnyway={monthFlags.acceptWarnings}
+        />
+      )}
       <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
@@ -381,6 +411,7 @@ function App() {
           monthLabel={monthLabel}
           effectiveMonthDays={effectiveMonthDays}
           dbLoading={dbLoading}
+          locked={saveHeld}
           onSwitchCompany={(code) => handleSwitchCompany(code as CompanyCode)}
           onCompanyNameChange={setCompanyName}
           onMonthChange={setMonthLabel}
@@ -429,6 +460,24 @@ function App() {
                       title={`${totals.unpackableCount} unpackable row(s) — Excel export is blocked`}
                     >
                       {totals.unpackableCount}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sheetMode === "flags"}
+                  className={`${styles.sheetTab} ${sheetMode === "flags" ? styles.active : ""}`}
+                  onClick={() => setSheetMode("flags")}
+                >
+                  <FlagIcon size={15} />
+                  Flags
+                  {flagsToSee.length > 0 ? (
+                    <span
+                      className={mustFixCount > 0 ? styles.tabBadge : styles.tabBadgeCheck}
+                      title={`${mustFixCount} must fix, ${flagsToSee.length - mustFixCount} to check`}
+                    >
+                      {flagsToSee.length}
                     </span>
                   ) : null}
                 </button>
@@ -484,6 +533,18 @@ function App() {
                     setRateMode(perDayInput ? "perMonth" : "perDay")
                   }
                   onToggleNotes={() => setNotesOpen((open) => !open)}
+                />
+              ) : sheetMode === "flags" ? (
+                <FlagsPanel
+                  report={monthFlags.report}
+                  previous={monthFlags.previous}
+                  monthLabel={normalizeMonthLabel(monthLabel)}
+                  onOpen={(name) => {
+                    setQuery(name);
+                    setSheetMode("reference");
+                  }}
+                  onRename={(id, name) => updateEmployee(id, "name", name)}
+                  onRemove={removeEmployee}
                 />
               ) : (
                 <OfficialSheet

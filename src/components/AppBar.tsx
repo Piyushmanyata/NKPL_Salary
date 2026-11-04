@@ -21,6 +21,7 @@ export function AppBar({
   monthLabel,
   effectiveMonthDays,
   dbLoading,
+  locked,
   onSwitchCompany,
   onCompanyNameChange,
   onMonthChange,
@@ -36,6 +37,7 @@ export function AppBar({
   monthLabel: string;
   effectiveMonthDays: number;
   dbLoading: boolean;
+  locked: boolean;
   onSwitchCompany: (code: string) => void;
   onCompanyNameChange: (name: string) => void;
   onMonthChange: (label: string) => void;
@@ -62,6 +64,8 @@ export function AppBar({
               type="button"
               role="tab"
               aria-selected={activeCompany === company.code}
+              disabled={locked && activeCompany !== company.code}
+              title={locked ? "Save or fix the held change first" : undefined}
               className={`${styles.companyTab} ${activeCompany === company.code ? styles.active : ""}`}
               onClick={() => onSwitchCompany(company.code)}
             >
@@ -78,11 +82,17 @@ export function AppBar({
           onChange={(event) => onCompanyNameChange(event.target.value)}
         />
         <span className={styles.titleSuffix}>Payroll</span>
-        <div className={styles.monthPicker} role="group" aria-label="Month">
+        <div
+          className={styles.monthPicker}
+          role="group"
+          aria-label="Month"
+          title={locked ? "Save or fix the held change first" : undefined}
+        >
           <button
             type="button"
             className={styles.monthStep}
             aria-label="Previous month"
+            disabled={locked}
             title="Previous month"
             onClick={() => onMonthChange(shiftMonth(shownLabel, -1))}
           >
@@ -91,6 +101,7 @@ export function AppBar({
           <select
             className={styles.monthSelect}
             aria-label="Month name"
+            disabled={locked}
             value={shown.monthIndex}
             onChange={(event) =>
               onMonthChange(`${MONTH_NAMES[Number(event.target.value)]} ${shown.year}`)
@@ -105,6 +116,7 @@ export function AppBar({
           <select
             className={styles.monthSelect}
             aria-label="Year"
+            disabled={locked}
             value={shown.year}
             onChange={(event) =>
               onMonthChange(`${MONTH_NAMES[shown.monthIndex]} ${event.target.value}`)
@@ -120,6 +132,7 @@ export function AppBar({
             type="button"
             className={styles.monthStep}
             aria-label="Next month"
+            disabled={locked}
             title="Next month"
             onClick={() => onMonthChange(shiftMonth(shownLabel, 1))}
           >
