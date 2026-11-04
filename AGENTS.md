@@ -9,7 +9,7 @@ Read this once. Do not re-read it. Do not summarise it back to the user.
 |---|---|
 | Ponytail | `full` — run `/ponytail full` at session start, never lower it |
 | Context reads | lean-ctx modes only (§2) |
-| Dev servers, browsers, computer use | Forbidden (§7) |
+| Dev servers, browsers, screenshots | Allowed for UI checks, local Redis only (§7) |
 | Code comments | None, except the one workaround case in §8 |
 | Final answer | Blocked until §9 gate passes |
 
@@ -93,7 +93,7 @@ BUDGET: <n> tokens, <n> tool calls
 STOP EARLY IF: answer found | 2 dead ends | budget 80% spent
 CONTEXT: <paths + facts already known — do not rediscover these>
 FORBIDDEN: re-reading AGENTS.md, full-file reads, running the full suite,
-           dev servers, editing files outside <scope>
+           editing files outside <scope>
 RETURN: <=300 words. Conclusions + file:line. No transcripts, no code dumps.
 ```
 
@@ -114,21 +114,31 @@ Rules:
 Batch independent tool calls in a single block — never serialise calls that do
 not depend on each other. Sequence only true dependencies.
 
-## 7. Verification — no dev servers
+## 7. Verification
 
-Forbidden: `npm run dev`, watch mode, browsers, screenshots, computer use,
-manual clicking, "start the server and check".
-
-Use instead, in this order:
+Order:
 
 1. Typecheck — `tsc --noEmit` (or repo equivalent)
 2. Lint
 3. Targeted test — single file or single test name, while iterating
 4. Build — only if the change could break it
 5. Full suite — once, at the end, before answering
+6. Browser check — for any change a user can see or click: run the app, click
+   through the changed flow, read the console, take screenshots for the user
 
-Run these through `lean-ctx -c` so failures come back compressed. On failure,
-read only the failing frame, not the whole file.
+Browser checks run against a **local** Redis only, never the live or preview data:
+
+```
+redis-server --port 6390 --save '' --daemonize yes
+REDIS_URL=redis://127.0.0.1:6390 npm run dev
+```
+
+`vite.config.ts` serves `api/*.ts` only when `REDIS_URL` is a localhost URL, so a dev
+run cannot reach the live store. Seed test months by POSTing to the local `/api/db`.
+Never click through a Vercel preview: it may use the live Redis.
+
+Run checks through `lean-ctx -c` where available so failures come back compressed. On
+failure, read only the failing frame, not the whole file.
 
 ## 8. Code style
 
