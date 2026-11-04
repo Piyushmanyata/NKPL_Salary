@@ -41,10 +41,6 @@ export async function redisSetJson(key: string, value: unknown): Promise<void> {
   await getRedis().set(key, JSON.stringify(value));
 }
 
-export async function redisDel(key: string): Promise<void> {
-  await getRedis().del(key);
-}
-
 export async function redisKeys(pattern: string): Promise<string[]> {
   const redis = getRedis();
   const keys: string[] = [];

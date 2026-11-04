@@ -43,6 +43,23 @@ describe("client month persistence results", () => {
     });
   });
 
+  it("treats a month only in this browser's cache as never saved on the server", async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+      removeItem: (key: string) => store.delete(key),
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ employees: [], version: 4 }), { status: 200 }),
+    );
+    await getMonthData("NKPL", "Cached 2026");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const result = await getMonthData("NKPL", "Cached 2026");
+    expect(result).toMatchObject({ kind: "found", record: { version: 0 } });
+    vi.unstubAllGlobals();
+  });
+
   it("deduplicates month labels from the remote store", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify(["June 2026", "June 2026", "July 2026"]), {

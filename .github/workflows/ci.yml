@@ -7,6 +7,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    env:
+      TEST_REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
 

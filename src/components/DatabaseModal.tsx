@@ -39,6 +39,8 @@ export function DatabaseModal({ onClose }: { onClose: () => void }) {
             <ul style={{ paddingLeft: "18px", marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", listStyleType: "disc" }}>
               <li><code>monthly_salary/&lt;company&gt;/&lt;month&gt;</code> &mdash; one record per company per month.</li>
               <li><code>employee_rates/&lt;company&gt;</code> &mdash; the shared rate card that carries across months.</li>
+              <li><code>salary_history/&lt;company&gt;/&lt;month&gt;</code> &mdash; the last 40 copies a save replaced; open <strong>History</strong> to restore one.</li>
+              <li>A tab open on older data cannot save over newer data: it is asked to reload instead.</li>
               <li>The connection string never reaches the browser; all reads and writes go through <code>/api/db</code> and <code>/api/rates</code>.</li>
             </ul>
           </div>
