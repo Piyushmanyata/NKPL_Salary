@@ -130,6 +130,10 @@ function App() {
     copyMonth,
     restoreVersion,
     employeeRates,
+    saveStatus,
+    nextRetryMs,
+    draftNotice,
+    dismissDraftNotice,
   } = useMonthLifecycle(activeCompany, monthLabel, effectiveMonthDays);
   const saveError = lifecycle.saveError;
   const noDataMonth = monthLabel;
@@ -289,6 +293,17 @@ function App() {
     writeStorage(storageKeys.monthConfig(activeCompany), JSON.stringify({ label: normalized }));
   }, [activeCompany, monthLabel, dbLoading, showNoDataModal]);
 
+  useEffect(() => {
+    if (!draftNotice) return;
+    const when = formatSavedAt(draftNotice.editedAt);
+    if (draftNotice.restored) {
+      showToast(`Put back your unsaved changes from ${when}. They are saving now.`);
+    } else {
+      showToast(`Unsaved changes from ${when} could not be put back: newer data was saved after them.`, "error");
+    }
+    dismissDraftNotice();
+  }, [draftNotice]);
+
   // Month initialization methods
   const handleCreateBlankMonth = () => {
     createBlankMonth();
@@ -374,7 +389,15 @@ function App() {
 
   return (
     <>
-      {saveError && <LifecycleErrorBanner error={saveError} stale={lifecycle.stale} onRetry={retry} />}
+      {saveError && (
+        <LifecycleErrorBanner
+          error={saveError}
+          stale={lifecycle.stale}
+          loaded={lifecycle.loadedScope !== null}
+          nextRetryMs={nextRetryMs}
+          onRetry={retry}
+        />
+      )}
       <main className={styles.appShell}>
         {/* One compact bar: identity, month, and the four actions. The old
             eyebrow and hero paragraph told a daily user nothing and cost ~90px
@@ -387,6 +410,7 @@ function App() {
           monthLabel={monthLabel}
           effectiveMonthDays={effectiveMonthDays}
           dbLoading={dbLoading}
+          saveStatus={saveStatus}
           onSwitchCompany={(code) => handleSwitchCompany(code as CompanyCode)}
           onCompanyNameChange={setCompanyName}
           onMonthLabelChange={updateMonthLabel}

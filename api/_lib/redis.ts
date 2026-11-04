@@ -22,6 +22,7 @@ export function getRedis(): Redis {
       lazyConnect: false,
       // Serverless: avoid hanging sockets after the response is sent
       connectTimeout: 10_000,
+      commandTimeout: 5_000,
     });
   }
   return client;

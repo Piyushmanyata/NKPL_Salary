@@ -13,6 +13,8 @@ export const storageKeys = {
   monthCache: (company: string, monthLabel: string) =>
     `${PREFIX}month:${company}::${monthLabel}`,
   monthCachePrefix: `${PREFIX}month:`,
+  monthDraft: (company: string, monthLabel: string) =>
+    `${PREFIX}draft:${company}::${monthLabel}`,
 } as const;
 
 /** Keys used before the #26 rename — read when the new key is absent. */

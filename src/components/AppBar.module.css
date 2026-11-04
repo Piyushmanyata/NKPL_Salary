@@ -57,6 +57,39 @@
   white-space: nowrap;
 }
 
+.save-chip {
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.save-done {
+  color: var(--color-success-strong);
+  background: var(--color-success-soft);
+  border-color: var(--color-success-border);
+}
+
+.save-busy {
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border-color: var(--border-default);
+}
+
+.save-warn {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning-border);
+}
+
+.save-bad {
+  color: var(--color-danger-strong);
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger-border);
+}
+
 .appbar-actions {
   display: flex;
   align-items: center;
