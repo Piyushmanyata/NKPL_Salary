@@ -198,6 +198,7 @@ export function EmployeeSettingsPanel({
     `TDS ${currency(row.otherDeduction)}`,
     `Basic ${row.basicPercent}%`,
     ...(row.fullAttendanceBasic ? [`Fixed Basic ${currency(row.fullAttendanceBasic)}`] : []),
+    ...(row.packageCut > 0 ? [`Real Package ${currency(row.realPackage!)}, cut ${currency(row.packageCut)}`] : []),
   ].join(" · ");
 
   return (
@@ -353,6 +354,20 @@ export function EmployeeSettingsPanel({
                   onChange={(value) => onUpdate("fullAttendanceBasic", value)}
                 />
                 <small>Main-sheet Basic at 26 days — scales down with attendance. 0 = automatic.</small>
+              </div>
+              <div className={styles.settingsColumn}>
+                <span>Real Package</span>
+                <NumberInput
+                  value={row.realPackage ?? 0}
+                  min={0}
+                  disabled={isSpecial}
+                  onChange={(value) => onUpdate("realPackage", value)}
+                />
+                <small>
+                  {row.packageCut > 0
+                    ? `Cut this month: ${currency(row.packageCut)} (gap × days paid ÷ month days, to ₹100). Shows in Advance.`
+                    : "Real pay when Total Salary is set higher. The gap is cut every month. 0 = no cut."}
+                </small>
               </div>
               <div className={styles.settingsColumn}>
                 <span>PF</span>

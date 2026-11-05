@@ -550,6 +550,12 @@ td input {
   color: var(--color-success-strong);
   font-weight: 800;
 }
+.auto-cut {
+  display: block;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .empty-row td {
   padding: 48px 16px;
   text-align: center;

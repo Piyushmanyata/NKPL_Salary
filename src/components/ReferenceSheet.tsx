@@ -224,6 +224,11 @@ export function ReferenceSheet({
                     dataCell="advance"
                     onChange={(value) => onUpdateEmployee(row.id, "advance", value)}
                   />
+                  {row.packageCut > 0 ? (
+                    <small className="auto-cut" title="Package cut: Total Salary above Real Package, for the days paid">
+                      +{num(row.packageCut)} auto
+                    </small>
+                  ) : null}
                 </td>
                 <td className="net-cell">{num(row.netPayable)}</td>
                 <td className="actions-cell">
@@ -302,7 +307,7 @@ export function ReferenceSheet({
             <td>{num(sum(filteredRows, "employeePf"))}</td>
             <td>{num(sum(filteredRows, "esi"))}</td>
             <td>{num(sum(filteredRows, "professionalTax"))}</td>
-            <td>{num(sum(filteredRows, "advance"))}</td>
+            <td>{num(sum(filteredRows, "advance") + sum(filteredRows, "packageCut"))}</td>
             <td className="net-cell">{currency(sum(filteredRows, "netPayable"))}</td>
             <td />
           </tr>
