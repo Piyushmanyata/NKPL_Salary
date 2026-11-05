@@ -195,6 +195,7 @@ export function calculateSalary(
       esi: 0,
       employerEsi: 0,
       professionalTax: 0,
+      packageCut: 0,
       netPayable: 0,
       totalCost: 0,
     };
@@ -289,7 +290,16 @@ export function calculateSalary(
   // TDS payers are exempt from Professional Tax (TICKET-15, resolved 2026-07-29).
   // Official copies this figure, so the exemption reaches both sheets from here.
   const professionalTax = otherDeduction > 0 ? 0 : calculateProfessionalTax(grossPayable, options?.monthLabel);
-  const netPayable = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
+  const realPackage = numberValue(input.realPackage);
+  const netBeforeCut = grossPayable - employeePf - esi - professionalTax - advance - otherDeduction;
+  const packageCut =
+    !isSpecial && realPackage > 0 && realPackage < totalSalary
+      ? Math.min(
+          Math.max(0, netBeforeCut),
+          Math.round((((totalSalary - realPackage) / workingDays) * (daysWorked + extraDays)) / 100) * 100,
+        )
+      : 0;
+  const netPayable = netBeforeCut - packageCut;
 
   return {
     ...input,
@@ -324,8 +334,9 @@ export function calculateSalary(
     esi,
     employerEsi,
     professionalTax,
+    packageCut,
     netPayable,
-    totalCost: grossPayable + employerPf + employerEsi,
+    totalCost: grossPayable - packageCut + employerPf + employerEsi,
   };
 }
 
@@ -346,7 +357,7 @@ export function alignReferenceEsi(
     esi: alignedEsi,
     employerEsi: alignedEmployerEsi,
     netPayable: roundMoney(row.netPayable + row.esi - alignedEsi),
-    totalCost: row.grossPayable + row.employerPf + alignedEmployerEsi,
+    totalCost: row.totalCost - row.employerEsi + alignedEmployerEsi,
   };
 }
 

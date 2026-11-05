@@ -132,6 +132,9 @@ function whatChanged(before: PersonSnapshot, after: PersonSnapshot, old: Employe
   if (numberValue(old.specialBonus) !== numberValue(now.specialBonus)) {
     parts.push(`Special bonus ${money(old.specialBonus)} → ${money(now.specialBonus)}`);
   }
+  if (numberValue(old.realPackage) !== numberValue(now.realPackage)) {
+    parts.push(`Real package ${money(old.realPackage)} → ${money(now.realPackage)}`);
+  }
   return parts.join(", ");
 }
 
@@ -279,6 +282,7 @@ export function compareMonths(current: MonthSide, previous: MonthSide | null): F
       ["advance", "Advance cut"],
       ["otherDeduction", "Other cut"],
       ["specialBonus", "Special bonus"],
+      ["realPackage", "Real package"],
     ] as const) {
       const was = numberValue(old[field]);
       const now = numberValue(employee[field]);

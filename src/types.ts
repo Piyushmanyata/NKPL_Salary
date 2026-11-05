@@ -35,6 +35,13 @@ export type EmployeeInput = {
    * Never touches Reference: net equality packing absorbs it. Issue #29.
    */
   fullAttendanceBasic?: number;
+  /**
+   * What the employee is really paid when the package is set higher only so the
+   * Official sheet can print a full-attendance basic (PF opt-out). The gap above
+   * it is cut every month as the Package Cut, prorated on days paid. Absent, 0,
+   * or not below Total Salary means no cut. ADR-0025.
+   */
+  realPackage?: number;
   daysWorked: number;
   extraDays: number;
   basicPercent?: number;
@@ -80,6 +87,8 @@ export type SalaryRow = EmployeeInput & {
   esi: number;
   employerEsi: number;
   professionalTax: number;
+  /** Computed: (Total Salary − Real Package) ÷ month days × days paid, to the nearest ₹100. ADR-0025. */
+  packageCut: number;
   netPayable: number;
   totalCost: number;
   /**

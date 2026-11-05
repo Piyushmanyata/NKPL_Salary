@@ -99,6 +99,7 @@ export const sanitizeEmployee = (
       Math.max(0, numberValue(row.fullAttendanceBasic)) > 0
         ? Math.max(0, numberValue(row.fullAttendanceBasic))
         : undefined,
+    realPackage: numberValue(row.realPackage) > 0 ? numberValue(row.realPackage) : undefined,
     increments: sanitizeIncrements(row.increments),
     specialBonus:
       row.specialBonus !== undefined &&
@@ -135,6 +136,7 @@ export const applyEmployeeRates = (
     const monthlySalary = Math.max(0, numberValue(rate.monthlySalary));
     const totalSalary = Math.max(0, numberValue(rate.totalSalary));
     const fullAttendanceBasic = Math.max(0, numberValue(rate.fullAttendanceBasic));
+    const realPackage = Math.max(0, numberValue(rate.realPackage));
     return {
       ...employee,
       salaryPerDay: Math.max(0, numberValue(rate.salaryPerDay)),
@@ -145,6 +147,7 @@ export const applyEmployeeRates = (
       // The pin is standing rate data: clearing it in the card clears it
       // everywhere, so an explicit 0 must erase the month snapshot's value.
       fullAttendanceBasic: fullAttendanceBasic > 0 ? fullAttendanceBasic : undefined,
+      realPackage: realPackage > 0 ? realPackage : undefined,
       increments: sanitizeIncrements(rate.increments),
     };
   });
@@ -164,6 +167,7 @@ export const buildRateMap = (list: EmployeeInput[]): EmployeeRateMap => {
       totalSalary: Math.max(0, numberValue(employee.totalSalary)),
       ...(employee.notes?.trim() ? { notes: employee.notes } : {}),
       fullAttendanceBasic: Math.max(0, numberValue(employee.fullAttendanceBasic)),
+      ...(numberValue(employee.realPackage) > 0 ? { realPackage: numberValue(employee.realPackage) } : {}),
       ...(employee.increments?.length ? { increments: employee.increments } : {}),
     };
   });

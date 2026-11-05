@@ -31,7 +31,9 @@ export type OfficialRow = {
   esi: number;
   employerEsi: number;
   professionalTax: number;
+  /** Typed advance plus the Package Cut: the one recovery line Tally books. ADR-0025. */
   advance?: number | null;
+  packageCut: number;
   otherDeduction: number;
   netPayable: number;
   referenceNetPayable: number;
@@ -201,8 +203,8 @@ export function officialEmployerEsi(row: SalaryRow, basic: number): number {
   return roundMoney(basic * ESI_EMPLOYER_RATE);
 }
 
-function advanceAmount(row: SalaryRow): number {
-  return Math.max(0, Number(row.advance) || 0);
+export function advanceAmount(row: SalaryRow): number {
+  return Math.max(0, Number(row.advance) || 0) + row.packageCut;
 }
 
 /**
@@ -310,7 +312,8 @@ export function assembleOfficialRow(
     esi: esiValue,
     employerEsi,
     professionalTax: row.professionalTax,
-    advance: row.advance,
+    advance: row.packageCut > 0 ? adv : row.advance,
+    packageCut: row.packageCut,
     otherDeduction: row.otherDeduction,
     netPayable,
     referenceNetPayable: roundMoney(row.netPayable + row.esi - esiValue),
