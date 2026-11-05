@@ -37,7 +37,6 @@ async function readKey(redis: Redis, key: string): Promise<unknown> {
   return raw == null ? null : parse(raw);
 }
 
-/** Every key the app owns; `withHistory` adds the replaced copies History keeps, which a nightly copy leaves out because the nightly copies are themselves a history. */
 export async function readSnapshot(redis: Redis, withHistory = false, now = new Date()): Promise<Snapshot> {
   const patterns = withHistory ? [...LIVE_PATTERNS, HISTORY_PATTERN] : LIVE_PATTERNS;
   const names = new Set<string>();
@@ -65,7 +64,6 @@ export async function lastBackupAt(sql: Sql): Promise<string | null> {
   return at ? new Date(at).toISOString() : null;
 }
 
-/** Copies the live keys unless one was taken in the last 20 hours. Keeps 180 days, and the first copy of every month for good. */
 export async function backupIfDue(
   sql: Sql,
   redis: Redis,

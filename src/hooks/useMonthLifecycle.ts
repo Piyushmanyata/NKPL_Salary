@@ -52,7 +52,6 @@ const DRAFT_DELAY_MS = 500;
 
 type CarryResult = "copied" | "missing" | "unavailable" | "cancelled";
 
-/** Unsaved edits found in this browser when the month opened: put back, or dropped because newer data was saved since. */
 export type DraftNotice = { editedAt: string; restored: boolean };
 
 export type MonthLifecycleApi = {

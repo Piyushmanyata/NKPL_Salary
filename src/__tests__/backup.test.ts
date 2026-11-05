@@ -17,7 +17,6 @@ function fakeStore(lastAt: string | null) {
 }
 
 describe.skipIf(!url)("salary backup against a real Redis", () => {
-  // db 0 is month_store's and db 1 is flags_store's: test files run in parallel and each one flushes its own db.
   const redis = new Redis(url ?? "", { db: 2 });
 
   beforeEach(async () => {

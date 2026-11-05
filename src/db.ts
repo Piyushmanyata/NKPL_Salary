@@ -30,7 +30,6 @@ const TAB_ID = globalThis.crypto.randomUUID();
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 
-/** One error text for every failed call, in words a payroll user can act on. */
 export function friendlyError(error: unknown): string {
   if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
     return `The server did not answer in ${REQUEST_TIMEOUT_MS / 1000} seconds.`;
@@ -39,15 +38,18 @@ export function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function responseError(response: Response): Promise<string> {
-  const text = await response.text().catch(() => "");
+function jsonError(text: string): string | null {
   try {
     const body = JSON.parse(text) as { error?: unknown };
-    if (typeof body.error === "string" && body.error) return body.error;
+    return typeof body.error === "string" && body.error ? body.error : null;
   } catch {
-    // Not JSON: the text itself is the message.
+    return null;
   }
-  return text || `The server answered with error ${response.status}.`;
+}
+
+async function responseError(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  return jsonError(text) || text || `The server answered with error ${response.status}.`;
 }
 
 function send(url: string, init?: RequestInit): Promise<Response> {
@@ -305,7 +307,6 @@ export async function saveEmployeeRates(
   return postJson("/api/rates", { company, patch });
 }
 
-/** Edits this tab has not saved yet, kept in the browser so a closed tab or a crash does not lose them. */
 export type MonthDraft = { baseVersion: number; employees: EmployeeInput[]; editedAt: string };
 
 export function writeDraft(company: string, monthLabel: string, draft: MonthDraft): void {
@@ -316,11 +317,10 @@ export function clearDraft(company: string, monthLabel: string): void {
   try {
     localStorage.removeItem(storageKeys.monthDraft(company, monthLabel));
   } catch {
-    // A browser without storage has no draft to clear.
+    return;
   }
 }
 
-/** Removes the draft and says whether it can go back: only when nothing was saved since it was made, or it would put back older data. */
 export function takeDraft(
   company: string,
   monthLabel: string,
@@ -345,7 +345,6 @@ export async function getBackupStatus(): Promise<BackupStatus | null> {
   return result.ok ? (result.data as BackupStatus) : null;
 }
 
-/** The server copies everything to the backup store if the last copy is older than 20 hours. */
 export async function backupIfDue(): Promise<BackupStatus | null> {
   try {
     const response = await send("/api/backup", { method: "POST" });

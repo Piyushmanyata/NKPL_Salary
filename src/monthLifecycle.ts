@@ -283,12 +283,10 @@ export function canWriteForScope(
 
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000];
 
-/** Wait before the next automatic try after a failed load or save: quick at first, then every 30 s. */
 export function retryDelay(attempt: number): number {
   return RETRY_DELAYS_MS[Math.min(Math.max(attempt, 0), RETRY_DELAYS_MS.length - 1)];
 }
 
-/** Edits in this tab that the server does not have yet, for the scope on screen; a switch in progress has none. */
 export function hasUnsavedChanges(
   state: MonthLifecycleState,
   scope: Scope,
