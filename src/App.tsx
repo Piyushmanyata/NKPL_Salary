@@ -145,7 +145,7 @@ function App() {
     employees,
     dbLoading || showNoDataModal,
   );
-  const flagsToSee = monthFlags.report.flags.filter((flag) => flag.level !== "note");
+  const flagsToSee = monthFlags.split.open.filter((flag) => flag.level !== "note");
   const mustFixCount = flagsToSee.filter((flag) => flag.level === "fix").length;
   const saveHeld = monthFlags.unsavedWarnings.length > 0;
 
@@ -537,7 +537,9 @@ function App() {
               ) : sheetMode === "flags" ? (
                 <FlagsPanel
                   report={monthFlags.report}
+                  split={monthFlags.split}
                   previous={monthFlags.previous}
+                  resolved={monthFlags.resolved}
                   monthLabel={normalizeMonthLabel(monthLabel)}
                   onOpen={(name) => {
                     setQuery(name);

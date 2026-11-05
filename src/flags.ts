@@ -336,3 +336,38 @@ export function newWarnings(flags: Flag[], accepted: ReadonlySet<string> | null)
   if (!accepted) return [];
   return flags.filter((flag) => flag.level !== "note" && !accepted.has(flag.key));
 }
+
+export type ResolvedFlag = {
+  key: string;
+  level: FlagLevel;
+  name: string;
+  title: string;
+  detail: string;
+  resolvedAt: string;
+  device?: string;
+};
+
+export type ResolvedEntry = { record: ResolvedFlag; now: "same" | "changed" | "gone" };
+
+export type FlagSplit = {
+  open: Flag[];
+  changedSince: Map<string, ResolvedFlag>;
+  resolved: ResolvedEntry[];
+};
+
+export function splitResolved(flags: Flag[], resolved: ResolvedFlag[]): FlagSplit {
+  const byKey = new Map(resolved.map((record) => [record.key, record]));
+  const current = new Map(flags.map((flag) => [flag.key, flag]));
+  const changedSince = new Map<string, ResolvedFlag>();
+  const open = flags.filter((flag) => {
+    const record = byKey.get(flag.key);
+    if (record && record.detail === flag.detail) return false;
+    if (record) changedSince.set(flag.key, record);
+    return true;
+  });
+  const entries = resolved.map((record): ResolvedEntry => {
+    const flag = current.get(record.key);
+    return { record, now: !flag ? "gone" : flag.detail === record.detail ? "same" : "changed" };
+  });
+  return { open, changedSince, resolved: entries };
+}

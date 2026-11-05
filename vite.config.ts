@@ -10,7 +10,7 @@ function localApi(): Plugin {
       const url = process.env.REDIS_URL ?? "";
       if (!/^redis:\/\/(127\.0\.0\.1|localhost)[:/]/.test(url)) return;
       server.middlewares.use(async (req, res, next) => {
-        const match = req.url?.match(/^\/api\/(db|rates)(\?.*)?$/);
+        const match = req.url?.match(/^\/api\/(db|rates|flags)(\?.*)?$/);
         if (!match) return next();
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
