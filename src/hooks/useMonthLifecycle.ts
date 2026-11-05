@@ -117,6 +117,7 @@ export function useMonthLifecycle(
   const checkpointNextSaveRef = useRef(false);
   const retryAttemptRef = useRef(0);
   const backupAskedRef = useRef(false);
+  const pendingDraftRef = useRef<(() => void) | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [draftNotice, setDraftNotice] = useState<DraftNotice | null>(null);
@@ -437,17 +438,23 @@ export function useMonthLifecycle(
   const draftScope =
     loadedScope?.company === onScreen.company && loadedScope.monthLabel === onScreen.monthLabel ? loadedScope : null;
   useEffect(() => {
+    pendingDraftRef.current = null;
     if (!draftScope || lifecycle.stale) return;
-    const timer = window.setTimeout(() => {
+    const keep = () => {
+      pendingDraftRef.current = null;
       if (!unsaved) return clearDraft(draftScope.company, draftScope.monthLabel);
       writeDraft(draftScope.company, draftScope.monthLabel, {
         baseVersion: lifecycle.version,
         employees,
         editedAt: new Date().toISOString(),
       });
-    }, DRAFT_DELAY_MS);
+    };
+    pendingDraftRef.current = keep;
+    const timer = window.setTimeout(keep, DRAFT_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [draftScope, employees, lifecycle.stale, lifecycle.version, unsaved]);
+
+  useEffect(() => () => pendingDraftRef.current?.(), [draftScope]);
 
   useEffect(() => {
     if (!loadedScope || backupAskedRef.current) return;
