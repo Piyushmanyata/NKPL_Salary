@@ -262,3 +262,8 @@
   color: var(--color-danger-strong);
   font-size: 13px;
 }
+
+.view {
+  display: grid;
+  gap: var(--space-4);
+}

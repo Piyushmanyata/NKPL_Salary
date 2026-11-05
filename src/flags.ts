@@ -355,7 +355,6 @@ export type FlagSplit = {
   resolved: ResolvedEntry[];
 };
 
-/** A resolved flag stays resolved only while its key and its detail text are unchanged; any new number opens it again. */
 export function splitResolved(flags: Flag[], resolved: ResolvedFlag[]): FlagSplit {
   const byKey = new Map(resolved.map((record) => [record.key, record]));
   const current = new Map(flags.map((flag) => [flag.key, flag]));

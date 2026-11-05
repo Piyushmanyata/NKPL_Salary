@@ -141,6 +141,8 @@ export function FlagsPanel({
         <button
           type="button"
           role="tab"
+          id="flags-tab-open"
+          aria-controls="flags-view"
           aria-selected={view === "open"}
           className={`${styles.viewTab} ${view === "open" ? styles.viewActive : ""}`}
           onClick={() => setView("open")}
@@ -150,6 +152,8 @@ export function FlagsPanel({
         <button
           type="button"
           role="tab"
+          id="flags-tab-resolved"
+          aria-controls="flags-view"
           aria-selected={view === "resolved"}
           className={`${styles.viewTab} ${view === "resolved" ? styles.viewActive : ""}`}
           onClick={() => setView("resolved")}
@@ -165,57 +169,59 @@ export function FlagsPanel({
         </p>
       ) : null}
 
-      {view === "resolved" ? (
-        <ResolvedList entries={split.resolved} resolved={resolved} />
-      ) : report.flags.length === 0 ? (
-        <p className={styles.clear}>No flags. This month matches last month and the pay rules.</p>
-      ) : split.open.length === 0 ? (
-        <p className={styles.clear}>All {report.flags.length} flags are resolved. See them under Resolved.</p>
-      ) : (
-        GROUPS.map((group) => {
-          const flags = split.open.filter((flag) => flag.level === group.level);
-          if (!flags.length) return null;
-          return (
-            <section key={group.level} className={styles.group} aria-label={group.label}>
-              <h3 className={styles.groupTitle}>
-                <span className={`${styles.tag} ${styles[group.level]}`}>{group.label}</span>
-                {flags.length} · <span className={styles.hint}>{group.hint}</span>
-              </h3>
-              <ul className={styles.list}>
-                {flags.map((flag) => (
-                  <li key={flag.key} className={`${styles.item} ${styles[`${group.level}Item`]}`}>
-                    <div className={styles.itemText}>
-                      <b>{flag.name}</b>
-                      <span className={styles.title}>{flag.title}</span>
-                      <span className={styles.detail}>{flag.detail}</span>
-                      <ChangedSince record={split.changedSince.get(flag.key)} />
-                    </div>
-                    <div className={styles.actions}>
-                      {flag.blankName ? (
-                        <BlankNameFix flag={flag} onRename={onRename} onRemove={onRemove} />
-                      ) : flag.id && !flag.key.includes("|gone:") ? (
-                        <button type="button" className="ghost-button" onClick={() => onOpen(flag.name)}>
-                          Open
+      <div role="tabpanel" id="flags-view" aria-labelledby={`flags-tab-${view}`} className={styles.view}>
+        {view === "resolved" ? (
+          <ResolvedList entries={split.resolved} resolved={resolved} />
+        ) : report.flags.length === 0 ? (
+          <p className={styles.clear}>No flags. This month matches last month and the pay rules.</p>
+        ) : split.open.length === 0 ? (
+          <p className={styles.clear}>All {report.flags.length} flags are resolved. See them under Resolved.</p>
+        ) : (
+          GROUPS.map((group) => {
+            const flags = split.open.filter((flag) => flag.level === group.level);
+            if (!flags.length) return null;
+            return (
+              <section key={group.level} className={styles.group} aria-label={group.label}>
+                <h3 className={styles.groupTitle}>
+                  <span className={`${styles.tag} ${styles[group.level]}`}>{group.label}</span>
+                  {flags.length} · <span className={styles.hint}>{group.hint}</span>
+                </h3>
+                <ul className={styles.list}>
+                  {flags.map((flag) => (
+                    <li key={flag.key} className={`${styles.item} ${styles[`${group.level}Item`]}`}>
+                      <div className={styles.itemText}>
+                        <b>{flag.name}</b>
+                        <span className={styles.title}>{flag.title}</span>
+                        <span className={styles.detail}>{flag.detail}</span>
+                        <ChangedSince record={split.changedSince.get(flag.key)} />
+                      </div>
+                      <div className={styles.actions}>
+                        {flag.blankName ? (
+                          <BlankNameFix flag={flag} onRename={onRename} onRemove={onRemove} />
+                        ) : flag.id && !flag.key.includes("|gone:") ? (
+                          <button type="button" className="ghost-button" onClick={() => onOpen(flag.name)}>
+                            Open
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="quiet-button"
+                          disabled={resolved.loading || resolved.busy}
+                          onClick={() => resolved.resolve(flag)}
+                          title="Checked and fine: move to Resolved"
+                        >
+                          <CircleCheck size={15} />
+                          Resolve
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="quiet-button"
-                        disabled={resolved.loading || resolved.busy}
-                        onClick={() => resolved.resolve(flag)}
-                        title="Checked and fine: move to Resolved"
-                      >
-                        <CircleCheck size={15} />
-                        Resolve
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })
-      )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })
+        )}
+      </div>
 
       <section className={styles.group} aria-label="Everyone, last month against this month">
         <h3 className={styles.groupTitle}>Everyone · biggest change first</h3>
