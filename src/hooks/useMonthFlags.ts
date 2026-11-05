@@ -22,7 +22,7 @@ export type PreviousMonth =
 export type ResolvedState = {
   loading: boolean;
   error: string | null;
-  busyKey: string | null;
+  busy: boolean;
   resolve: (flag: Flag) => void;
   reopen: (key: string) => void;
 };
@@ -38,7 +38,6 @@ export type MonthFlags = {
 
 type Fetched = { scope: string; record: MonthRecord | null };
 type ResolvedFetched = { scope: string; flags: ResolvedFlag[]; error: string | null };
-type Busy = { scope: string; key: string };
 
 export function useMonthFlags(
   company: string,
@@ -53,7 +52,7 @@ export function useMonthFlags(
   const [accepted, setAccepted] = useState<Set<string> | null>(null);
   const scope = `${company}|${monthLabel}`;
   const [resolvedFetched, setResolvedFetched] = useState<ResolvedFetched | null>(null);
-  const [busy, setBusy] = useState<Busy | null>(null);
+  const [busyScope, setBusyScope] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,17 +68,17 @@ export function useMonthFlags(
   const resolvedFlags = useMemo(() => resolvedHere?.flags ?? [], [resolvedHere]);
 
   const change = useCallback(
-    (key: string, request: Promise<ResolvedFlagsResult>) => {
-      setBusy({ scope, key });
-      void request.then((result) => {
+    (request: () => Promise<ResolvedFlagsResult>) => {
+      setBusyScope(scope);
+      void request().then((result) => {
         setResolvedFetched((current) => (current && current.scope !== scope ? current : fromResult(scope, result, current?.flags ?? [])));
-        setBusy((current) => (current?.scope === scope && current.key === key ? null : current));
+        setBusyScope((current) => (current === scope ? null : current));
       });
     },
     [scope],
   );
-  const resolve = useCallback((flag: Flag) => change(flag.key, resolveFlag(company, monthLabel, flag)), [change, company, monthLabel]);
-  const reopen = useCallback((key: string) => change(key, reopenFlag(company, monthLabel, key)), [change, company, monthLabel]);
+  const resolve = useCallback((flag: Flag) => change(() => resolveFlag(company, monthLabel, flag)), [change, company, monthLabel]);
+  const reopen = useCallback((key: string) => change(() => reopenFlag(company, monthLabel, key)), [change, company, monthLabel]);
 
   useEffect(() => {
     if (!previousLabel) return;
@@ -144,7 +143,7 @@ export function useMonthFlags(
     resolved: {
       loading: !resolvedHere,
       error: resolvedHere?.error ?? null,
-      busyKey: busy?.scope === scope ? busy.key : null,
+      busy: busyScope === scope,
       resolve,
       reopen,
     },

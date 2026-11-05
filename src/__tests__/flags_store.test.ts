@@ -71,6 +71,8 @@ describe.skipIf(!url)("resolved flags against a real Redis", () => {
     expect(missing.code).toBe(400);
     expect((await call("POST", {}, { action: "wipe", monthLabel: "October 2026" })).code).toBe(400);
     expect((await call("GET", { company: "APTUS" })).code).toBe(400);
+    expect((await call("GET", { company: "A/B", month: "C" })).code).toBe(400);
+    expect((await call("GET", { company: "A", month: "B/C" })).code).toBe(400);
     expect((await list()).body).toEqual([]);
   });
 });

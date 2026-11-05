@@ -61,7 +61,7 @@ function ResolvedList({ entries, resolved }: { entries: ResolvedEntry[]; resolve
           <button
             type="button"
             className="ghost-button"
-            disabled={resolved.busyKey === record.key}
+            disabled={resolved.busy}
             onClick={() => resolved.reopen(record.key)}
           >
             <Undo2 size={15} />
@@ -201,7 +201,7 @@ export function FlagsPanel({
                       <button
                         type="button"
                         className="quiet-button"
-                        disabled={resolved.loading || resolved.busyKey === flag.key}
+                        disabled={resolved.loading || resolved.busy}
                         onClick={() => resolved.resolve(flag)}
                         title="Checked and fine: move to Resolved"
                       >
