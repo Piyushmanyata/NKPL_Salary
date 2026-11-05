@@ -4,9 +4,11 @@ import { buildMonthSheets } from "../monthSheets";
 import {
   emptyNewEmployeeForm,
   employeeFromForm,
+  esiChecked,
   esiDefaultOn,
   newEmployeeErrors,
   salaryModeFor,
+  withEsiChoice,
   type NewEmployeeForm,
 } from "../newEmployee";
 import { currency, ESI_GROSS_LIMIT, isSpecialCategory, PF_BASIC_LIMIT } from "../salary";
@@ -51,7 +53,7 @@ export function NewEmployeeDialog({
     monthLabel,
   ).salaryRows[0];
   const esiDefault = esiDefaultOn(form, monthDays);
-  const esiOn = form.esiOptIn ?? esiDefault;
+  const esiOn = esiChecked(form, monthDays);
   const pfBlocked = Boolean(preview && preview.monthlySalary * (preview.basicPercent / 100) > PF_BASIC_LIMIT);
   const touched = JSON.stringify(form) !== JSON.stringify(emptyNewEmployeeForm(monthDays));
 
@@ -106,7 +108,11 @@ export function NewEmployeeDialog({
               onChange={(event) => set("name", event.target.value)}
             />
             {showError("name")}
-            {errors.duplicate ? <small className={styles.warning}>{errors.duplicate}</small> : null}
+            {errors.duplicate ? (
+              <small role="status" className={styles.warning}>
+                {errors.duplicate}
+              </small>
+            ) : null}
           </label>
 
           <fieldset className={styles.field}>
@@ -194,7 +200,7 @@ export function NewEmployeeDialog({
                   <input
                     type="checkbox"
                     checked={esiOn}
-                    onChange={(event) => set("esiOptIn", event.target.checked)}
+                    onChange={(event) => setForm((current) => withEsiChoice(current, event.target.checked, monthDays))}
                   />
                   ESI
                 </label>

@@ -5,6 +5,8 @@ import type { Category, EmployeeInput } from "./types";
 
 type SalaryMode = "perDay" | "perMonth";
 
+type EsiChoice = { on: boolean; overLimit: boolean };
+
 export type NewEmployeeForm = {
   name: string;
   category: Category;
@@ -13,7 +15,7 @@ export type NewEmployeeForm = {
   daysWorked: number;
   extraDays: number;
   pfOptIn: boolean;
-  esiOptIn: boolean | null;
+  esiChoice: EsiChoice | null;
   advance?: number;
   notes: string;
 };
@@ -31,7 +33,7 @@ export const emptyNewEmployeeForm = (monthDays: number): NewEmployeeForm => ({
   daysWorked: monthDays,
   extraDays: 0,
   pfOptIn: true,
-  esiOptIn: null,
+  esiChoice: null,
   notes: "",
 });
 
@@ -76,11 +78,21 @@ const aboveEsiLimit = (employee: EmployeeInput, monthDays: number) =>
 export const esiDefaultOn = (form: NewEmployeeForm, monthDays: number): boolean =>
   !aboveEsiLimit(employeeBeforeEsi(form, monthDays), monthDays);
 
+const esiOnFor = (choice: EsiChoice | null, over: boolean) => (choice?.overLimit === over ? choice.on : !over);
+
+export const esiChecked = (form: NewEmployeeForm, monthDays: number): boolean =>
+  esiOnFor(form.esiChoice, !esiDefaultOn(form, monthDays));
+
+export const withEsiChoice = (form: NewEmployeeForm, on: boolean, monthDays: number): NewEmployeeForm => ({
+  ...form,
+  esiChoice: { on, overLimit: !esiDefaultOn(form, monthDays) },
+});
+
 export function employeeFromForm(form: NewEmployeeForm, monthDays: number): EmployeeInput {
   const employee = employeeBeforeEsi(form, monthDays);
   if (isSpecialCategory(form.category)) return employee;
   const over = aboveEsiLimit(employee, monthDays);
-  return replay([[over ? "esiOverLimitOptIn" : "esiOptIn", form.esiOptIn ?? !over]], employee, monthDays);
+  return replay([[over ? "esiOverLimitOptIn" : "esiOptIn", esiOnFor(form.esiChoice, over)]], employee, monthDays);
 }
 
 const nameKey = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();

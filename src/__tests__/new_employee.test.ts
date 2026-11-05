@@ -3,9 +3,11 @@ import { buildMonthSheets } from "../monthSheets";
 import {
   emptyNewEmployeeForm,
   employeeFromForm,
+  esiChecked,
   esiDefaultOn,
   newEmployeeErrors,
   salaryModeFor,
+  withEsiChoice,
   type NewEmployeeForm,
 } from "../newEmployee";
 
@@ -75,12 +77,31 @@ describe("new employee pop-up", () => {
   });
 
   it("records ESI above the 21,000 limit as explicit consent", () => {
-    const over = employeeFromForm(form({ salary: 20000, extra: 5000, esiOptIn: true }), D);
+    const high = form({ salary: 20000, extra: 5000 });
+    const over = employeeFromForm(withEsiChoice(high, true, D), D);
     expect(over.esiOverLimitOptIn).toBe(true);
     expect(over.esiOptIn).toBe(true);
-    const off = employeeFromForm(form({ salary: 20000, extra: 5000, esiOptIn: false }), D);
+    const off = employeeFromForm(withEsiChoice(high, false, D), D);
     expect(off.esiOverLimitOptIn).toBeUndefined();
     expect(off.esiOptIn).toBe(false);
+  });
+
+  it("drops an ESI tick made below the limit once pay goes above it", () => {
+    const ticked = withEsiChoice(form({ salary: 15000 }), true, D);
+    const raised = { ...ticked, salary: 25000 };
+    expect(esiChecked(raised, D)).toBe(false);
+    const employee = employeeFromForm(raised, D);
+    expect(employee.esiOverLimitOptIn).toBeUndefined();
+    expect(rowOf(raised).esi).toBe(0);
+  });
+
+  it("keeps an ESI choice while pay stays on the same side of the limit", () => {
+    const unticked = withEsiChoice(form({ salary: 15000 }), false, D);
+    expect(esiChecked({ ...unticked, salary: 16000 }, D)).toBe(false);
+    expect(esiChecked({ ...unticked, salary: 25000 }, D)).toBe(false);
+    const consent = withEsiChoice(form({ salary: 25000 }), true, D);
+    expect(esiChecked({ ...consent, salary: 30000 }, D)).toBe(true);
+    expect(esiChecked({ ...consent, salary: 15000 }, D)).toBe(true);
   });
 
   it("turns ESI off by default only above the limit, using the sheet's own Total Salary", () => {
