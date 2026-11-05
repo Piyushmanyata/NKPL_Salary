@@ -280,3 +280,48 @@ export function canWriteForScope(
 ): boolean {
   return canStartWrite(state, scope) && lastSignatureFor(state, kind) !== signature;
 }
+
+const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000];
+
+export function retryDelay(attempt: number): number {
+  return RETRY_DELAYS_MS[Math.min(Math.max(attempt, 0), RETRY_DELAYS_MS.length - 1)];
+}
+
+export function hasUnsavedChanges(
+  state: MonthLifecycleState,
+  scope: Scope,
+  monthSignature: string,
+  ratesSignature: string,
+): boolean {
+  if (!scopesEqual(state.loadedScope, scope) || state.awaitingChoice || state.stale) return false;
+  return Boolean(
+    state.pendingWrite ||
+      state.lastMonthSignature !== monthSignature ||
+      state.lastRatesSignature !== ratesSignature,
+  );
+}
+
+export type SaveStatus =
+  | { kind: "loading" }
+  | { kind: "saving" }
+  | { kind: "held" }
+  | { kind: "saved"; at: string | null }
+  | { kind: "retrying" }
+  | { kind: "stale" }
+  | { kind: "offline" };
+
+export function saveStatus(
+  state: MonthLifecycleState,
+  unsaved: boolean,
+  offline: boolean,
+  savedAt: string | null,
+  held = false,
+): SaveStatus {
+  if (state.stale) return { kind: "stale" };
+  if (held && unsaved) return { kind: "held" };
+  if (state.status === "error") return { kind: "retrying" };
+  if (state.status === "loading") return { kind: "loading" };
+  if (offline) return { kind: "offline" };
+  if (unsaved) return { kind: "saving" };
+  return { kind: "saved", at: savedAt };
+}

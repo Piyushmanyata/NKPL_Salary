@@ -10,6 +10,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "ioredis": "^5.11.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

@@ -28,8 +28,36 @@ export type SaveMonthResult =
 
 const TAB_ID = globalThis.crypto.randomUUID();
 
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+export function friendlyError(error: unknown): string {
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return `The server did not answer in ${REQUEST_TIMEOUT_MS / 1000} seconds.`;
+  }
+  if (error instanceof TypeError) return "Could not reach the server. Check the internet connection.";
+  return error instanceof Error ? error.message : String(error);
+}
+
+function jsonError(text: string): string | null {
+  try {
+    const body = JSON.parse(text) as { error?: unknown };
+    return typeof body.error === "string" && body.error ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
+async function responseError(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  return jsonError(text) || text || `The server answered with error ${response.status}.`;
+}
+
+function send(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+}
+
 export type MonthDataResult =
-  | { kind: "found"; record: MonthRecord }
+  | { kind: "found"; record: MonthRecord; fromCache?: boolean }
   | { kind: "empty" }
   | { kind: "unavailable"; error: string };
 
@@ -68,24 +96,16 @@ type FetchResult =
 
 async function fetchJson(url: string, init?: RequestInit): Promise<FetchResult> {
   try {
-    const response = await fetch(url, init);
+    const response = await send(url, init);
     if (response.status === 404) {
       return { ok: false, kind: "not-found", error: "Not found" };
     }
     if (!response.ok) {
-      return {
-        ok: false,
-        kind: "unavailable",
-        error: (await response.text()) || `Request failed with status ${response.status}`,
-      };
+      return { ok: false, kind: "unavailable", error: await responseError(response) };
     }
     return { ok: true, data: await response.json() };
   } catch (error) {
-    return {
-      ok: false,
-      kind: "unavailable",
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { ok: false, kind: "unavailable", error: friendlyError(error) };
   }
 }
 
@@ -94,20 +114,15 @@ async function postJson(
   body: unknown,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await fetch(url, {
+    const response = await send(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("POST failed:", error);
-      return { ok: false, error };
-    }
+    if (!response.ok) return { ok: false, error: await responseError(response) };
     return { ok: true };
-  } catch (error: any) {
-    console.error("POST error:", error);
-    return { ok: false, error: error?.message || String(error) };
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
   }
 }
 
@@ -120,7 +135,7 @@ export async function saveMonthData(
   checkpoint = false,
 ): Promise<SaveMonthResult> {
   try {
-    const response = await fetch("/api/db", {
+    const response = await send("/api/db", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ company, monthLabel, days, employees, baseVersion, tabId: TAB_ID, checkpoint }),
@@ -132,9 +147,7 @@ export async function saveMonthData(
       };
       return { ok: false, error: body.error || "This tab is out of date.", stale: body.current ?? {} };
     }
-    if (!response.ok) {
-      return { ok: false, error: (await response.text()) || `Request failed with status ${response.status}` };
-    }
+    if (!response.ok) return { ok: false, error: await responseError(response) };
     const saved = (await response.json()) as { version: number; updatedAt: string };
     localPutRecord({
       id: recordId(company, monthLabel),
@@ -147,7 +160,7 @@ export async function saveMonthData(
     });
     return { ok: true, version: saved.version, updatedAt: saved.updatedAt };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: friendlyError(error) };
   }
 }
 
@@ -196,7 +209,9 @@ export async function getMonthData(
   }
   if (cached) {
     const notOnServer = !result.ok && result.kind === "not-found";
-    return { kind: "found", record: notOnServer ? { ...cached, version: 0 } : cached };
+    return notOnServer
+      ? { kind: "found", record: { ...cached, version: 0 } }
+      : { kind: "found", record: cached, fromCache: true };
   }
   if (!result.ok && result.kind === "unavailable") {
     return { kind: "unavailable", error: result.error };
@@ -291,6 +306,55 @@ export async function saveEmployeeRates(
   );
   return postJson("/api/rates", { company, patch });
 }
+
+export type MonthDraft = { baseVersion: number; employees: EmployeeInput[]; editedAt: string };
+
+export function writeDraft(company: string, monthLabel: string, draft: MonthDraft): void {
+  writeStorage(storageKeys.monthDraft(company, monthLabel), JSON.stringify(draft));
+}
+
+export function clearDraft(company: string, monthLabel: string): void {
+  try {
+    localStorage.removeItem(storageKeys.monthDraft(company, monthLabel));
+  } catch {
+    return;
+  }
+}
+
+export function takeDraft(
+  company: string,
+  monthLabel: string,
+  serverVersion: number,
+): { draft: MonthDraft; current: boolean } | null {
+  const raw = readStorage(storageKeys.monthDraft(company, monthLabel));
+  if (!raw) return null;
+  clearDraft(company, monthLabel);
+  try {
+    const draft = JSON.parse(raw) as MonthDraft;
+    if (!Array.isArray(draft.employees)) return null;
+    return { draft, current: draft.baseVersion === serverVersion };
+  } catch {
+    return null;
+  }
+}
+
+export type BackupStatus = { configured: boolean; lastAt: string | null; took?: boolean };
+
+export async function getBackupStatus(): Promise<BackupStatus | null> {
+  const result = await fetchJson(`/api/backup?t=${Date.now()}`);
+  return result.ok ? (result.data as BackupStatus) : null;
+}
+
+export async function backupIfDue(): Promise<BackupStatus | null> {
+  try {
+    const response = await send("/api/backup", { method: "POST" });
+    return response.ok ? ((await response.json()) as BackupStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
+export const BACKUP_DOWNLOAD_URL = "/api/backup?download=1";
 
 export type ResolvedFlagsResult = { ok: true; flags: ResolvedFlag[] } | { ok: false; error: string };
 

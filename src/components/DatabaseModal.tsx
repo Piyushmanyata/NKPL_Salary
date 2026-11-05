@@ -1,6 +1,28 @@
-import { Cloud, Wifi, X } from "lucide-react";
+import { Cloud, Download, Wifi, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BACKUP_DOWNLOAD_URL, getBackupStatus, type BackupStatus } from "../db";
+import { formatSavedAt } from "../hooks/useMonthLifecycle";
+
+function backupLine(status: BackupStatus | null | undefined): string {
+  if (status === undefined) return "Checking the last backup…";
+  if (status === null) return "Could not read the backup status.";
+  if (!status.configured) return "The nightly backup is not switched on yet. Use Download backup to keep a copy.";
+  if (!status.lastAt) return "The nightly backup is on, but no copy has been taken yet.";
+  return `Last automatic backup: ${formatSavedAt(status.lastAt)}. One copy a day is kept for 180 days, and the first copy of every month for good.`;
+}
 
 export function DatabaseModal({ onClose }: { onClose: () => void }) {
+  const [backup, setBackup] = useState<BackupStatus | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    void getBackupStatus().then((status) => {
+      if (!cancelled) setBackup(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
@@ -46,7 +68,16 @@ export function DatabaseModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        <div style={{ marginBottom: "24px", padding: "14px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", color: "#334155", lineHeight: "1.5" }}>
+          <strong style={{ display: "block", marginBottom: "4px" }}>Backup</strong>
+          <span>{backupLine(backup)}</span>
+        </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+          <a className="quiet-button" href={BACKUP_DOWNLOAD_URL} download style={{ fontWeight: "600", textDecoration: "none" }}>
+            <Download size={16} />
+            Download backup
+          </a>
           <button
             className="quiet-button"
             onClick={onClose}

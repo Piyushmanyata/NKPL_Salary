@@ -10,11 +10,15 @@ import {
 } from "react";
 import { applyRateCardPatch, rateCardPatch } from "../../api/_lib/rateCard";
 import {
+  backupIfDue,
+  clearDraft,
   getAllMonthLabels,
   getEmployeeRates,
   getMonthData,
   saveEmployeeRates,
   saveMonthData,
+  takeDraft,
+  writeDraft,
   type EmployeeRateMap,
   savedByThisTab,
   type StaleInfo,
@@ -33,14 +37,22 @@ import {
   sortMonthsChronologically,
 } from "../months";
 import {
+  hasUnsavedChanges,
   initialLifecycleState,
   monthLifecycleReducer,
   ratesSaveDelay,
+  retryDelay,
   SAVE_DEBOUNCE_MS,
+  saveStatus,
   type MonthLifecycleState,
+  type SaveStatus,
 } from "../monthLifecycle";
 
+const DRAFT_DELAY_MS = 500;
+
 type CarryResult = "copied" | "missing" | "unavailable" | "cancelled";
+
+export type DraftNotice = { editedAt: string; restored: boolean };
 
 export type MonthLifecycleApi = {
   lifecycle: MonthLifecycleState;
@@ -58,6 +70,10 @@ export type MonthLifecycleApi = {
   createSampleMonth: () => Promise<void>;
   copyMonth: (source: string) => Promise<CarryResult>;
   restoreVersion: (savedEmployees: unknown[]) => void;
+  saveStatus: SaveStatus;
+  nextRetryMs: number;
+  draftNotice: DraftNotice | null;
+  dismissDraftNotice: () => void;
 };
 
 function monthSignature(
@@ -99,6 +115,12 @@ export function useMonthLifecycle(
   const [loadRetryToken, setLoadRetryToken] = useState(0);
   const copyGenerationRef = useRef(0);
   const checkpointNextSaveRef = useRef(false);
+  const retryAttemptRef = useRef(0);
+  const backupAskedRef = useRef(false);
+  const pendingDraftRef = useRef<(() => void) | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<DraftNotice | null>(null);
   const [lifecycle, dispatchLifecycle] = useReducer(
     monthLifecycleReducer,
     monthLabel,
@@ -133,7 +155,9 @@ export function useMonthLifecycle(
         carryForwardEmployee(employee, targetDays),
       );
       if (isCancelled?.()) return "cancelled";
-      setEmployees(carried);
+      const kept = takeDraft(activeCompany, target, 0);
+      setEmployees(kept?.current ? hydrateSavedMonth(kept.draft.employees, targetDays, rates) : carried);
+      setDraftNotice(kept && { editedAt: kept.draft.editedAt, restored: kept.current });
       dispatchLifecycle({
         type: "LOAD_SUCCESS",
         company: activeCompany,
@@ -165,23 +189,19 @@ export function useMonthLifecycle(
       }
 
       if (monthResult.kind === "found") {
-        const roster = hydrateSavedMonth(
-          monthResult.record.employees,
-          calendarDaysForMonth(scopeMonthLabel),
-          rates,
-        );
-        setEmployees(roster);
+        const days = calendarDaysForMonth(scopeMonthLabel);
+        const roster = hydrateSavedMonth(monthResult.record.employees, days, rates);
+        const kept = takeDraft(activeCompany, scopeMonthLabel, monthResult.record.version);
+        setEmployees(kept?.current ? hydrateSavedMonth(kept.draft.employees, days, rates) : roster);
+        setDraftNotice(kept && { editedAt: kept.draft.editedAt, restored: kept.current });
+        setSavedAt(monthResult.record.updatedAt);
+        setOffline(Boolean(monthResult.fromCache));
         setCopySourceMonth("");
         dispatchLifecycle({
           type: "LOAD_SUCCESS",
           company: activeCompany,
           monthLabel: scopeMonthLabel,
-          monthSignature: monthSignature(
-            activeCompany,
-            scopeMonthLabel,
-            calendarDaysForMonth(scopeMonthLabel),
-            roster,
-          ),
+          monthSignature: monthSignature(activeCompany, scopeMonthLabel, days, roster),
           ratesSignature: ratesSignature(roster),
           version: monthResult.record.version,
         });
@@ -230,6 +250,9 @@ export function useMonthLifecycle(
   useEffect(() => {
     let cancelled = false;
     setEmployees([]);
+    setSavedAt(null);
+    setOffline(false);
+    setDraftNotice(null);
     dispatchLifecycle({
       type: "SELECT_SCOPE",
       company: activeCompany,
@@ -282,6 +305,8 @@ export function useMonthLifecycle(
       checkpoint,
     ).then((result) => {
       if (result.ok) {
+        setSavedAt(result.updatedAt);
+        setOffline(false);
         dispatchLifecycle({
           type: "SAVE_SUCCESS",
           kind: "month",
@@ -378,14 +403,74 @@ export function useMonthLifecycle(
     if (shouldReload) setLoadRetryToken((token) => token + 1);
   }, [lifecycle.loadedScope, lifecycle.stale]);
 
+  const onScreen = useMemo(
+    () => ({ company: activeCompany, monthLabel: scopeMonthLabel }),
+    [activeCompany, scopeMonthLabel],
+  );
+  const unsaved = hasUnsavedChanges(lifecycle, onScreen, monthPayloadSignature, nextRatesSignature);
+
+  useEffect(() => {
+    if (lifecycle.status === "saved" || lifecycle.status === "loaded") retryAttemptRef.current = 0;
+  }, [lifecycle.status]);
+
+  const autoRetry = lifecycle.status === "error" && !lifecycle.stale && !holdSave;
+  const nextRetryMs = retryDelay(retryAttemptRef.current);
+  useEffect(() => {
+    if (!autoRetry) return;
+    const timer = window.setTimeout(() => {
+      retryAttemptRef.current += 1;
+      retry();
+    }, nextRetryMs);
+    return () => window.clearTimeout(timer);
+  }, [autoRetry, lifecycle.saveError, nextRetryMs, retry]);
+
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
+
   const loadedScope = lifecycle.loadedScope;
+  const draftScope =
+    loadedScope?.company === onScreen.company && loadedScope.monthLabel === onScreen.monthLabel ? loadedScope : null;
+  useEffect(() => {
+    pendingDraftRef.current = null;
+    if (!draftScope || lifecycle.stale) return;
+    const keep = () => {
+      pendingDraftRef.current = null;
+      if (!unsaved) return clearDraft(draftScope.company, draftScope.monthLabel);
+      writeDraft(draftScope.company, draftScope.monthLabel, {
+        baseVersion: lifecycle.version,
+        employees,
+        editedAt: new Date().toISOString(),
+      });
+    };
+    pendingDraftRef.current = keep;
+    const timer = window.setTimeout(keep, DRAFT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [draftScope, employees, lifecycle.stale, lifecycle.version, unsaved]);
+
+  useEffect(() => () => pendingDraftRef.current?.(), [draftScope]);
+
+  useEffect(() => {
+    if (!loadedScope || backupAskedRef.current) return;
+    backupAskedRef.current = true;
+    void backupIfDue();
+  }, [loadedScope]);
+
   useEffect(() => {
     if (!loadedScope) return;
     const { company, monthLabel: loadedMonth } = loadedScope;
     const checkServer = () => {
       if (document.visibilityState !== "visible") return;
       void getMonthData(company, loadedMonth).then((result) => {
-        if (result.kind !== "found" || savedByThisTab(result.record)) return;
+        if (result.kind !== "found" || result.fromCache) return;
+        setOffline(false);
+        if (savedByThisTab(result.record)) return;
         dispatchLifecycle({
           type: "NEWER_ON_SERVER",
           company,
@@ -469,6 +554,10 @@ export function useMonthLifecycle(
     createSampleMonth,
     copyMonth,
     restoreVersion,
+    saveStatus: saveStatus(lifecycle, unsaved, offline, savedAt, holdSave),
+    nextRetryMs,
+    draftNotice,
+    dismissDraftNotice: () => setDraftNotice(null),
   };
 }
 

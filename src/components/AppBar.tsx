@@ -9,8 +9,34 @@ import {
   History,
   RefreshCw,
 } from "lucide-react";
+import { formatSavedAt } from "../hooks/useMonthLifecycle";
+import type { SaveStatus } from "../monthLifecycle";
 import { MONTH_NAMES, parseMonthYearString, pickerYears, shiftMonth } from "../months";
 import styles from "./AppBar.module.css";
+
+const SAVE_CHIP: Record<SaveStatus["kind"], { text: string; tone: string; hint: string }> = {
+  loading: { text: "Loading…", tone: "saveBusy", hint: "Reading this month from the server" },
+  saving: { text: "Saving…", tone: "saveBusy", hint: "Your last change is on its way to the server" },
+  held: { text: "Save held", tone: "saveWarn", hint: "A change added a flag, so saving waits. Fix it, or press Save anyway" },
+  saved: { text: "Saved", tone: "saveDone", hint: "Every change in this tab is on the server" },
+  retrying: { text: "Not saved", tone: "saveBad", hint: "The last save failed. The app keeps trying by itself" },
+  stale: { text: "Out of date", tone: "saveBad", hint: "Newer data was saved elsewhere. Reload this tab" },
+  offline: {
+    text: "Offline copy",
+    tone: "saveWarn",
+    hint: "The server did not answer, so this is the copy last saved in this browser. Changes save when the server is back",
+  },
+};
+
+function SaveChip({ status }: { status: SaveStatus }) {
+  const chip = SAVE_CHIP[status.kind];
+  const text = status.kind === "saved" && status.at ? `Saved ${formatSavedAt(status.at)}` : chip.text;
+  return (
+    <span className={`${styles.saveChip} ${styles[chip.tone]}`} title={chip.hint} role="status" aria-live="polite">
+      {text}
+    </span>
+  );
+}
 
 export type CompanyOption = { code: string; label: string };
 
@@ -21,6 +47,7 @@ export function AppBar({
   monthLabel,
   effectiveMonthDays,
   dbLoading,
+  saveStatus,
   locked,
   onSwitchCompany,
   onCompanyNameChange,
@@ -37,6 +64,7 @@ export function AppBar({
   monthLabel: string;
   effectiveMonthDays: number;
   dbLoading: boolean;
+  saveStatus: SaveStatus;
   locked: boolean;
   onSwitchCompany: (code: string) => void;
   onCompanyNameChange: (name: string) => void;
@@ -145,6 +173,7 @@ export function AppBar({
         >
           {effectiveMonthDays} days
         </span>
+        <SaveChip status={saveStatus} />
       </div>
       <div className={styles.appbarActions}>
         <button
