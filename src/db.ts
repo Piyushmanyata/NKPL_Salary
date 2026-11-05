@@ -247,6 +247,8 @@ export interface EmployeeRate {
   notes?: string;
   /** Standing Official basic pin at full attendance. SPEC §6.3 / issue #29. */
   fullAttendanceBasic?: number;
+  /** Real pay under a raised package; the gap is cut monthly. ADR-0025. */
+  realPackage?: number;
   increments?: Increment[];
 }
 

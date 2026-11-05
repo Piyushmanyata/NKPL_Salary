@@ -1,6 +1,6 @@
 import { roundMoney } from "./salary";
 import { incrementsForMonth } from "./increments";
-import type { OfficialRow } from "./officialSheet";
+import { advanceAmount, type OfficialRow } from "./officialSheet";
 import type { SalaryRow } from "./types";
 import { zipStored } from "./zip";
 
@@ -51,7 +51,7 @@ export function buildReferenceExportRows(rows: SalaryRow[], monthLabel: string):
     "ESI Deduction": roundMoney(row.esi),
     "Employer ESI Contribution": roundMoney(row.employerEsi),
     "P-Tax": roundMoney(row.professionalTax),
-    Advance: row.advance !== undefined && row.advance !== null ? -roundMoney(row.advance) : "",
+    Advance: advanceAmount(row) > 0 ? -roundMoney(advanceAmount(row)) : row.advance ?? "",
     "Other Deduction": roundMoney(row.otherDeduction),
     "Net Payable": roundMoney(row.netPayable),
     "Employer Total Cost": roundMoney(row.totalCost),

@@ -52,7 +52,7 @@ export function calculateMonthTotals(
       esi,
       professionalTax,
       deductions,
-      cost: gross + employerPf + employerEsi,
+      cost: gross - sum(packable, "packageCut") + employerPf + employerEsi,
     };
   }
 
@@ -68,7 +68,8 @@ export function calculateMonthTotals(
     esi +
     professionalTax +
     sum(salaryRows, "advance") +
-    sum(salaryRows, "otherDeduction");
+    sum(salaryRows, "otherDeduction") +
+    sum(salaryRows, "packageCut");
   return {
     employees: salaryRows.length,
     unpackableCount: 0,
