@@ -25,6 +25,7 @@ describe.skipIf(!url)("salary backup against a real Redis", () => {
     await redis.set("employee_rates/NKPL", JSON.stringify({ e1: { salaryPerDay: 500 } }));
     await redis.hset("salary_meta/NKPL/October 2026", { version: "3", tab: "t1" });
     await redis.lpush("salary_history/NKPL/October 2026", JSON.stringify({ version: 2 }));
+    await redis.hset("salary_flags_resolved/NKPL/October 2026", { "fix|a": JSON.stringify({ key: "fix|a" }) });
     await redis.set("unrelated", "x");
   });
 
@@ -37,6 +38,7 @@ describe.skipIf(!url)("salary backup against a real Redis", () => {
     expect(Object.keys(nightly.keys)).toEqual([
       "employee_rates/NKPL",
       "monthly_salary/NKPL/October 2026",
+      "salary_flags_resolved/NKPL/October 2026",
       "salary_meta/NKPL/October 2026",
     ]);
     expect(nightly.keys["salary_meta/NKPL/October 2026"]).toEqual({ version: "3", tab: "t1" });
@@ -50,7 +52,7 @@ describe.skipIf(!url)("salary backup against a real Redis", () => {
     const { sql, calls } = fakeStore(old);
     await expect(backupIfDue(sql, redis, "nightly", now)).resolves.toEqual({ took: true, lastAt: now.toISOString() });
     const insert = calls.find((call) => call.text.startsWith("insert"));
-    expect(insert?.values.slice(0, 3)).toEqual([now.toISOString(), "nightly", 3]);
+    expect(insert?.values.slice(0, 3)).toEqual([now.toISOString(), "nightly", 4]);
     expect(calls.some((call) => call.text.startsWith("delete from salary_backups"))).toBe(true);
   });
 

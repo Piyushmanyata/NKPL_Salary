@@ -151,6 +151,10 @@ _Avoid_: Reference salary per day
 Standing per-employee Official **Monthly Basic**, expressed as the figure that prints at **full attendance** (`A = 26`) and prorated on the same 26-day frame below that. Lives on the **Rate Card**, so it is standing package data rather than a monthly input: it carries into every new month, while a month already saved keeps the pin it was saved with (ADR-0017). It **overrides both** the **Wage-Board Daily** basic (when PF is on) and the **Opt-Out Basic** (when PF is off): an explicit per-person figure outranks a general formula. Absent, `0` or negative means no pin. Never moves **Net Payable** — **Net Equality Packing** absorbs it into HRA/TA/bonus — but it does move Official PF, and it can suppress **ESI (Official)** by lifting basic past ₹21,000, which flags the row rather than failing silently (ADR-0012). Labelled **Fixed Main-Sheet Basic** in the settings panel.
 _Avoid_: **Main Basic** and **Wage Basic** (the first hides which sheet, the second reads as the **Wage-Board Daily** basic it overrides); Reference basic, Basic Share, a per-month override, a name list in code, treating it as a cap rather than an anchor
 
+**Real Package**:
+Standing per-employee figure on the **Rate Card**: what a person is really paid when **Total Salary** is set higher only so the Official sheet can print a **Full Attendance Basic** (PF opt-out). The gap is the **Package Cut**: (Total Salary − Real Package) ÷ month days × (days worked + extra days), to the nearest ₹100, taken off Net and shown inside **Advance** on both sheets and exports (ADR-0025). Absent, `0`, or not below Total Salary means no cut; Special never cuts; capped so Net never goes below zero.
+_Avoid_: a monthly typed advance for the same gap; lowering Total Salary to the real figure
+
 **Opt-Out Basic**:
 Elevated Official basic used **only when PF is off**. When PF is on, Official basic is the wage-board daily rate × Official attendance, **uncapped** (no ₹15,000 cap on the displayed basic). When PF is off: if ESI is also off, max(₹21,100, 51% of total salary) attendance-prorated on the Official frame; if ESI is on (and PF off), max(₹15,100, 51% of total salary) attendance-prorated. Special always uses this path (PF forced off).
 _Avoid_: Applying opt-out elevation when PF is on; capping displayed basic at ₹15,000
@@ -198,6 +202,10 @@ _Avoid_: Treating a Flag as an error that blocks export; flags against Tally or 
 **Save Hold**:
 An auto-save the app holds back because an edit created a Must fix or Check Flag that was not there when the month loaded. A bar says "Not saved yet" until the value is fixed or the user presses **Save anyway**; leaving the page while held asks first. Flags already present at load never hold a save (ADR-0024).
 _Avoid_: Holding saves for Notes; holding for flags the user already accepted
+
+**Resolved Flag**:
+A Flag the user checked and marked fine with **Resolve**. Kept per Company and month, apart from the month's own record, with the flag's text, when and on which device (`api/flags.ts`, Redis hash `salary_flags_resolved/<CO>/<Month>`). It leaves the Open list and the Flags badge, and stops holding a save, only while its key and detail text are the same; any new number puts it back in Open with what it said before. **Undo** takes it off the list (ADR-0026).
+_Avoid_: Treating Resolve as a fix (pay does not change); resolving a flag for good whatever its numbers become
 
 ### Pay history
 

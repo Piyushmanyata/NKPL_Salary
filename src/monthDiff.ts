@@ -12,6 +12,7 @@ const FIELD_LABELS: Record<string, string> = {
   specialBonus: "Special bonus",
   basicPercent: "Basic %",
   fullAttendanceBasic: "Full-attendance basic",
+  realPackage: "Real package",
   pfOptIn: "PF",
   esiOptIn: "ESI",
   esiOverLimitOptIn: "ESI over limit",

@@ -1,4 +1,4 @@
-# ADR 0025: A nightly backup outside Redis, and saves that keep trying
+# ADR 0027: A nightly backup outside Redis, and saves that keep trying
 
 ## Status
 
@@ -19,7 +19,7 @@ The 4 Nov deep scan found two ways to lose payroll work:
 ## Decision
 
 - **Nightly backup.** `api/backup.ts` copies every `monthly_salary/*`, `employee_rates/*` and
-  `salary_meta/*` key into a Postgres table `salary_backups` (Neon, `SALARY_BACKUP_DATABASE_URL`).
+  `salary_meta/*` and `salary_flags_resolved/*` key into a Postgres table `salary_backups` (Neon, `SALARY_BACKUP_DATABASE_URL`).
   A Vercel cron calls it daily at 20:30 UTC (02:00 IST) with `CRON_SECRET`; the app also asks for
   one once per page load (`POST`), so copies still happen on any day the app is used if the cron
   is ever stopped by Deployment Protection or a missing secret. Either way a copy is taken only when

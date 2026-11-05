@@ -14,11 +14,11 @@ import {
 } from "react";
 import type {
   Category,
+  EmployeeInput,
   SalaryRow,
 } from "./types";
 import { buildMonthSheets } from "./monthSheets";
 import { applyEmployeeEdit, type EditableField, type EditValue } from "./editEmployee";
-import { blankEmployee } from "./roster";
 import { createExportDownload, downloadBlob } from "./exportActions";
 import { legacyStorageKeys, readStorage, storageKeys, writeStorage } from "./storageKeys";
 import {
@@ -42,6 +42,7 @@ import { HistoryDialog } from "./components/HistoryDialog";
 import { FlagsPanel } from "./components/FlagsPanel";
 import { SaveHoldBar } from "./components/SaveHoldBar";
 import { useMonthFlags } from "./hooks/useMonthFlags";
+import { NewEmployeeDialog } from "./components/NewEmployeeDialog";
 import { useRowSort } from "./hooks/useRowSort";
 import { useToast } from "./hooks/useToast";
 import { calculateCategoryTotals, calculateMonthTotals } from "./totals";
@@ -149,7 +150,7 @@ function App() {
     employees,
     dbLoading || showNoDataModal,
   );
-  const flagsToSee = monthFlags.report.flags.filter((flag) => flag.level !== "note");
+  const flagsToSee = monthFlags.split.open.filter((flag) => flag.level !== "note");
   const mustFixCount = flagsToSee.filter((flag) => flag.level === "fix").length;
   const saveHeld = monthFlags.unsavedWarnings.length > 0;
 
@@ -171,6 +172,7 @@ function App() {
   // sheet, never again. They live in a dialog so they cost no scroll depth.
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
   // Notes needs real height and is untouched most months, so it stays folded
   // inside the settings panel until asked for.
   const [notesOpen, setNotesOpen] = useState(false);
@@ -254,12 +256,24 @@ function App() {
     );
   };
 
-  const addEmployee = () => {
+  const addEmployee = (newEmp: EmployeeInput) => {
+    if (lifecycle.stale) {
+      showToast("This tab is out of date, so nothing was added. Reload, then add again.", "error");
+      return;
+    }
     setQuery("");
-    const newEmp = blankEmployee(effectiveMonthDays);
     setNewlyAddedId(newEmp.id);
     setEmployees((current) => [newEmp, ...current]);
-    showToast("Added new employee successfully!");
+    setIsAddOpen(false);
+    showToast(`Added ${newEmp.name}`);
+  };
+
+  const openAddEmployee = () => {
+    if (lifecycle.stale) {
+      showToast("This tab is out of date. Reload first, then add.", "error");
+      return;
+    }
+    setIsAddOpen(true);
   };
 
   const removeEmployee = (id: string) => {
@@ -356,12 +370,14 @@ function App() {
   // Close whichever modal is open on Escape, matching the explicit close/cancel
   // action each modal already exposes via its own button.
   useEffect(() => {
-    if (!isDbModalOpen && !showNoDataModal && !isRulesOpen && !isHistoryOpen && !openSettingsId) {
+    if (!isDbModalOpen && !showNoDataModal && !isRulesOpen && !isHistoryOpen && !isAddOpen && !openSettingsId) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (isHistoryOpen) {
+      if (isAddOpen) {
+        return;
+      } else if (isHistoryOpen) {
         setIsHistoryOpen(false);
       } else if (isDbModalOpen) {
         setIsDbModalOpen(false);
@@ -377,7 +393,7 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDbModalOpen, showNoDataModal, isRulesOpen, isHistoryOpen, openSettingsId]);
+  }, [isDbModalOpen, showNoDataModal, isRulesOpen, isHistoryOpen, isAddOpen, openSettingsId]);
 
   const createDownload = (format: "csv" | "workbook") =>
     createExportDownload({
@@ -516,7 +532,7 @@ function App() {
                     placeholder="Search name or category"
                   />
                 </span>
-                <button className="quiet-button" type="button" onClick={addEmployee}>
+                <button className="quiet-button" type="button" onClick={openAddEmployee}>
                   <Plus size={16} />
                   Add
                 </button>
@@ -561,7 +577,9 @@ function App() {
               ) : sheetMode === "flags" ? (
                 <FlagsPanel
                   report={monthFlags.report}
+                  split={monthFlags.split}
                   previous={monthFlags.previous}
+                  resolved={monthFlags.resolved}
                   monthLabel={normalizeMonthLabel(monthLabel)}
                   onOpen={(name) => {
                     setQuery(name);
@@ -630,6 +648,17 @@ function App() {
             showToast(`Restored the copy saved ${formatSavedAt(record.updatedAt)}`);
           }}
           onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
+
+      {isAddOpen && (
+        <NewEmployeeDialog
+          company={companyName || activeCompany}
+          monthLabel={normalizeMonthLabel(monthLabel)}
+          monthDays={effectiveMonthDays}
+          existingNames={employees.map((employee) => employee.name)}
+          onAdd={addEmployee}
+          onClose={() => setIsAddOpen(false)}
         />
       )}
 

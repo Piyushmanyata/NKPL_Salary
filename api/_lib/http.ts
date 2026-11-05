@@ -5,6 +5,10 @@ export function normalizeCompany(value: unknown): string {
   return text || DEFAULT_COMPANY;
 }
 
+export function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /** The parts of Vercel's Node request and response helpers these routes use. */
 export type ApiRequest = {
   method?: string;

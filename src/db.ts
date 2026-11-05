@@ -1,4 +1,5 @@
 import { applyRateCardPatch, type RateCardPatch } from "../api/_lib/rateCard";
+import type { Flag, ResolvedFlag } from "./flags";
 import type { EmployeeInput, Increment } from "./types";
 import {
   legacyStorageKeys,
@@ -91,9 +92,9 @@ type FetchResult =
   | { ok: true; data: unknown }
   | { ok: false; kind: "not-found" | "unavailable"; error: string };
 
-async function fetchJson(url: string): Promise<FetchResult> {
+async function fetchJson(url: string, init?: RequestInit): Promise<FetchResult> {
   try {
-    const response = await send(url);
+    const response = await send(url, init);
     if (response.status === 404) {
       return { ok: false, kind: "not-found", error: "Not found" };
     }
@@ -260,6 +261,8 @@ export interface EmployeeRate {
   notes?: string;
   /** Standing Official basic pin at full attendance. SPEC §6.3 / issue #29. */
   fullAttendanceBasic?: number;
+  /** Real pay under a raised package; the gap is cut monthly. ADR-0025. */
+  realPackage?: number;
   increments?: Increment[];
 }
 
@@ -353,3 +356,36 @@ export async function backupIfDue(): Promise<BackupStatus | null> {
 }
 
 export const BACKUP_DOWNLOAD_URL = "/api/backup?download=1";
+
+export type ResolvedFlagsResult = { ok: true; flags: ResolvedFlag[] } | { ok: false; error: string };
+
+async function resolvedReply(response: Promise<FetchResult>): Promise<ResolvedFlagsResult> {
+  const result = await response;
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, flags: Array.isArray(result.data) ? (result.data as ResolvedFlag[]) : [] };
+}
+
+export function getResolvedFlags(company: string, monthLabel: string): Promise<ResolvedFlagsResult> {
+  return resolvedReply(
+    fetchJson(`/api/flags?company=${encodeURIComponent(company)}&month=${encodeURIComponent(monthLabel)}&t=${Date.now()}`),
+  );
+}
+
+function postFlags(body: Record<string, unknown>): Promise<ResolvedFlagsResult> {
+  return resolvedReply(
+    fetchJson("/api/flags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export function resolveFlag(company: string, monthLabel: string, flag: Flag): Promise<ResolvedFlagsResult> {
+  const { key, level, name, title, detail } = flag;
+  return postFlags({ action: "resolve", company, monthLabel, flag: { key, level, name, title, detail } });
+}
+
+export function reopenFlag(company: string, monthLabel: string, key: string): Promise<ResolvedFlagsResult> {
+  return postFlags({ action: "reopen", company, monthLabel, key });
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareMonths, newWarnings, previousMonthLabel, type MonthSide } from "../flags";
+import { compareMonths, newWarnings, previousMonthLabel, splitResolved, type Flag, type MonthSide, type ResolvedFlag } from "../flags";
 import type { EmployeeInput } from "../types";
 
 const worker = (id: string, name: string, extra: Partial<EmployeeInput> = {}): EmployeeInput => ({
@@ -136,5 +136,45 @@ describe("newWarnings", () => {
     expect(newWarnings(edited.flags, accepted).map((flag) => flag.key)).toEqual(
       expect.arrayContaining(["fix|rate:a", "check|advance:b:20000"]),
     );
+  });
+});
+
+describe("splitResolved", () => {
+  const resolvedFrom = (flag: Flag, resolvedAt = "2026-11-05T07:00:00.000Z"): ResolvedFlag => ({
+    key: flag.key,
+    level: flag.level,
+    name: flag.name,
+    title: flag.title,
+    detail: flag.detail,
+    resolvedAt,
+  });
+
+  it("hides a resolved flag from Open while its detail is unchanged, and stops it holding a save", () => {
+    const { flags } = compareMonths(oct([worker("a", "Laltu", { daysWorked: 40 }), worker("c", "Gokul")]), sep([worker("a", "Laltu")]));
+    const daysOver = flags.find((flag) => flag.key === "fix|days-over:a")!;
+    const split = splitResolved(flags, [resolvedFrom(daysOver)]);
+    expect(split.open.map((flag) => flag.key)).not.toContain("fix|days-over:a");
+    expect(split.resolved).toEqual([{ record: resolvedFrom(daysOver), now: "same" }]);
+    expect(newWarnings(split.open, new Set())).toEqual([]);
+  });
+
+  it("opens the flag again when its numbers change, and keeps the old note", () => {
+    const before = sep([worker("a", "Laltu")]);
+    const first = compareMonths(oct([worker("a", "Laltu", { daysWorked: 40 })]), before).flags.find((flag) => flag.key === "fix|days-over:a")!;
+    const later = compareMonths(oct([worker("a", "Laltu", { daysWorked: 45 })]), before).flags;
+    const split = splitResolved(later, [resolvedFrom(first)]);
+    expect(split.open.map((flag) => flag.key)).toContain("fix|days-over:a");
+    expect(split.changedSince.get("fix|days-over:a")?.detail).toBe(first.detail);
+    expect(split.resolved[0].now).toBe("changed");
+    expect(newWarnings(split.open, new Set()).map((flag) => flag.key)).toContain("fix|days-over:a");
+  });
+
+  it("keeps a resolved flag in the list after the flag itself is gone", () => {
+    const before = sep([worker("a", "Laltu")]);
+    const first = compareMonths(oct([worker("a", "Laltu", { daysWorked: 40 })]), before).flags.find((flag) => flag.key === "fix|days-over:a")!;
+    const fixed = compareMonths(oct([worker("a", "Laltu", { daysWorked: 30 })]), before).flags;
+    const split = splitResolved(fixed, [resolvedFrom(first)]);
+    expect(split.open).toEqual(fixed);
+    expect(split.resolved).toEqual([{ record: resolvedFrom(first), now: "gone" }]);
   });
 });

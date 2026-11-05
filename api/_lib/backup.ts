@@ -4,7 +4,7 @@ import type { NeonQueryFunction } from "@neondatabase/serverless";
 export const BACKUP_EVERY_MS = 20 * 60 * 60 * 1000;
 export const BACKUP_KEEP_DAYS = 180;
 
-const LIVE_PATTERNS = ["monthly_salary/*", "employee_rates/*", "salary_meta/*"];
+const LIVE_PATTERNS = ["monthly_salary/*", "employee_rates/*", "salary_meta/*", "salary_flags_resolved/*"];
 const HISTORY_PATTERN = "salary_history/*";
 
 export type Snapshot = { takenAt: string; keys: Record<string, unknown> };
@@ -30,8 +30,9 @@ function parse(raw: string): unknown {
 }
 
 async function readKey(redis: Redis, key: string): Promise<unknown> {
-  if (key.startsWith("salary_meta/")) return redis.hgetall(key);
-  if (key.startsWith("salary_history/")) return (await redis.lrange(key, 0, -1)).map(parse);
+  const type = await redis.type(key);
+  if (type === "hash") return redis.hgetall(key);
+  if (type === "list") return (await redis.lrange(key, 0, -1)).map(parse);
   const raw = await redis.get(key);
   return raw == null ? null : parse(raw);
 }

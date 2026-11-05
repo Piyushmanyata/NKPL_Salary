@@ -1,5 +1,5 @@
 import { getRedis, redisKeys } from './_lib/redis.js';
-import { DEFAULT_COMPANY, normalizeCompany, withApiHandler } from './_lib/http.js';
+import { DEFAULT_COMPANY, firstHeader, normalizeCompany, withApiHandler } from './_lib/http.js';
 import { deviceLabel, monthKey, readHistory, readMonth, saveMonth } from './_lib/monthStore.js';
 
 // Legacy pre-multi-Company flat keys kept until a read-only Redis scan
@@ -82,7 +82,3 @@ export default withApiHandler('GET,POST', async (req, res) => {
   }
   return res.status(200).json(result.record);
 });
-
-function firstHeader(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}

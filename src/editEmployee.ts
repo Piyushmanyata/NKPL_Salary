@@ -169,6 +169,11 @@ const handlers: Partial<Record<EditableField, FieldHandler>> = {
     return { ...employee, fullAttendanceBasic: pin > 0 ? roundMoney(pin) : undefined };
   },
 
+  realPackage(employee, value) {
+    const real = Math.max(0, numberValue(value));
+    return { ...employee, realPackage: real > 0 ? roundMoney(real) : undefined };
+  },
+
   advance(employee, value) {
     const val = value === undefined || value === "" ? undefined : Number(value);
     if (val !== undefined && (Number.isNaN(val) || val < 0)) {
