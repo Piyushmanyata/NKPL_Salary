@@ -203,6 +203,10 @@ _Avoid_: Treating a Flag as an error that blocks export; flags against Tally or 
 An auto-save the app holds back because an edit created a Must fix or Check Flag that was not there when the month loaded. A bar says "Not saved yet" until the value is fixed or the user presses **Save anyway**; leaving the page while held asks first. Flags already present at load never hold a save (ADR-0024).
 _Avoid_: Holding saves for Notes; holding for flags the user already accepted
 
+**Resolved Flag**:
+A Flag the user checked and marked fine with **Resolve**. Kept per Company and month, apart from the month's own record, with the flag's text, when and on which device (`api/flags.ts`, Redis hash `salary_flags_resolved/<CO>/<Month>`). It leaves the Open list and the Flags badge, and stops holding a save, only while its key and detail text are the same; any new number puts it back in Open with what it said before. **Undo** takes it off the list (ADR-0026).
+_Avoid_: Treating Resolve as a fix (pay does not change); resolving a flag for good whatever its numbers become
+
 ### Pay history
 
 **Increment**:

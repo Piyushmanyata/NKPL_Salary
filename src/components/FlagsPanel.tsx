@@ -1,6 +1,7 @@
+import { CircleCheck, Undo2 } from "lucide-react";
 import { useState } from "react";
-import type { Flag, FlagLevel, FlagReport } from "../flags";
-import type { PreviousMonth } from "../hooks/useMonthFlags";
+import type { Flag, FlagLevel, FlagReport, FlagSplit, ResolvedEntry, ResolvedFlag } from "../flags";
+import type { PreviousMonth, ResolvedState } from "../hooks/useMonthFlags";
 import { currency } from "../salary";
 import styles from "./FlagsPanel.module.css";
 
@@ -12,6 +13,64 @@ const GROUPS: { level: FlagLevel; label: string; hint: string }[] = [
 
 function signed(value: number): string {
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${currency(Math.abs(value))}`;
+}
+
+const LEVEL_LABEL: Record<FlagLevel, string> = { fix: "Must fix", check: "Check", note: "Note" };
+
+const NOW_LABEL: Record<ResolvedEntry["now"], string> = {
+  same: "Same now",
+  changed: "Changed since: back in Open",
+  gone: "No longer flagged",
+};
+
+const WHEN = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+
+function when(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : WHEN.format(date);
+}
+
+function ChangedSince({ record }: { record: ResolvedFlag | undefined }) {
+  if (!record) return null;
+  return (
+    <span className={styles.meta}>
+      Changed since you resolved it on {when(record.resolvedAt)}. It said: {record.detail}
+    </span>
+  );
+}
+
+function ResolvedList({ entries, resolved }: { entries: ResolvedEntry[]; resolved: ResolvedState }) {
+  if (!entries.length) {
+    return <p className={styles.empty}>Nothing resolved for this month yet. Press Resolve on a flag once you have checked it.</p>;
+  }
+  return (
+    <ul className={styles.list}>
+      {entries.map(({ record, now }) => (
+        <li key={record.key} className={`${styles.item} ${styles.resolvedItem}`}>
+          <div className={styles.itemText}>
+            <span className={`${styles.tag} ${styles[record.level]}`}>{LEVEL_LABEL[record.level]}</span>
+            <b>{record.name}</b>
+            <span className={styles.title}>{record.title}</span>
+            <span className={now === "same" ? styles.nowSame : styles.nowOther}>{NOW_LABEL[now]}</span>
+            <span className={styles.detail}>{record.detail}</span>
+            <span className={styles.meta}>
+              Resolved {when(record.resolvedAt)}
+              {record.device ? ` · ${record.device}` : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="ghost-button"
+            disabled={resolved.busyKey === record.key}
+            onClick={() => resolved.reopen(record.key)}
+          >
+            <Undo2 size={15} />
+            Undo
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function BlankNameFix({ flag, onRename, onRemove }: { flag: Flag; onRename: (id: string, name: string) => void; onRemove: (id: string) => void }) {
@@ -37,19 +96,24 @@ function BlankNameFix({ flag, onRename, onRemove }: { flag: Flag; onRename: (id:
 
 export function FlagsPanel({
   report,
+  split,
   previous,
+  resolved,
   monthLabel,
   onOpen,
   onRename,
   onRemove,
 }: {
   report: FlagReport;
+  split: FlagSplit;
   previous: PreviousMonth;
+  resolved: ResolvedState;
   monthLabel: string;
   onOpen: (name: string) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const [view, setView] = useState<"open" | "resolved">("open");
   const compared = previous.state === "found" ? previous.label : null;
   return (
     <div className={styles.panel}>
@@ -73,11 +137,43 @@ export function FlagsPanel({
         )}
       </div>
 
-      {report.flags.length === 0 ? (
+      <div className={styles.views} role="tablist" aria-label="Open or resolved flags">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "open"}
+          className={`${styles.viewTab} ${view === "open" ? styles.viewActive : ""}`}
+          onClick={() => setView("open")}
+        >
+          Open <b>{split.open.length}</b>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "resolved"}
+          className={`${styles.viewTab} ${view === "resolved" ? styles.viewActive : ""}`}
+          onClick={() => setView("resolved")}
+        >
+          <CircleCheck size={15} />
+          Resolved <b>{resolved.loading ? "…" : split.resolved.length}</b>
+        </button>
+      </div>
+
+      {resolved.error ? (
+        <p className={styles.error} role="alert">
+          Could not reach the resolved flags: {resolved.error}. Flags show as open until it works again.
+        </p>
+      ) : null}
+
+      {view === "resolved" ? (
+        <ResolvedList entries={split.resolved} resolved={resolved} />
+      ) : report.flags.length === 0 ? (
         <p className={styles.clear}>No flags. This month matches last month and the pay rules.</p>
+      ) : split.open.length === 0 ? (
+        <p className={styles.clear}>All {report.flags.length} flags are resolved. See them under Resolved.</p>
       ) : (
         GROUPS.map((group) => {
-          const flags = report.flags.filter((flag) => flag.level === group.level);
+          const flags = split.open.filter((flag) => flag.level === group.level);
           if (!flags.length) return null;
           return (
             <section key={group.level} className={styles.group} aria-label={group.label}>
@@ -92,14 +188,27 @@ export function FlagsPanel({
                       <b>{flag.name}</b>
                       <span className={styles.title}>{flag.title}</span>
                       <span className={styles.detail}>{flag.detail}</span>
+                      <ChangedSince record={split.changedSince.get(flag.key)} />
                     </div>
-                    {flag.blankName ? (
-                      <BlankNameFix flag={flag} onRename={onRename} onRemove={onRemove} />
-                    ) : flag.id && !flag.key.includes("|gone:") ? (
-                      <button type="button" className="ghost-button" onClick={() => onOpen(flag.name)}>
-                        Open
+                    <div className={styles.actions}>
+                      {flag.blankName ? (
+                        <BlankNameFix flag={flag} onRename={onRename} onRemove={onRemove} />
+                      ) : flag.id && !flag.key.includes("|gone:") ? (
+                        <button type="button" className="ghost-button" onClick={() => onOpen(flag.name)}>
+                          Open
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        disabled={resolved.loading || resolved.busyKey === flag.key}
+                        onClick={() => resolved.resolve(flag)}
+                        title="Checked and fine: move to Resolved"
+                      >
+                        <CircleCheck size={15} />
+                        Resolve
                       </button>
-                    ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>

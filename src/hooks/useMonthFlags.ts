@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getMonthData, type MonthRecord } from "../db";
-import { compareMonths, newWarnings, previousMonthLabel, type Flag, type FlagReport } from "../flags";
+import { getMonthData, getResolvedFlags, reopenFlag, resolveFlag, type MonthRecord, type ResolvedFlagsResult } from "../db";
+import {
+  compareMonths,
+  newWarnings,
+  previousMonthLabel,
+  splitResolved,
+  type Flag,
+  type FlagReport,
+  type FlagSplit,
+  type ResolvedFlag,
+} from "../flags";
 import { calendarDaysForMonth } from "../months";
 import { hydrateSavedMonth } from "../roster";
 import type { EmployeeInput } from "../types";
@@ -10,14 +19,26 @@ export type PreviousMonth =
   | { state: "none"; label: string | null }
   | { state: "found"; label: string };
 
+export type ResolvedState = {
+  loading: boolean;
+  error: string | null;
+  busyKey: string | null;
+  resolve: (flag: Flag) => void;
+  reopen: (key: string) => void;
+};
+
 export type MonthFlags = {
   report: FlagReport;
+  split: FlagSplit;
   previous: PreviousMonth;
+  resolved: ResolvedState;
   unsavedWarnings: Flag[];
   acceptWarnings: () => void;
 };
 
 type Fetched = { scope: string; record: MonthRecord | null };
+type ResolvedFetched = { scope: string; flags: ResolvedFlag[]; error: string | null };
+type Busy = { scope: string; key: string };
 
 export function useMonthFlags(
   company: string,
@@ -30,6 +51,35 @@ export function useMonthFlags(
   const previousScope = `${company}|${previousLabel}`;
   const [fetched, setFetched] = useState<Fetched | null>(null);
   const [accepted, setAccepted] = useState<Set<string> | null>(null);
+  const scope = `${company}|${monthLabel}`;
+  const [resolvedFetched, setResolvedFetched] = useState<ResolvedFetched | null>(null);
+  const [busy, setBusy] = useState<Busy | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getResolvedFlags(company, monthLabel).then((result) => {
+      if (!cancelled) setResolvedFetched(fromResult(scope, result, []));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [company, monthLabel, scope]);
+
+  const resolvedHere = resolvedFetched?.scope === scope ? resolvedFetched : null;
+  const resolvedFlags = useMemo(() => resolvedHere?.flags ?? [], [resolvedHere]);
+
+  const change = useCallback(
+    (key: string, request: Promise<ResolvedFlagsResult>) => {
+      setBusy({ scope, key });
+      void request.then((result) => {
+        setResolvedFetched((current) => (current && current.scope !== scope ? current : fromResult(scope, result, current?.flags ?? [])));
+        setBusy((current) => (current?.scope === scope && current.key === key ? null : current));
+      });
+    },
+    [scope],
+  );
+  const resolve = useCallback((flag: Flag) => change(flag.key, resolveFlag(company, monthLabel, flag)), [change, company, monthLabel]);
+  const reopen = useCallback((key: string) => change(key, reopenFlag(company, monthLabel, key)), [change, company, monthLabel]);
 
   useEffect(() => {
     if (!previousLabel) return;
@@ -74,7 +124,8 @@ export function useMonthFlags(
     }
   }, [accepted, loading, previousReady, report]);
 
-  const unsavedWarnings = useMemo(() => newWarnings(report.flags, accepted), [accepted, report]);
+  const split = useMemo(() => splitResolved(report.flags, resolvedFlags), [report, resolvedFlags]);
+  const unsavedWarnings = useMemo(() => newWarnings(split.open, accepted), [accepted, split]);
 
   const acceptWarnings = useCallback(() => {
     setAccepted((current) => new Set([...(current ?? []), ...unsavedWarnings.map((flag) => flag.key)]));
@@ -86,5 +137,22 @@ export function useMonthFlags(
       ? { state: "found", label: previousLabel }
       : { state: "none", label: previousLabel };
 
-  return { report, previous, unsavedWarnings, acceptWarnings };
+  return {
+    report,
+    split,
+    previous,
+    resolved: {
+      loading: !resolvedHere,
+      error: resolvedHere?.error ?? null,
+      busyKey: busy?.scope === scope ? busy.key : null,
+      resolve,
+      reopen,
+    },
+    unsavedWarnings,
+    acceptWarnings,
+  };
+}
+
+function fromResult(scope: string, result: ResolvedFlagsResult, keep: ResolvedFlag[]): ResolvedFetched {
+  return result.ok ? { scope, flags: result.flags, error: null } : { scope, flags: keep, error: result.error };
 }
